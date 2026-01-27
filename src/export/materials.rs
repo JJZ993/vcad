@@ -153,8 +153,14 @@ impl Materials {
     }
 
     /// Get material for a part, falling back to default.
+    ///
+    /// Lookup order:
+    /// 1. `part_materials` mapping (part name → material name → material)
+    /// 2. Direct material name lookup (key used as material name)
+    /// 3. Default grey material
     pub fn get_for_part_or_default(&self, part_name: &str) -> Material {
         self.get_for_part(part_name)
+            .or_else(|| self.materials.get(part_name))
             .cloned()
             .unwrap_or_default()
     }
@@ -208,5 +214,33 @@ tire = "rubber"
 
         let frame_mat = mats.get_for_part("frame").unwrap();
         assert_eq!(frame_mat.name, "aluminum");
+    }
+
+    #[test]
+    fn test_direct_material_key_fallback() {
+        // No [part_materials] section — material key used directly as material name
+        let toml = r#"
+[materials.body]
+color = [0.32, 0.72, 0.95]
+metallic = 0.1
+roughness = 0.5
+
+[materials.pupil]
+color = [0.08, 0.08, 0.12]
+metallic = 0.0
+roughness = 0.3
+"#;
+        let mats = Materials::parse(toml).unwrap();
+
+        let body = mats.get_for_part_or_default("body");
+        assert_eq!(body.name, "body");
+        assert!((body.color[0] - 0.32).abs() < 0.01);
+
+        let pupil = mats.get_for_part_or_default("pupil");
+        assert_eq!(pupil.name, "pupil");
+
+        // Unknown key still falls back to default
+        let unknown = mats.get_for_part_or_default("nonexistent");
+        assert_eq!(unknown.name, "default");
     }
 }

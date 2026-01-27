@@ -2,6 +2,10 @@
 
 Parametric CAD in Rust. Define parts with CSG operations and export to STL, glTF, USD, and DXF.
 
+<p align="center">
+  <img src="assets/mascot.png" width="400" alt="vcad mascot — a friendly robot built entirely from CSG primitives">
+</p>
+
 Built on [manifold](https://github.com/elalish/manifold) for boolean operations and mesh generation.
 
 ## Quick start
