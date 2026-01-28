@@ -51,6 +51,16 @@ part.write_stl("plate.stl").unwrap();
 
 **Scenes** — Multi-part assemblies that preserve per-part materials for rendering.
 
+## Why vcad?
+
+If you've used OpenSCAD, CadQuery, or build123d:
+
+- **Rust-native.** Your models are real Rust — cargo, crates, tests, CI. No custom language, no Python runtime.
+- **Watertight meshes.** Built on [Manifold](https://github.com/elalish/manifold). Every boolean op produces valid 2-manifold geometry. No mesh healing.
+- **Multi-format from one model.** STL, glTF, USD, DXF, STEP — no conversion pipeline.
+- **Materials and scenes.** PBR materials from TOML, multi-material GLB export for web viewers or Blender.
+- **Agent-friendly.** Minimal API, operator overloads, consistent patterns. AI agents generate and iterate on models from natural language.
+
 ## Installation
 
 ```toml

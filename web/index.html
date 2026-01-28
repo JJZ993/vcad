@@ -135,11 +135,15 @@ hr { border: none; height: 1px; background: var(--rule); }
 pre {
   font: 400 0.82rem/1.85 var(--f);
   overflow-x: auto;
+  background: #0c0c0c;
+  padding: 1.25rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
 }
 .k { color: #cc7832; }
 .s { color: #6a8759; }
 .n { color: #6897bb; }
-.c { color: var(--lo); font-style: italic; }
+.c { color: #777; font-style: italic; }
 .o { color: var(--hi); }
 .out {
   margin-top: 1.5rem;
@@ -154,6 +158,11 @@ pre {
   max-width: 400px;
   margin: 2rem 0 0;
   border-radius: 8px;
+}
+
+.render, .ggrid figure img {
+  filter: brightness(0.88) saturate(0.8);
+  border: 1px solid var(--rule);
 }
 
 /* ── gallery ── */
@@ -241,6 +250,12 @@ footer a:hover { color: var(--hi); }
   .s { color: #2a6f2d; }
   .n { color: #1558b0; }
   .out b { color: #2a6f2d; }
+  .c { color: #666; }
+  pre { background: #f3f3f3; }
+  .render, .ggrid figure img {
+    filter: none;
+    border: 1px solid var(--rule);
+  }
 }
 </style>
 </head>
@@ -314,6 +329,30 @@ part.write_stl(<span class="s">"plate.stl"</span>).unwrap();</pre>
     <div>
       <dt>agents</dt>
       <dd>built for coding agents. api tables, cookbook, blender mcp.</dd>
+    </div>
+  </dl>
+</section>
+
+<hr>
+
+<section class="feat">
+  <div class="lbl">// why vcad</div>
+  <dl class="grid">
+    <div>
+      <dt>not openscad</dt>
+      <dd>no custom language. your models are real rust — cargo, crates, tests, ci.</dd>
+    </div>
+    <div>
+      <dt>watertight</dt>
+      <dd>built on manifold. every boolean produces valid 2-manifold geometry. no mesh healing.</dd>
+    </div>
+    <div>
+      <dt>every format</dt>
+      <dd>stl, gltf, usd, dxf, step from one codebase. no conversion pipeline.</dd>
+    </div>
+    <div>
+      <dt>agent-native</dt>
+      <dd>small api, operator overloads, consistent patterns. ai agents generate models from text.</dd>
     </div>
   </dl>
 </section>
