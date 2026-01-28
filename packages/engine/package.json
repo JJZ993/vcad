@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@vcad/ir": "^0.1.0",
-    "manifold-3d": "^3.0.0"
+    "@vcad/kernel-wasm": "file:../kernel-wasm"
   },
   "devDependencies": {
     "typescript": "^5.7",

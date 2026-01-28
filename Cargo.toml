@@ -13,6 +13,7 @@ members = [
     "crates/vcad-kernel-fillet",
     "crates/vcad-kernel-sketch",
     "crates/vcad-kernel",
+    "crates/vcad-kernel-wasm",
 ]
 
 [workspace.package]
@@ -26,7 +27,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 nalgebra = "0.33"
-manifold-rs = "0.6"
 slotmap = "1"
 anyhow = "1"
 toml = "0.8"

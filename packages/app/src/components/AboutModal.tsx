@@ -14,7 +14,7 @@ const FEATURES = [
 
 const WHY = [
   { title: "not openscad", desc: "no custom language. your models are real rust — cargo, crates, tests, ci." },
-  { title: "watertight", desc: "built on manifold. every boolean produces valid 2-manifold geometry." },
+  { title: "native brep", desc: "built on vcad-kernel. b-rep geometry with proper boolean operations." },
   { title: "every format", desc: "stl, gltf, usd, dxf, step from one codebase. no conversion pipeline." },
   { title: "agent-native", desc: "small api, operator overloads, consistent patterns. ai agents generate models." },
 ];
@@ -82,7 +82,7 @@ export function AboutModal({
 
           <p className="mb-5 text-xs text-text-muted leading-relaxed">
             parametric cad in rust. csg primitives, boolean operators, multi-format export.
-            built on <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">manifold</a>. mit licensed.
+            built on <a href="https://github.com/ecto/vcad/tree/main/crates/vcad-kernel" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">vcad-kernel</a>. mit licensed.
           </p>
 
           <div className="flex flex-col gap-5">

@@ -1,50 +1,68 @@
 import type { Document, Node, NodeId, CsgOp } from "@vcad/ir";
-import type { EvaluatedScene } from "./mesh.js";
-import { extractPositions } from "./mesh.js";
+import type { EvaluatedScene, TriangleMesh } from "./mesh.js";
+import type { Solid } from "@vcad/kernel-wasm";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ManifoldModule = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ManifoldObj = any;
+/** Type for the kernel module */
+interface KernelModule {
+  Solid: typeof Solid;
+}
 
 /**
- * Evaluate a vcad IR Document into an EvaluatedScene using manifold-3d.
+ * Evaluate a vcad IR Document into an EvaluatedScene using vcad-kernel-wasm.
  *
- * Walks the DAG for each scene root, memoizes intermediate Manifold objects
- * by NodeId, then extracts triangle meshes. All manifold objects are deleted
- * in a finally block to avoid WASM memory leaks.
+ * Walks the DAG for each scene root, memoizes intermediate Solid objects
+ * by NodeId, then extracts triangle meshes.
  */
 export function evaluateDocument(
   doc: Document,
-  wasm: ManifoldModule,
+  kernel: KernelModule,
 ): EvaluatedScene {
-  const { Manifold } = wasm;
-  const cache = new Map<NodeId, ManifoldObj>();
+  const { Solid } = kernel;
+  const cache = new Map<NodeId, Solid>();
 
-  try {
-    const parts = doc.roots.map((entry) => {
-      const manifold = evaluateNode(entry.root, doc.nodes, Manifold, cache);
-      const mesh = manifold.getMesh();
-      const positions = extractPositions(mesh.numProp, mesh.vertProperties);
-      return {
-        mesh: { positions, indices: new Uint32Array(mesh.triVerts) },
-        material: entry.material,
-      };
-    });
-    return { parts };
-  } finally {
-    for (const obj of cache.values()) {
-      obj.delete();
+  // Evaluate all parts
+  const solids: Solid[] = [];
+  const parts = doc.roots.map((entry) => {
+    const solid = evaluateNode(entry.root, doc.nodes, Solid, cache);
+    solids.push(solid);
+    const meshData = solid.getMesh();
+    const mesh: TriangleMesh = {
+      positions: new Float32Array(meshData.positions),
+      indices: new Uint32Array(meshData.indices),
+    };
+    return {
+      mesh,
+      material: entry.material,
+    };
+  });
+
+  // Compute pairwise intersections for clash detection
+  const clashes: TriangleMesh[] = [];
+  for (let i = 0; i < solids.length; i++) {
+    for (let j = i + 1; j < solids.length; j++) {
+      const intersection = solids[i].intersection(solids[j]);
+      // Only include non-empty intersections
+      if (!intersection.isEmpty()) {
+        const meshData = intersection.getMesh();
+        if (meshData.positions.length > 0) {
+          clashes.push({
+            positions: new Float32Array(meshData.positions),
+            indices: new Uint32Array(meshData.indices),
+          });
+        }
+      }
     }
   }
+
+  return { parts, clashes };
 }
 
 function evaluateNode(
   nodeId: NodeId,
   nodes: Record<string, Node>,
-  Manifold: ManifoldObj,
-  cache: Map<NodeId, ManifoldObj>,
-): ManifoldObj {
+  Solid: typeof import("@vcad/kernel-wasm").Solid,
+  cache: Map<NodeId, import("@vcad/kernel-wasm").Solid>,
+): import("@vcad/kernel-wasm").Solid {
   const cached = cache.get(nodeId);
   if (cached) return cached;
 
@@ -53,7 +71,7 @@ function evaluateNode(
     throw new Error(`Missing node: ${nodeId}`);
   }
 
-  const result = evaluateOp(node.op, nodes, Manifold, cache);
+  const result = evaluateOp(node.op, nodes, Solid, cache);
   cache.set(nodeId, result);
   return result;
 }
@@ -61,66 +79,61 @@ function evaluateNode(
 function evaluateOp(
   op: CsgOp,
   nodes: Record<string, Node>,
-  Manifold: ManifoldObj,
-  cache: Map<NodeId, ManifoldObj>,
-): ManifoldObj {
+  Solid: typeof import("@vcad/kernel-wasm").Solid,
+  cache: Map<NodeId, import("@vcad/kernel-wasm").Solid>,
+): import("@vcad/kernel-wasm").Solid {
   switch (op.type) {
     case "Cube":
-      return Manifold.cube([op.size.x, op.size.y, op.size.z]);
+      return Solid.cube(op.size.x, op.size.y, op.size.z);
 
     case "Cylinder":
-      return Manifold.cylinder(
-        op.height,
-        op.radius,
-        op.radius,
-        op.segments || undefined,
-      );
+      return Solid.cylinder(op.radius, op.height, op.segments || undefined);
 
     case "Sphere":
-      return Manifold.sphere(op.radius, op.segments || undefined);
+      return Solid.sphere(op.radius, op.segments || undefined);
 
     case "Cone":
-      return Manifold.cylinder(
-        op.height,
+      return Solid.cone(
         op.radius_bottom,
         op.radius_top,
+        op.height,
         op.segments || undefined,
       );
 
     case "Empty":
-      return Manifold.compose([]);
+      return Solid.empty();
 
     case "Union": {
-      const left = evaluateNode(op.left, nodes, Manifold, cache);
-      const right = evaluateNode(op.right, nodes, Manifold, cache);
-      return left.add(right);
+      const left = evaluateNode(op.left, nodes, Solid, cache);
+      const right = evaluateNode(op.right, nodes, Solid, cache);
+      return left.union(right);
     }
 
     case "Difference": {
-      const left = evaluateNode(op.left, nodes, Manifold, cache);
-      const right = evaluateNode(op.right, nodes, Manifold, cache);
-      return left.subtract(right);
+      const left = evaluateNode(op.left, nodes, Solid, cache);
+      const right = evaluateNode(op.right, nodes, Solid, cache);
+      return left.difference(right);
     }
 
     case "Intersection": {
-      const left = evaluateNode(op.left, nodes, Manifold, cache);
-      const right = evaluateNode(op.right, nodes, Manifold, cache);
-      return left.intersect(right);
+      const left = evaluateNode(op.left, nodes, Solid, cache);
+      const right = evaluateNode(op.right, nodes, Solid, cache);
+      return left.intersection(right);
     }
 
     case "Translate": {
-      const child = evaluateNode(op.child, nodes, Manifold, cache);
-      return child.translate([op.offset.x, op.offset.y, op.offset.z]);
+      const child = evaluateNode(op.child, nodes, Solid, cache);
+      return child.translate(op.offset.x, op.offset.y, op.offset.z);
     }
 
     case "Rotate": {
-      const child = evaluateNode(op.child, nodes, Manifold, cache);
-      return child.rotate([op.angles.x, op.angles.y, op.angles.z]);
+      const child = evaluateNode(op.child, nodes, Solid, cache);
+      return child.rotate(op.angles.x, op.angles.y, op.angles.z);
     }
 
     case "Scale": {
-      const child = evaluateNode(op.child, nodes, Manifold, cache);
-      return child.scale([op.factor.x, op.factor.y, op.factor.z]);
+      const child = evaluateNode(op.child, nodes, Solid, cache);
+      return child.scale(op.factor.x, op.factor.y, op.factor.z);
     }
   }
 }

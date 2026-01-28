@@ -40,7 +40,7 @@ export function WelcomeScreen() {
           </h1>
           <p className="text-sm text-text-muted mb-1">parametric cad in rust</p>
           <p className="text-xs text-text-muted/70 mb-6 max-w-xs leading-relaxed">
-            csg primitives, boolean operators, multi-format export. built on manifold. mit licensed.
+            csg primitives, boolean operators, multi-format export. built on vcad-kernel. mit licensed.
           </p>
 
           {/* Quick add */}

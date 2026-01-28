@@ -17,6 +17,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ["manifold-3d"],
+    exclude: ["@vcad/kernel-wasm"],
   },
 });
