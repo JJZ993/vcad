@@ -7,12 +7,140 @@
 /** Unique identifier for a node in the IR graph. */
 export type NodeId = number;
 
+/** 2D vector with f64 components (for sketch coordinates). */
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
 /** 3D vector with f64 components (conventionally millimeters). */
 export interface Vec3 {
   x: number;
   y: number;
   z: number;
 }
+
+// --- SketchSegment2D discriminated union ---
+
+export interface LineSegment2D {
+  type: "Line";
+  start: Vec2;
+  end: Vec2;
+}
+
+export interface ArcSegment2D {
+  type: "Arc";
+  start: Vec2;
+  end: Vec2;
+  center: Vec2;
+  ccw: boolean;
+}
+
+/** A segment of a 2D sketch profile. */
+export type SketchSegment2D = LineSegment2D | ArcSegment2D;
+
+// --- Sketch Constraints ---
+
+/** Reference to a point within a sketch entity. */
+export type EntityRef =
+  | { type: "Point"; index: number }
+  | { type: "LineStart"; index: number }
+  | { type: "LineEnd"; index: number }
+  | { type: "ArcStart"; index: number }
+  | { type: "ArcEnd"; index: number }
+  | { type: "Center"; index: number };
+
+/** Coincident constraint - two points at the same location. */
+export interface CoincidentConstraint {
+  type: "Coincident";
+  pointA: EntityRef;
+  pointB: EntityRef;
+}
+
+/** Horizontal constraint - line parallel to X axis. */
+export interface HorizontalConstraint {
+  type: "Horizontal";
+  line: number;
+}
+
+/** Vertical constraint - line parallel to Y axis. */
+export interface VerticalConstraint {
+  type: "Vertical";
+  line: number;
+}
+
+/** Parallel constraint - two lines are parallel. */
+export interface ParallelConstraint {
+  type: "Parallel";
+  lineA: number;
+  lineB: number;
+}
+
+/** Perpendicular constraint - two lines are perpendicular. */
+export interface PerpendicularConstraint {
+  type: "Perpendicular";
+  lineA: number;
+  lineB: number;
+}
+
+/** Fixed constraint - point at a fixed position. */
+export interface FixedConstraint {
+  type: "Fixed";
+  point: EntityRef;
+  x: number;
+  y: number;
+}
+
+/** Distance constraint - distance between two points. */
+export interface DistanceConstraint {
+  type: "Distance";
+  pointA: EntityRef;
+  pointB: EntityRef;
+  distance: number;
+}
+
+/** Length constraint - length of a line. */
+export interface LengthConstraint {
+  type: "Length";
+  line: number;
+  length: number;
+}
+
+/** Equal length constraint - two lines have same length. */
+export interface EqualLengthConstraint {
+  type: "EqualLength";
+  lineA: number;
+  lineB: number;
+}
+
+/** Radius constraint - circle/arc has specific radius. */
+export interface RadiusConstraint {
+  type: "Radius";
+  circle: number;
+  radius: number;
+}
+
+/** Angle constraint - angle between two lines. */
+export interface AngleConstraint {
+  type: "Angle";
+  lineA: number;
+  lineB: number;
+  angleDeg: number;
+}
+
+/** A constraint on sketch entities. */
+export type SketchConstraint =
+  | CoincidentConstraint
+  | HorizontalConstraint
+  | VerticalConstraint
+  | ParallelConstraint
+  | PerpendicularConstraint
+  | FixedConstraint
+  | DistanceConstraint
+  | LengthConstraint
+  | EqualLengthConstraint
+  | RadiusConstraint
+  | AngleConstraint;
 
 // --- CsgOp discriminated union ---
 
@@ -82,6 +210,28 @@ export interface ScaleOp {
   factor: Vec3;
 }
 
+export interface Sketch2DOp {
+  type: "Sketch2D";
+  origin: Vec3;
+  x_dir: Vec3;
+  y_dir: Vec3;
+  segments: SketchSegment2D[];
+}
+
+export interface ExtrudeOp {
+  type: "Extrude";
+  sketch: NodeId;
+  direction: Vec3;
+}
+
+export interface RevolveOp {
+  type: "Revolve";
+  sketch: NodeId;
+  axis_origin: Vec3;
+  axis_dir: Vec3;
+  angle_deg: number;
+}
+
 /** CSG operation — the core building block of the IR DAG. */
 export type CsgOp =
   | CubeOp
@@ -94,7 +244,10 @@ export type CsgOp =
   | IntersectionOp
   | TranslateOp
   | RotateOp
-  | ScaleOp;
+  | ScaleOp
+  | Sketch2DOp
+  | ExtrudeOp
+  | RevolveOp;
 
 /** A node in the IR graph. */
 export interface Node {
