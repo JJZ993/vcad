@@ -17,8 +17,11 @@
 
 use manifold_rs::{Manifold, Mesh};
 use nalgebra::Vector3;
+use std::collections::HashMap;
 use std::f64::consts::PI;
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
+use vcad_ir::{CsgOp, Document, Node, NodeId, SceneEntry, Vec3 as IrVec3};
 
 pub mod export;
 pub mod step;
@@ -36,45 +39,151 @@ pub enum CadError {
     EmptyGeometry,
 }
 
+/// Global atomic counter for unique IR node IDs.
+static NEXT_NODE_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Allocate a globally unique [`NodeId`].
+fn alloc_node_id() -> NodeId {
+    NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
 /// A named part with geometry.
 ///
 /// Parts are the primary building block in vcad. Create primitives with
 /// [`Part::cube`], [`Part::cylinder`], [`Part::sphere`], etc., then combine
 /// them with CSG operations ([`Part::union`], [`Part::difference`],
 /// [`Part::intersection`]) or the operator shorthands (`+`, `-`, `&`).
+///
+/// Each Part carries an IR subtree recording its parametric construction
+/// history. Extract it with [`Part::to_document`].
 pub struct Part {
     /// Human-readable name for this part (used in export filenames and scene graphs).
     pub name: String,
     manifold: Manifold,
+    ir_node_id: NodeId,
+    ir_nodes: HashMap<NodeId, Node>,
 }
 
 impl Part {
-    /// Create a new part with a name
-    pub fn new(name: impl Into<String>, manifold: Manifold) -> Self {
+    /// Internal constructor with explicit IR data.
+    fn with_ir(
+        name: String,
+        manifold: Manifold,
+        ir_node_id: NodeId,
+        ir_nodes: HashMap<NodeId, Node>,
+    ) -> Self {
         Self {
-            name: name.into(),
+            name,
             manifold,
+            ir_node_id,
+            ir_nodes,
         }
     }
 
-    /// Create an empty part
+    /// Create a leaf IR node (primitive or empty) and return `(id, nodes)`.
+    fn make_leaf(name: &str, op: CsgOp) -> (NodeId, HashMap<NodeId, Node>) {
+        let id = alloc_node_id();
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            id,
+            Node {
+                id,
+                name: Some(name.to_string()),
+                op,
+            },
+        );
+        (id, nodes)
+    }
+
+    /// Build a binary CSG node, merging both children's IR maps.
+    fn make_binary(
+        name: &str,
+        left: &Part,
+        right: &Part,
+        op_fn: impl FnOnce(NodeId, NodeId) -> CsgOp,
+    ) -> (NodeId, HashMap<NodeId, Node>) {
+        let id = alloc_node_id();
+        let mut nodes = left.ir_nodes.clone();
+        nodes.extend(right.ir_nodes.iter().map(|(&k, v)| (k, v.clone())));
+        nodes.insert(
+            id,
+            Node {
+                id,
+                name: Some(name.to_string()),
+                op: op_fn(left.ir_node_id, right.ir_node_id),
+            },
+        );
+        (id, nodes)
+    }
+
+    /// Build a unary transform node, cloning the child's IR map.
+    fn make_unary(
+        name: &str,
+        child: &Part,
+        op_fn: impl FnOnce(NodeId) -> CsgOp,
+    ) -> (NodeId, HashMap<NodeId, Node>) {
+        let id = alloc_node_id();
+        let mut nodes = child.ir_nodes.clone();
+        nodes.insert(
+            id,
+            Node {
+                id,
+                name: Some(name.to_string()),
+                op: op_fn(child.ir_node_id),
+            },
+        );
+        (id, nodes)
+    }
+
+    /// Create a new part with a name.
+    ///
+    /// The manifold is opaque (no parametric info), so the IR records an
+    /// [`CsgOp::Empty`] node.
+    pub fn new(name: impl Into<String>, manifold: Manifold) -> Self {
+        let name = name.into();
+        let (id, nodes) = Self::make_leaf(&name, CsgOp::Empty);
+        Self::with_ir(name, manifold, id, nodes)
+    }
+
+    /// Create an empty part.
     pub fn empty(name: impl Into<String>) -> Self {
-        Self::new(name, Manifold::empty())
+        let name = name.into();
+        let (id, nodes) = Self::make_leaf(&name, CsgOp::Empty);
+        Self::with_ir(name, Manifold::empty(), id, nodes)
     }
 
-    /// Create a cube/box centered at origin
+    /// Create a cube/box centered at origin.
     pub fn cube(name: impl Into<String>, x: f64, y: f64, z: f64) -> Self {
-        let manifold = Manifold::cube(x, y, z);
-        Self::new(name, manifold)
+        let name = name.into();
+        let (id, nodes) = Self::make_leaf(
+            &name,
+            CsgOp::Cube {
+                size: IrVec3::new(x, y, z),
+            },
+        );
+        Self::with_ir(name, Manifold::cube(x, y, z), id, nodes)
     }
 
-    /// Create a cylinder along Z axis, centered at origin
+    /// Create a cylinder along Z axis, centered at origin.
     pub fn cylinder(name: impl Into<String>, radius: f64, height: f64, segments: u32) -> Self {
-        let manifold = Manifold::cylinder(radius, radius, height, segments);
-        Self::new(name, manifold)
+        let name = name.into();
+        let (id, nodes) = Self::make_leaf(
+            &name,
+            CsgOp::Cylinder {
+                radius,
+                height,
+                segments,
+            },
+        );
+        Self::with_ir(
+            name,
+            Manifold::cylinder(radius, radius, height, segments),
+            id,
+            nodes,
+        )
     }
 
-    /// Create a cone/tapered cylinder
+    /// Create a cone/tapered cylinder.
     pub fn cone(
         name: impl Into<String>,
         radius_bottom: f64,
@@ -82,83 +191,149 @@ impl Part {
         height: f64,
         segments: u32,
     ) -> Self {
-        let manifold = Manifold::cylinder(radius_bottom, radius_top, height, segments);
-        Self::new(name, manifold)
+        let name = name.into();
+        let (id, nodes) = Self::make_leaf(
+            &name,
+            CsgOp::Cone {
+                radius_bottom,
+                radius_top,
+                height,
+                segments,
+            },
+        );
+        Self::with_ir(
+            name,
+            Manifold::cylinder(radius_bottom, radius_top, height, segments),
+            id,
+            nodes,
+        )
     }
 
-    /// Create a sphere centered at origin
+    /// Create a sphere centered at origin.
     pub fn sphere(name: impl Into<String>, radius: f64, segments: u32) -> Self {
-        let manifold = Manifold::sphere(radius, segments);
-        Self::new(name, manifold)
+        let name = name.into();
+        let (id, nodes) = Self::make_leaf(&name, CsgOp::Sphere { radius, segments });
+        Self::with_ir(name, Manifold::sphere(radius, segments), id, nodes)
     }
 
-    /// Boolean difference (self - other)
+    /// Boolean difference (self - other).
     pub fn difference(&self, other: &Part) -> Self {
-        Self::new(
-            format!("{}-diff", self.name),
+        let result_name = format!("{}-diff", self.name);
+        let (id, nodes) = Self::make_binary(&result_name, self, other, |l, r| CsgOp::Difference {
+            left: l,
+            right: r,
+        });
+        Self::with_ir(
+            result_name,
             self.manifold.difference(&other.manifold),
+            id,
+            nodes,
         )
     }
 
-    /// Boolean union (self + other)
+    /// Boolean union (self + other).
     pub fn union(&self, other: &Part) -> Self {
-        Self::new(
-            format!("{}-union", self.name),
-            self.manifold.union(&other.manifold),
-        )
+        let result_name = format!("{}-union", self.name);
+        let (id, nodes) = Self::make_binary(&result_name, self, other, |l, r| CsgOp::Union {
+            left: l,
+            right: r,
+        });
+        Self::with_ir(result_name, self.manifold.union(&other.manifold), id, nodes)
     }
 
-    /// Boolean intersection
+    /// Boolean intersection.
     pub fn intersection(&self, other: &Part) -> Self {
-        Self::new(
-            format!("{}-intersect", self.name),
+        let result_name = format!("{}-intersect", self.name);
+        let (id, nodes) = Self::make_binary(&result_name, self, other, |l, r| {
+            CsgOp::Intersection { left: l, right: r }
+        });
+        Self::with_ir(
+            result_name,
             self.manifold.intersection(&other.manifold),
+            id,
+            nodes,
         )
     }
 
-    /// Translate the part
+    /// Translate the part.
     pub fn translate(&self, x: f64, y: f64, z: f64) -> Self {
-        Self::new(self.name.clone(), self.manifold.translate(x, y, z))
+        let (id, nodes) = Self::make_unary(&self.name, self, |child| CsgOp::Translate {
+            child,
+            offset: IrVec3::new(x, y, z),
+        });
+        Self::with_ir(
+            self.name.clone(),
+            self.manifold.translate(x, y, z),
+            id,
+            nodes,
+        )
     }
 
-    /// Translate by vector
+    /// Translate by vector.
     pub fn translate_vec(&self, v: Vector3<f64>) -> Self {
         self.translate(v.x, v.y, v.z)
     }
 
-    /// Rotate the part (angles in degrees)
+    /// Rotate the part (angles in degrees).
     pub fn rotate(&self, x_deg: f64, y_deg: f64, z_deg: f64) -> Self {
-        Self::new(self.name.clone(), self.manifold.rotate(x_deg, y_deg, z_deg))
+        let (id, nodes) = Self::make_unary(&self.name, self, |child| CsgOp::Rotate {
+            child,
+            angles: IrVec3::new(x_deg, y_deg, z_deg),
+        });
+        Self::with_ir(
+            self.name.clone(),
+            self.manifold.rotate(x_deg, y_deg, z_deg),
+            id,
+            nodes,
+        )
     }
 
-    /// Scale the part
+    /// Scale the part.
     pub fn scale(&self, x: f64, y: f64, z: f64) -> Self {
-        Self::new(self.name.clone(), self.manifold.scale(x, y, z))
+        let (id, nodes) = Self::make_unary(&self.name, self, |child| CsgOp::Scale {
+            child,
+            factor: IrVec3::new(x, y, z),
+        });
+        Self::with_ir(self.name.clone(), self.manifold.scale(x, y, z), id, nodes)
     }
 
-    /// Uniform scale
+    /// Uniform scale.
     pub fn scale_uniform(&self, s: f64) -> Self {
         self.scale(s, s, s)
     }
 
-    /// Check if geometry is empty
+    /// Check if geometry is empty.
     pub fn is_empty(&self) -> bool {
         self.manifold.is_empty()
     }
 
-    /// Get the mesh representation
+    /// Get the mesh representation.
     pub fn to_mesh(&self) -> Mesh {
         self.manifold.to_mesh()
     }
 
-    /// Export to binary STL bytes (delegates to [`export::stl::to_stl_bytes`])
+    /// Export to binary STL bytes (delegates to [`export::stl::to_stl_bytes`]).
     pub fn to_stl(&self) -> Result<Vec<u8>, CadError> {
         export::stl::to_stl_bytes(self)
     }
 
-    /// Write STL to file (delegates to [`export::stl::export_stl`])
+    /// Write STL to file (delegates to [`export::stl::export_stl`]).
     pub fn write_stl(&self, path: impl AsRef<std::path::Path>) -> Result<(), CadError> {
         export::stl::export_stl(self, path)
+    }
+
+    /// Extract the IR document for this part.
+    ///
+    /// The document contains all nodes in this part's construction DAG
+    /// with this part's root node as the single scene entry.
+    pub fn to_document(&self) -> Document {
+        let mut doc = Document::new();
+        doc.nodes = self.ir_nodes.clone();
+        doc.roots.push(SceneEntry {
+            root: self.ir_node_id,
+            material: "default".to_string(),
+        });
+        doc
     }
 }
 
@@ -485,6 +660,28 @@ impl Scene {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    /// Extract the IR document for the full scene (multi-root).
+    ///
+    /// Each scene node becomes a root entry in the document with its
+    /// assigned material key. All IR nodes from all parts are merged.
+    pub fn to_document(&self) -> Document {
+        let mut doc = Document::new();
+        for scene_node in &self.nodes {
+            doc.nodes.extend(
+                scene_node
+                    .part
+                    .ir_nodes
+                    .iter()
+                    .map(|(&k, v)| (k, v.clone())),
+            );
+            doc.roots.push(SceneEntry {
+                root: scene_node.part.ir_node_id,
+                material: scene_node.material_key.clone(),
+            });
+        }
+        doc
+    }
 }
 
 #[cfg(test)]
@@ -612,5 +809,105 @@ mod tests {
         let (min, max) = pattern.bounding_box();
         assert!(max[0] > 10.0);
         assert!(min[0] < -10.0 + 2.0); // at least close to -10
+    }
+
+    // =========================================================================
+    // IR recording tests
+    // =========================================================================
+
+    #[test]
+    fn test_ir_primitive() {
+        let cube = Part::cube("box", 10.0, 20.0, 30.0);
+        let doc = cube.to_document();
+        assert_eq!(doc.nodes.len(), 1);
+        assert_eq!(doc.roots.len(), 1);
+        let root = &doc.nodes[&doc.roots[0].root];
+        assert_eq!(root.name, Some("box".to_string()));
+        match &root.op {
+            CsgOp::Cube { size } => {
+                assert_eq!(size.x, 10.0);
+                assert_eq!(size.y, 20.0);
+                assert_eq!(size.z, 30.0);
+            }
+            other => panic!("expected Cube, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_ir_csg_dag() {
+        let cube = Part::cube("box", 10.0, 10.0, 10.0);
+        let cyl = Part::cylinder("hole", 3.0, 15.0, 32);
+        let result = cube.difference(&cyl);
+        let doc = result.to_document();
+        // 3 nodes: Cube, Cylinder, Difference
+        assert_eq!(doc.nodes.len(), 3);
+        assert_eq!(doc.roots.len(), 1);
+        let root = &doc.nodes[&doc.roots[0].root];
+        match &root.op {
+            CsgOp::Difference { left, right } => {
+                assert!(matches!(doc.nodes[left].op, CsgOp::Cube { .. }));
+                assert!(matches!(doc.nodes[right].op, CsgOp::Cylinder { .. }));
+            }
+            other => panic!("expected Difference, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_ir_transform_chain() {
+        let cube = Part::cube("box", 5.0, 5.0, 5.0);
+        let moved = cube.translate(1.0, 2.0, 3.0);
+        let rotated = moved.rotate(0.0, 0.0, 45.0);
+        let doc = rotated.to_document();
+        // 3 nodes: Cube, Translate, Rotate
+        assert_eq!(doc.nodes.len(), 3);
+        let root = &doc.nodes[&doc.roots[0].root];
+        match &root.op {
+            CsgOp::Rotate { child, angles } => {
+                assert_eq!(angles.z, 45.0);
+                match &doc.nodes[child].op {
+                    CsgOp::Translate {
+                        child: inner,
+                        offset,
+                    } => {
+                        assert_eq!(offset.x, 1.0);
+                        assert_eq!(offset.y, 2.0);
+                        assert_eq!(offset.z, 3.0);
+                        assert!(matches!(doc.nodes[inner].op, CsgOp::Cube { .. }));
+                    }
+                    other => panic!("expected Translate, got {other:?}"),
+                }
+            }
+            other => panic!("expected Rotate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_ir_roundtrip() {
+        let cube = Part::cube("box", 10.0, 20.0, 30.0);
+        let hole = Part::cylinder("hole", 3.0, 40.0, 32);
+        let result = cube.difference(&hole);
+        let doc = result.to_document();
+        let json = doc.to_json().expect("serialize");
+        let restored = Document::from_json(&json).expect("deserialize");
+        assert_eq!(doc, restored);
+        assert_eq!(restored.nodes.len(), 3);
+    }
+
+    #[test]
+    fn test_ir_scene() {
+        let body = Part::cube("body", 20.0, 10.0, 5.0);
+        let wheel = Part::cylinder("wheel", 3.0, 2.0, 32);
+
+        let mut scene = Scene::new("car");
+        scene.add(body, "steel");
+        scene.add(wheel, "rubber");
+
+        let doc = scene.to_document();
+        // 2 root entries
+        assert_eq!(doc.roots.len(), 2);
+        assert_eq!(doc.roots[0].material, "steel");
+        assert_eq!(doc.roots[1].material, "rubber");
+        // 2 nodes total (one per primitive)
+        assert_eq!(doc.nodes.len(), 2);
     }
 }

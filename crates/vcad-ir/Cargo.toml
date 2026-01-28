@@ -1,0 +1,11 @@
+[package]
+name = "vcad-ir"
+description = "Intermediate representation for the vcad CAD ecosystem"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
