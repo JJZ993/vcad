@@ -9,6 +9,7 @@ members = [
     "crates/vcad-kernel-primitives",
     "crates/vcad-kernel-tessellate",
     "crates/vcad-kernel-booleans",
+    "crates/vcad-kernel-nurbs",
     "crates/vcad-kernel",
 ]
 
@@ -38,3 +39,4 @@ vcad-kernel-geom = { path = "crates/vcad-kernel-geom" }
 vcad-kernel-primitives = { path = "crates/vcad-kernel-primitives" }
 vcad-kernel-tessellate = { path = "crates/vcad-kernel-tessellate" }
 vcad-kernel-booleans = { path = "crates/vcad-kernel-booleans" }
+vcad-kernel-nurbs = { path = "crates/vcad-kernel-nurbs" }

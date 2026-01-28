@@ -849,6 +849,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vcad-kernel-nurbs"
+version = "0.1.0"
+dependencies = [
+ "vcad-kernel-geom",
+ "vcad-kernel-math",
+]
+
+[[package]]
 name = "vcad-kernel-primitives"
 version = "0.1.0"
 dependencies = [
