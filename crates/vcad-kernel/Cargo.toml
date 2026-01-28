@@ -13,3 +13,4 @@ vcad-kernel-geom = { path = "../vcad-kernel-geom" }
 vcad-kernel-primitives = { path = "../vcad-kernel-primitives" }
 vcad-kernel-tessellate = { path = "../vcad-kernel-tessellate" }
 vcad-kernel-booleans = { path = "../vcad-kernel-booleans" }
+vcad-kernel-fillet = { path = "../vcad-kernel-fillet" }

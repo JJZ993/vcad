@@ -16,6 +16,7 @@
 //! ```
 
 pub use vcad_kernel_booleans;
+pub use vcad_kernel_fillet;
 pub use vcad_kernel_geom;
 pub use vcad_kernel_math;
 pub use vcad_kernel_primitives;
@@ -160,6 +161,47 @@ impl Solid {
                     segments,
                 }
             }
+        }
+    }
+
+    // =========================================================================
+    // Fillet & chamfer
+    // =========================================================================
+
+    /// Chamfer all edges of the solid by the given distance.
+    ///
+    /// Each edge is replaced by a planar bevel face, each original face is
+    /// trimmed inward, and each vertex becomes a triangular face.
+    ///
+    /// Only works on B-rep solids with planar faces (e.g., cubes, extruded
+    /// prisms). Returns the solid unchanged for mesh-only or empty solids.
+    pub fn chamfer(&self, distance: f64) -> Solid {
+        match &self.repr {
+            SolidRepr::BRep(brep) => Solid {
+                repr: SolidRepr::BRep(Box::new(vcad_kernel_fillet::chamfer_all_edges(
+                    brep, distance,
+                ))),
+                segments: self.segments,
+            },
+            _ => self.clone(),
+        }
+    }
+
+    /// Fillet all edges of the solid with the given radius.
+    ///
+    /// Each edge is replaced by a cylindrical blend surface tangent to both
+    /// adjacent faces, each original face is trimmed inward, and each vertex
+    /// becomes a triangular face.
+    ///
+    /// Only works on B-rep solids with planar faces. Returns the solid
+    /// unchanged for mesh-only or empty solids.
+    pub fn fillet(&self, radius: f64) -> Solid {
+        match &self.repr {
+            SolidRepr::BRep(brep) => Solid {
+                repr: SolidRepr::BRep(Box::new(vcad_kernel_fillet::fillet_all_edges(brep, radius))),
+                segments: self.segments,
+            },
+            _ => self.clone(),
         }
     }
 
@@ -590,5 +632,37 @@ mod tests {
             cube.num_triangles() >= 12,
             "cube should have at least 12 triangles"
         );
+    }
+
+    #[test]
+    fn test_chamfer_cube() {
+        let cube = Solid::cube(10.0, 10.0, 10.0);
+        let chamfered = cube.chamfer(1.0);
+        assert!(!chamfered.is_empty());
+        let vol = chamfered.volume();
+        // Chamfered cube: V = L³ - 6d²(L-d) = 1000 - 54 = 946
+        assert!(
+            (vol - 946.0).abs() < 5.0,
+            "chamfered cube volume: expected ~946, got {vol}"
+        );
+    }
+
+    #[test]
+    fn test_fillet_cube() {
+        let cube = Solid::cube(10.0, 10.0, 10.0);
+        let filleted = cube.fillet(1.0);
+        assert!(!filleted.is_empty());
+        // Fillet should have more triangles than original cube due to curved surfaces
+        assert!(
+            filleted.num_triangles() > cube.num_triangles(),
+            "filleted cube should have more triangles than plain cube"
+        );
+    }
+
+    #[test]
+    fn test_chamfer_empty() {
+        let empty = Solid::empty();
+        let chamfered = empty.chamfer(1.0);
+        assert!(chamfered.is_empty());
     }
 }
