@@ -14,9 +14,11 @@ export function TransformGizmo({
 }: {
   orbitControls: RefObject<OrbitControlsImpl | null>;
 }) {
-  const selectedPartId = useUiStore((s) => s.selectedPartId);
+  const selectedPartIds = useUiStore((s) => s.selectedPartIds);
   const transformMode = useUiStore((s) => s.transformMode);
   const setDraggingGizmo = useUiStore((s) => s.setDraggingGizmo);
+  const gridSnap = useUiStore((s) => s.gridSnap);
+  const snapIncrement = useUiStore((s) => s.snapIncrement);
 
   const parts = useDocumentStore((s) => s.parts);
   const document = useDocumentStore((s) => s.document);
@@ -30,8 +32,13 @@ export function TransformGizmo({
   const controlsRef = useRef<any>(null);
   const isDraggingRef = useRef(false);
 
-  const selectedPart = selectedPartId
-    ? parts.find((p) => p.id === selectedPartId)
+  // Only show gizmo for single selection
+  const singleSelectedId =
+    selectedPartIds.size === 1
+      ? Array.from(selectedPartIds)[0]!
+      : null;
+  const selectedPart = singleSelectedId
+    ? parts.find((p) => p.id === singleSelectedId)
     : null;
 
   // Sync proxy position from IR when selection/document changes (but not during drag)
@@ -94,19 +101,19 @@ export function TransformGizmo({
     if (!controls) return;
 
     const onObjectChange = () => {
-      if (!proxy || !selectedPartId) return;
+      if (!proxy || !singleSelectedId) return;
 
       const store = useDocumentStore.getState();
 
       if (transformMode === "translate") {
         store.setTranslation(
-          selectedPartId,
+          singleSelectedId,
           { x: proxy.position.x, y: proxy.position.y, z: proxy.position.z },
           true, // skipUndo — we pushed at drag start
         );
       } else if (transformMode === "rotate") {
         store.setRotation(
-          selectedPartId,
+          singleSelectedId,
           {
             x: proxy.rotation.x * RAD2DEG,
             y: proxy.rotation.y * RAD2DEG,
@@ -116,7 +123,7 @@ export function TransformGizmo({
         );
       } else if (transformMode === "scale") {
         store.setScale(
-          selectedPartId,
+          singleSelectedId,
           { x: proxy.scale.x, y: proxy.scale.y, z: proxy.scale.z },
           true,
         );
@@ -127,9 +134,17 @@ export function TransformGizmo({
     return () => {
       controls.removeEventListener("objectChange", onObjectChange);
     };
-  }, [proxy, selectedPartId, transformMode]);
+  }, [proxy, singleSelectedId, transformMode]);
 
   if (!selectedPart) return null;
+
+  const snapProps = gridSnap
+    ? {
+        translationSnap: snapIncrement,
+        rotationSnap: (Math.PI / 180) * 15,
+        scaleSnap: 0.1,
+      }
+    : {};
 
   return (
     <>
@@ -140,6 +155,7 @@ export function TransformGizmo({
           object={proxy}
           mode={transformMode}
           size={0.8}
+          {...snapProps}
         />
       )}
     </>

@@ -7,13 +7,23 @@ import type {
   Vec3,
 } from "@vcad/ir";
 import { createDocument } from "@vcad/ir";
-import type { PartInfo, PrimitiveKind } from "@/types";
+import type { PartInfo, PrimitiveKind, BooleanType, BooleanPartInfo } from "@/types";
+import { isPrimitivePart } from "@/types";
 
 const MAX_UNDO = 50;
 
 interface Snapshot {
   document: string; // JSON-serialized Document
   parts: PartInfo[];
+  nextNodeId: number;
+  nextPartNum: number;
+}
+
+export interface VcadFile {
+  document: Document;
+  parts: PartInfo[];
+  nextNodeId: number;
+  nextPartNum: number;
 }
 
 interface DocumentState {
@@ -34,6 +44,10 @@ interface DocumentState {
   setScale: (partId: string, factor: Vec3, skipUndo?: boolean) => void;
   updatePrimitiveOp: (partId: string, op: CsgOp, skipUndo?: boolean) => void;
   renamePart: (partId: string, name: string) => void;
+  applyBoolean: (type: BooleanType, partIdA: string, partIdB: string) => string | null;
+  duplicateParts: (partIds: string[]) => string[];
+  loadDocument: (file: VcadFile) => void;
+  setPartMaterial: (partId: string, materialKey: string) => void;
   pushUndoSnapshot: () => void;
   undo: () => void;
   redo: () => void;
@@ -47,6 +61,8 @@ function snapshot(state: DocumentState): Snapshot {
   return {
     document: JSON.stringify(state.document),
     parts: state.parts.map((p) => ({ ...p })),
+    nextNodeId: state.nextNodeId,
+    nextPartNum: state.nextPartNum,
   };
 }
 
@@ -158,8 +174,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     const undoState = pushUndo(state);
     const newDoc = structuredClone(state.document);
 
-    // Remove nodes
-    delete newDoc.nodes[String(part.primitiveNodeId)];
+    // Remove nodes based on part type
+    if (isPrimitivePart(part)) {
+      delete newDoc.nodes[String(part.primitiveNodeId)];
+    } else {
+      delete newDoc.nodes[String(part.booleanNodeId)];
+    }
     delete newDoc.nodes[String(part.scaleNodeId)];
     delete newDoc.nodes[String(part.rotateNodeId)];
     delete newDoc.nodes[String(part.translateNodeId)];
@@ -224,13 +244,248 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   updatePrimitiveOp: (partId, op, skipUndo) => {
     const state = get();
     const part = state.parts.find((p) => p.id === partId);
-    if (!part) return;
+    if (!part || !isPrimitivePart(part)) return;
 
     const undoState = skipUndo ? {} : pushUndo(state);
     const newDoc = structuredClone(state.document);
     const node = newDoc.nodes[String(part.primitiveNodeId)];
     if (node) {
       node.op = op;
+    }
+
+    set({ document: newDoc, ...undoState });
+  },
+
+  applyBoolean: (type, partIdA, partIdB) => {
+    const state = get();
+    const partA = state.parts.find((p) => p.id === partIdA);
+    const partB = state.parts.find((p) => p.id === partIdB);
+    if (!partA || !partB) return null;
+
+    let nid = state.nextNodeId;
+    const partNum = state.nextPartNum;
+
+    const BOOL_OPS: Record<BooleanType, string> = {
+      union: "Union",
+      difference: "Difference",
+      intersection: "Intersection",
+    };
+
+    const booleanId = nid++;
+    const scaleId = nid++;
+    const rotateId = nid++;
+    const translateId = nid++;
+
+    const boolOp: CsgOp = {
+      type: BOOL_OPS[type] as "Union" | "Difference" | "Intersection",
+      left: partA.translateNodeId,
+      right: partB.translateNodeId,
+    } as CsgOp;
+
+    const scaleOp: CsgOp = {
+      type: "Scale",
+      child: booleanId,
+      factor: { x: 1, y: 1, z: 1 },
+    };
+    const rotateOp: CsgOp = {
+      type: "Rotate",
+      child: scaleId,
+      angles: { x: 0, y: 0, z: 0 },
+    };
+    const translateOp: CsgOp = {
+      type: "Translate",
+      child: rotateId,
+      offset: { x: 0, y: 0, z: 0 },
+    };
+
+    const BOOL_LABELS: Record<BooleanType, string> = {
+      union: "Union",
+      difference: "Difference",
+      intersection: "Intersection",
+    };
+
+    const partId = `part-${partNum}`;
+    const name = `${BOOL_LABELS[type]} ${partNum}`;
+
+    const undoState = pushUndo(state);
+    const newDoc = structuredClone(state.document);
+
+    newDoc.nodes[String(booleanId)] = makeNode(booleanId, null, boolOp);
+    newDoc.nodes[String(scaleId)] = makeNode(scaleId, null, scaleOp);
+    newDoc.nodes[String(rotateId)] = makeNode(rotateId, null, rotateOp);
+    newDoc.nodes[String(translateId)] = makeNode(translateId, name, translateOp);
+
+    // Remove source parts from roots (nodes stay for DAG references)
+    newDoc.roots = newDoc.roots.filter(
+      (r) => r.root !== partA.translateNodeId && r.root !== partB.translateNodeId,
+    );
+    newDoc.roots.push({ root: translateId, material: "default" });
+
+    const boolPartInfo: BooleanPartInfo = {
+      id: partId,
+      name,
+      kind: "boolean",
+      booleanType: type,
+      booleanNodeId: booleanId,
+      scaleNodeId: scaleId,
+      rotateNodeId: rotateId,
+      translateNodeId: translateId,
+      sourcePartIds: [partIdA, partIdB],
+    };
+
+    // Remove source parts from parts list, add boolean result
+    const newParts = state.parts.filter(
+      (p) => p.id !== partIdA && p.id !== partIdB,
+    );
+    newParts.push(boolPartInfo);
+
+    set({
+      document: newDoc,
+      parts: newParts,
+      nextNodeId: nid,
+      nextPartNum: partNum + 1,
+      ...undoState,
+    });
+
+    return partId;
+  },
+
+  duplicateParts: (partIds) => {
+    const state = get();
+    const partsToClone = state.parts.filter((p) => partIds.includes(p.id));
+    if (partsToClone.length === 0) return [];
+
+    let nid = state.nextNodeId;
+    let pnum = state.nextPartNum;
+    const undoState = pushUndo(state);
+    const newDoc = structuredClone(state.document);
+    const newParts = [...state.parts];
+    const newIds: string[] = [];
+
+    for (const srcPart of partsToClone) {
+      // Build a map of old node IDs to new node IDs for this part's subgraph
+      const idMap = new Map<NodeId, NodeId>();
+
+      // Collect all node IDs that belong to this part
+      const nodeIdsToClone: NodeId[] = [];
+      if (isPrimitivePart(srcPart)) {
+        nodeIdsToClone.push(srcPart.primitiveNodeId);
+      } else {
+        // For boolean parts, we need the boolean node (the source nodes stay shared)
+        nodeIdsToClone.push(srcPart.booleanNodeId);
+      }
+      nodeIdsToClone.push(srcPart.scaleNodeId, srcPart.rotateNodeId, srcPart.translateNodeId);
+
+      // Allocate new IDs
+      for (const oldId of nodeIdsToClone) {
+        idMap.set(oldId, nid++);
+      }
+
+      // Clone nodes with remapped IDs
+      for (const oldId of nodeIdsToClone) {
+        const oldNode = newDoc.nodes[String(oldId)];
+        if (!oldNode) continue;
+
+        const newId = idMap.get(oldId)!;
+        const clonedOp = structuredClone(oldNode.op);
+
+        // Remap child references
+        if ("child" in clonedOp && typeof clonedOp.child === "number") {
+          clonedOp.child = idMap.get(clonedOp.child) ?? clonedOp.child;
+        }
+        if ("left" in clonedOp && typeof clonedOp.left === "number") {
+          clonedOp.left = idMap.get(clonedOp.left) ?? clonedOp.left;
+        }
+        if ("right" in clonedOp && typeof clonedOp.right === "number") {
+          clonedOp.right = idMap.get(clonedOp.right) ?? clonedOp.right;
+        }
+
+        newDoc.nodes[String(newId)] = makeNode(newId, oldNode.name, clonedOp);
+      }
+
+      // Offset the clone by +10mm on X
+      const newTranslateId = idMap.get(srcPart.translateNodeId)!;
+      const newTranslateNode = newDoc.nodes[String(newTranslateId)];
+      if (newTranslateNode?.op.type === "Translate") {
+        newTranslateNode.op.offset = {
+          ...newTranslateNode.op.offset,
+          x: newTranslateNode.op.offset.x + 10,
+        };
+      }
+
+      // Add to roots
+      newDoc.roots.push({ root: newTranslateId, material: "default" });
+
+      // Build new PartInfo
+      const partId = `part-${pnum}`;
+      const partName = `${srcPart.name} copy`;
+
+      if (newTranslateNode) newTranslateNode.name = partName;
+
+      let clonedPartInfo: PartInfo;
+      if (isPrimitivePart(srcPart)) {
+        clonedPartInfo = {
+          id: partId,
+          name: partName,
+          kind: srcPart.kind,
+          primitiveNodeId: idMap.get(srcPart.primitiveNodeId)!,
+          scaleNodeId: idMap.get(srcPart.scaleNodeId)!,
+          rotateNodeId: idMap.get(srcPart.rotateNodeId)!,
+          translateNodeId: newTranslateId,
+        };
+      } else {
+        clonedPartInfo = {
+          id: partId,
+          name: partName,
+          kind: "boolean",
+          booleanType: srcPart.booleanType,
+          booleanNodeId: idMap.get(srcPart.booleanNodeId)!,
+          scaleNodeId: idMap.get(srcPart.scaleNodeId)!,
+          rotateNodeId: idMap.get(srcPart.rotateNodeId)!,
+          translateNodeId: newTranslateId,
+          sourcePartIds: srcPart.sourcePartIds,
+        };
+      }
+
+      newParts.push(clonedPartInfo);
+      newIds.push(partId);
+      pnum++;
+    }
+
+    set({
+      document: newDoc,
+      parts: newParts,
+      nextNodeId: nid,
+      nextPartNum: pnum,
+      ...undoState,
+    });
+
+    return newIds;
+  },
+
+  loadDocument: (file) => {
+    set({
+      document: file.document,
+      parts: file.parts,
+      nextNodeId: file.nextNodeId,
+      nextPartNum: file.nextPartNum,
+      undoStack: [],
+      redoStack: [],
+    });
+  },
+
+  setPartMaterial: (partId, materialKey) => {
+    const state = get();
+    const part = state.parts.find((p) => p.id === partId);
+    if (!part) return;
+
+    const undoState = pushUndo(state);
+    const newDoc = structuredClone(state.document);
+
+    // Update the root entry's material
+    const rootEntry = newDoc.roots.find((r) => r.root === part.translateNodeId);
+    if (rootEntry) {
+      rootEntry.material = materialKey;
     }
 
     set({ document: newDoc, ...undoState });
@@ -262,6 +517,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({
       document: JSON.parse(prevSnap.document) as Document,
       parts: prevSnap.parts,
+      nextNodeId: prevSnap.nextNodeId,
+      nextPartNum: prevSnap.nextPartNum,
       undoStack: state.undoStack.slice(0, -1),
       redoStack: [...state.redoStack, currentSnap],
     });
@@ -277,6 +534,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({
       document: JSON.parse(nextSnap.document) as Document,
       parts: nextSnap.parts,
+      nextNodeId: nextSnap.nextNodeId,
+      nextPartNum: nextSnap.nextPartNum,
       undoStack: [...state.undoStack, currentSnap],
       redoStack: state.redoStack.slice(0, -1),
     });

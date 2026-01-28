@@ -7,14 +7,14 @@ const BG_DARK = "#0f172a";
 const BG_LIGHT = "#f1f5f9";
 
 export function Viewport() {
-  const select = useUiStore((s) => s.select);
+  const clearSelection = useUiStore((s) => s.clearSelection);
   const { isDark } = useTheme();
 
   return (
     <div className="fixed inset-0">
       <Canvas
         camera={{ position: [50, 50, 50], fov: 50, near: 0.1, far: 10000 }}
-        onPointerMissed={() => select(null)}
+        onPointerMissed={() => clearSelection()}
         gl={{ antialias: true }}
         style={{ background: isDark ? BG_DARK : BG_LIGHT }}
       >

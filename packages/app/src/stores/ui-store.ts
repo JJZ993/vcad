@@ -2,19 +2,29 @@ import { create } from "zustand";
 import type { Theme, ToolMode, TransformMode } from "@/types";
 
 interface UiState {
-  selectedPartId: string | null;
+  selectedPartIds: Set<string>;
   toolMode: ToolMode;
   transformMode: TransformMode;
   featureTreeOpen: boolean;
   theme: Theme;
   isDraggingGizmo: boolean;
+  showWireframe: boolean;
+  gridSnap: boolean;
+  snapIncrement: number;
+  clipboard: string[];
 
   select: (partId: string | null) => void;
+  toggleSelect: (partId: string) => void;
+  selectMultiple: (partIds: string[]) => void;
+  clearSelection: () => void;
   setToolMode: (mode: ToolMode) => void;
   setTransformMode: (mode: TransformMode) => void;
   toggleFeatureTree: () => void;
   toggleTheme: () => void;
+  toggleWireframe: () => void;
+  toggleGridSnap: () => void;
   setDraggingGizmo: (dragging: boolean) => void;
+  copyToClipboard: (partIds: string[]) => void;
 }
 
 function loadTheme(): Theme {
@@ -50,14 +60,35 @@ export const useUiStore = create<UiState>((set) => {
   queueMicrotask(() => applyTheme(initialTheme));
 
   return {
-    selectedPartId: null,
+    selectedPartIds: new Set(),
     toolMode: "select",
     transformMode: "translate",
     featureTreeOpen: loadFeatureTree(),
     theme: initialTheme,
     isDraggingGizmo: false,
+    showWireframe: false,
+    gridSnap: false,
+    snapIncrement: 5,
+    clipboard: [],
 
-    select: (partId) => set({ selectedPartId: partId }),
+    select: (partId) =>
+      set({ selectedPartIds: partId ? new Set([partId]) : new Set() }),
+
+    toggleSelect: (partId) =>
+      set((s) => {
+        const next = new Set(s.selectedPartIds);
+        if (next.has(partId)) {
+          next.delete(partId);
+        } else {
+          next.add(partId);
+        }
+        return { selectedPartIds: next };
+      }),
+
+    selectMultiple: (partIds) =>
+      set({ selectedPartIds: new Set(partIds) }),
+
+    clearSelection: () => set({ selectedPartIds: new Set() }),
 
     setToolMode: (mode) => set({ toolMode: mode }),
 
@@ -77,6 +108,14 @@ export const useUiStore = create<UiState>((set) => {
         return { theme: next };
       }),
 
+    toggleWireframe: () =>
+      set((s) => ({ showWireframe: !s.showWireframe })),
+
+    toggleGridSnap: () =>
+      set((s) => ({ gridSnap: !s.gridSnap })),
+
     setDraggingGizmo: (dragging) => set({ isDraggingGizmo: dragging }),
+
+    copyToClipboard: (partIds) => set({ clipboard: partIds }),
   };
 });

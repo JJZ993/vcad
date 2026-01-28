@@ -27,6 +27,17 @@ const SHORTCUTS = [
   { keys: "Esc", desc: "Deselect" },
   { keys: "\u2318Z", desc: "Undo" },
   { keys: "\u2318\u21E7Z", desc: "Redo" },
+  { keys: "\u2318D", desc: "Duplicate" },
+  { keys: "\u2318C/V", desc: "Copy / Paste" },
+  { keys: "\u2318S", desc: "Save" },
+  { keys: "\u2318O", desc: "Open" },
+  { keys: "\u2318\u21E7U", desc: "Union (2 sel)" },
+  { keys: "\u2318\u21E7D", desc: "Difference (2 sel)" },
+  { keys: "\u2318\u21E7I", desc: "Intersection (2 sel)" },
+  { keys: "X", desc: "Wireframe" },
+  { keys: "G", desc: "Grid snap" },
+  { keys: "F", desc: "Focus selection" },
+  { keys: "Shift+Click", desc: "Multi-select" },
 ];
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

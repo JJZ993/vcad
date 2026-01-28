@@ -5,13 +5,15 @@ import { TransformGizmo } from "./TransformGizmo";
 import { useEngineStore } from "@/stores/engine-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { useUiStore } from "@/stores/ui-store";
+import { useCameraControls } from "@/hooks/useCameraControls";
 import { useRef } from "react";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 
 export function ViewportContent() {
+  useCameraControls();
   const scene = useEngineStore((s) => s.scene);
   const parts = useDocumentStore((s) => s.parts);
-  const selectedPartId = useUiStore((s) => s.selectedPartId);
+  const selectedPartIds = useUiStore((s) => s.selectedPartIds);
   const orbitRef = useRef<OrbitControlsImpl>(null);
 
   return (
@@ -33,7 +35,7 @@ export function ViewportContent() {
             key={partInfo.id}
             partInfo={partInfo}
             mesh={evalPart.mesh}
-            selected={partInfo.id === selectedPartId}
+            selected={selectedPartIds.has(partInfo.id)}
           />
         );
       })}

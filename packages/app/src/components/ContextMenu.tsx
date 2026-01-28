@@ -1,0 +1,129 @@
+import * as RadixContextMenu from "@radix-ui/react-context-menu";
+import {
+  Copy,
+  Trash,
+  PencilSimple,
+  Unite,
+  Subtract,
+  Intersect,
+} from "@phosphor-icons/react";
+import { useDocumentStore } from "@/stores/document-store";
+import { useUiStore } from "@/stores/ui-store";
+import type { ReactNode } from "react";
+
+function MenuItem({
+  icon: Icon,
+  label,
+  shortcut,
+  disabled,
+  onClick,
+}: {
+  icon: typeof Copy;
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <RadixContextMenu.Item
+      className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-text outline-none cursor-pointer data-[disabled]:opacity-40 data-[disabled]:cursor-default data-[highlighted]:bg-accent/20 data-[highlighted]:text-accent"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Icon size={14} className="shrink-0" />
+      <span className="flex-1">{label}</span>
+      {shortcut && (
+        <span className="ml-4 text-[10px] text-text-muted">{shortcut}</span>
+      )}
+    </RadixContextMenu.Item>
+  );
+}
+
+export function ContextMenu({ children }: { children: ReactNode }) {
+  const selectedPartIds = useUiStore((s) => s.selectedPartIds);
+  const clearSelection = useUiStore((s) => s.clearSelection);
+  const select = useUiStore((s) => s.select);
+  const removePart = useDocumentStore((s) => s.removePart);
+  const duplicateParts = useDocumentStore((s) => s.duplicateParts);
+  const applyBoolean = useDocumentStore((s) => s.applyBoolean);
+
+  const hasSelection = selectedPartIds.size > 0;
+  const hasTwoSelected = selectedPartIds.size === 2;
+
+  function handleDelete() {
+    for (const id of selectedPartIds) {
+      removePart(id);
+    }
+    clearSelection();
+  }
+
+  function handleDuplicate() {
+    const ids = Array.from(selectedPartIds);
+    const newIds = duplicateParts(ids);
+    useUiStore.getState().selectMultiple(newIds);
+  }
+
+  function handleBoolean(type: "union" | "difference" | "intersection") {
+    if (!hasTwoSelected) return;
+    const ids = Array.from(selectedPartIds);
+    const newId = applyBoolean(type, ids[0]!, ids[1]!);
+    if (newId) select(newId);
+  }
+
+  return (
+    <RadixContextMenu.Root>
+      <RadixContextMenu.Trigger asChild>{children}</RadixContextMenu.Trigger>
+      <RadixContextMenu.Portal>
+        <RadixContextMenu.Content className="z-50 min-w-[180px] rounded-lg border border-border bg-card p-1 shadow-xl backdrop-blur-xl">
+          <MenuItem
+            icon={Copy}
+            label="Duplicate"
+            shortcut="Ctrl+D"
+            disabled={!hasSelection}
+            onClick={handleDuplicate}
+          />
+          <MenuItem
+            icon={PencilSimple}
+            label="Rename"
+            disabled={selectedPartIds.size !== 1}
+            onClick={() => {
+              // Dispatch custom event for inline rename
+              window.dispatchEvent(new CustomEvent("vcad:rename-part"));
+            }}
+          />
+          <MenuItem
+            icon={Trash}
+            label="Delete"
+            shortcut="Del"
+            disabled={!hasSelection}
+            onClick={handleDelete}
+          />
+
+          <RadixContextMenu.Separator className="my-1 h-px bg-border" />
+
+          <MenuItem
+            icon={Unite}
+            label="Union"
+            shortcut="Ctrl+Shift+U"
+            disabled={!hasTwoSelected}
+            onClick={() => handleBoolean("union")}
+          />
+          <MenuItem
+            icon={Subtract}
+            label="Difference"
+            shortcut="Ctrl+Shift+D"
+            disabled={!hasTwoSelected}
+            onClick={() => handleBoolean("difference")}
+          />
+          <MenuItem
+            icon={Intersect}
+            label="Intersection"
+            shortcut="Ctrl+Shift+I"
+            disabled={!hasTwoSelected}
+            onClick={() => handleBoolean("intersection")}
+          />
+        </RadixContextMenu.Content>
+      </RadixContextMenu.Portal>
+    </RadixContextMenu.Root>
+  );
+}
