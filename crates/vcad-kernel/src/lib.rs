@@ -193,14 +193,29 @@ impl Solid {
         match &self.repr {
             SolidRepr::Empty => Solid::empty(),
             SolidRepr::BRep(brep) => {
-                // Transform all vertex positions in the topology
                 let mut new_brep = brep.as_ref().clone();
+                // Transform all vertex positions
                 for (_id, vertex) in &mut new_brep.topology.vertices {
                     vertex.point = transform.apply_point(&vertex.point);
                 }
-                // TODO: also transform surface definitions for proper B-rep.
-                // For now, tessellation uses vertex positions directly for
-                // planar faces, and the mesh is correct.
+                // Transform all surface definitions
+                for surface in &mut new_brep.geometry.surfaces {
+                    *surface = surface.transform(transform);
+                }
+                // If negative determinant (mirror), flip face orientations
+                let det = transform.matrix.fixed_view::<3, 3>(0, 0).determinant();
+                if det < 0.0 {
+                    for (_id, face) in &mut new_brep.topology.faces {
+                        face.orientation = match face.orientation {
+                            vcad_kernel_topo::Orientation::Forward => {
+                                vcad_kernel_topo::Orientation::Reversed
+                            }
+                            vcad_kernel_topo::Orientation::Reversed => {
+                                vcad_kernel_topo::Orientation::Forward
+                            }
+                        };
+                    }
+                }
                 Solid {
                     repr: SolidRepr::BRep(Box::new(new_brep)),
                     segments: self.segments,
@@ -266,9 +281,42 @@ impl Solid {
     }
 
     /// Compute the axis-aligned bounding box as `(min, max)`.
+    ///
+    /// For B-rep solids with only planar faces, computes directly from vertex
+    /// positions (no tessellation needed). For curved surfaces, falls back to
+    /// the tessellated mesh since vertices alone don't capture the full extent.
     pub fn bounding_box(&self) -> ([f64; 3], [f64; 3]) {
-        let mesh = self.to_mesh(self.segments);
-        compute_bounding_box(&mesh)
+        match &self.repr {
+            SolidRepr::BRep(brep) => {
+                use vcad_kernel_geom::SurfaceKind;
+                let all_planar = brep
+                    .geometry
+                    .surfaces
+                    .iter()
+                    .all(|s| s.surface_type() == SurfaceKind::Plane);
+                if all_planar {
+                    let mut min = [f64::MAX; 3];
+                    let mut max = [f64::MIN; 3];
+                    for (_id, v) in &brep.topology.vertices {
+                        let p = v.point;
+                        min[0] = min[0].min(p.x);
+                        min[1] = min[1].min(p.y);
+                        min[2] = min[2].min(p.z);
+                        max[0] = max[0].max(p.x);
+                        max[1] = max[1].max(p.y);
+                        max[2] = max[2].max(p.z);
+                    }
+                    (min, max)
+                } else {
+                    let mesh = self.to_mesh(self.segments);
+                    compute_bounding_box(&mesh)
+                }
+            }
+            _ => {
+                let mesh = self.to_mesh(self.segments);
+                compute_bounding_box(&mesh)
+            }
+        }
     }
 
     /// Compute the geometric centroid (volume-weighted center of mass).
@@ -481,6 +529,38 @@ mod tests {
         assert!((com[0] - 5.0).abs() < 0.1, "cx: {}", com[0]);
         assert!((com[1] - 5.0).abs() < 0.1, "cy: {}", com[1]);
         assert!((com[2] - 5.0).abs() < 0.1, "cz: {}", com[2]);
+    }
+
+    #[test]
+    fn test_rotate_cube_volume() {
+        let cube = Solid::cube(10.0, 10.0, 10.0);
+        let rotated = cube.rotate(45.0, 30.0, 60.0);
+        let vol = rotated.volume();
+        // Volume should be preserved after rotation
+        assert!((vol - 1000.0).abs() < 2.0, "expected ~1000, got {vol}");
+    }
+
+    #[test]
+    fn test_translate_cylinder_bbox() {
+        let cyl = Solid::cylinder(5.0, 10.0, 32);
+        let moved = cyl.translate(100.0, 200.0, 300.0);
+        let (min, max) = moved.bounding_box();
+        // Center should be offset by translation
+        assert!((min[0] - 95.0).abs() < 0.5, "min x: {}", min[0]);
+        assert!((max[0] - 105.0).abs() < 0.5, "max x: {}", max[0]);
+        assert!((min[2] - 300.0).abs() < 0.5, "min z: {}", min[2]);
+        assert!((max[2] - 310.0).abs() < 0.5, "max z: {}", max[2]);
+    }
+
+    #[test]
+    fn test_scale_cylinder_volume() {
+        let cyl = Solid::cylinder(5.0, 10.0, 64);
+        let base_vol = cyl.volume();
+        let scaled = cyl.scale(2.0, 2.0, 2.0);
+        let scaled_vol = scaled.volume();
+        // Volume scales by 2^3 = 8
+        let ratio = scaled_vol / base_vol;
+        assert!((ratio - 8.0).abs() < 0.5, "expected ratio ~8, got {ratio}");
     }
 
     #[test]

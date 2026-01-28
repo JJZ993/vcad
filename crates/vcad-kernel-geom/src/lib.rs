@@ -8,7 +8,7 @@
 
 use std::any::Any;
 use std::f64::consts::PI;
-use vcad_kernel_math::{Dir3, Point2, Point3, Vec2, Vec3};
+use vcad_kernel_math::{Dir3, Point2, Point3, Transform, Vec2, Vec3};
 
 // =============================================================================
 // Surface types
@@ -52,6 +52,9 @@ pub trait Surface: Send + Sync + std::fmt::Debug {
 
     /// Downcast to a concrete type via `Any`.
     fn as_any(&self) -> &dyn Any;
+
+    /// Apply an affine transform to this surface, returning a new surface.
+    fn transform(&self, t: &Transform) -> Box<dyn Surface>;
 }
 
 impl Clone for Box<dyn Surface> {
@@ -172,6 +175,13 @@ impl Surface for Plane {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn transform(&self, t: &Transform) -> Box<dyn Surface> {
+        let new_origin = t.apply_point(&self.origin);
+        let new_x = t.apply_vec(self.x_dir.as_ref());
+        let new_y = t.apply_vec(self.y_dir.as_ref());
+        Box::new(Plane::new(new_origin, new_x, new_y))
+    }
 }
 
 // =============================================================================
@@ -264,6 +274,20 @@ impl Surface for CylinderSurface {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn transform(&self, t: &Transform) -> Box<dyn Surface> {
+        let new_center = t.apply_point(&self.center);
+        let new_axis = t.apply_vec(self.axis.as_ref());
+        let new_ref = t.apply_vec(self.ref_dir.as_ref());
+        // Scale factor affects radius — use the length of the transformed ref_dir
+        let scale = new_ref.norm();
+        Box::new(CylinderSurface {
+            center: new_center,
+            axis: Dir3::new_normalize(new_axis),
+            ref_dir: Dir3::new_normalize(new_ref),
+            radius: self.radius * scale,
+        })
     }
 }
 
@@ -385,6 +409,20 @@ impl Surface for ConeSurface {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn transform(&self, t: &Transform) -> Box<dyn Surface> {
+        let new_apex = t.apply_point(&self.apex);
+        let new_axis = t.apply_vec(self.axis.as_ref());
+        let new_ref = t.apply_vec(self.ref_dir.as_ref());
+        // Half-angle is preserved under uniform transforms.
+        // For non-uniform scaling, this is an approximation.
+        Box::new(ConeSurface {
+            apex: new_apex,
+            axis: Dir3::new_normalize(new_axis),
+            ref_dir: Dir3::new_normalize(new_ref),
+            half_angle: self.half_angle,
+        })
+    }
 }
 
 // =============================================================================
@@ -481,6 +519,20 @@ impl Surface for SphereSurface {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn transform(&self, t: &Transform) -> Box<dyn Surface> {
+        let new_center = t.apply_point(&self.center);
+        let new_ref = t.apply_vec(self.ref_dir.as_ref());
+        let new_axis = t.apply_vec(self.axis.as_ref());
+        // Scale factor affects radius — use the length of the transformed ref_dir
+        let scale = new_ref.norm();
+        Box::new(SphereSurface {
+            center: new_center,
+            radius: self.radius * scale,
+            ref_dir: Dir3::new_normalize(new_ref),
+            axis: Dir3::new_normalize(new_axis),
+        })
     }
 }
 
@@ -862,6 +914,38 @@ mod tests {
         let pt90 = circle.evaluate(PI / 2.0);
         assert!(pt90.x.abs() < 1e-12);
         assert!((pt90.y - 5.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_plane_transform() {
+        let p = Plane::xy();
+        let t = Transform::translation(0.0, 0.0, 5.0);
+        let p2 = p.transform(&t);
+        let pt = p2.evaluate(Point2::new(1.0, 2.0));
+        assert!((pt.x - 1.0).abs() < 1e-12);
+        assert!((pt.y - 2.0).abs() < 1e-12);
+        assert!((pt.z - 5.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_cylinder_transform() {
+        let c = CylinderSurface::new(5.0);
+        let t = Transform::translation(10.0, 0.0, 0.0);
+        let c2 = c.transform(&t);
+        // u=0, v=0 on original = (5,0,0), after translate = (15,0,0)
+        let pt = c2.evaluate(Point2::new(0.0, 0.0));
+        assert!((pt.x - 15.0).abs() < 1e-10);
+        assert!(pt.y.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_sphere_transform_scale() {
+        let s = SphereSurface::new(5.0);
+        let t = Transform::scale(2.0, 2.0, 2.0);
+        let s2 = s.transform(&t);
+        // u=0, v=0 on original = (5,0,0), after 2x scale = (10,0,0)
+        let pt = s2.evaluate(Point2::new(0.0, 0.0));
+        assert!((pt.x - 10.0).abs() < 1e-10);
     }
 
     #[test]

@@ -89,6 +89,26 @@ impl Transform {
         Self { matrix: m }
     }
 
+    /// Rotation about an arbitrary axis through the origin by `angle` radians.
+    ///
+    /// Uses Rodrigues' rotation formula.
+    pub fn rotation_about_axis(axis: &Dir3, angle: f64) -> Self {
+        let (s, c) = angle.sin_cos();
+        let t = 1.0 - c;
+        let (x, y, z) = (axis.as_ref().x, axis.as_ref().y, axis.as_ref().z);
+        let mut m = Matrix4::identity();
+        m[(0, 0)] = t * x * x + c;
+        m[(0, 1)] = t * x * y - s * z;
+        m[(0, 2)] = t * x * z + s * y;
+        m[(1, 0)] = t * x * y + s * z;
+        m[(1, 1)] = t * y * y + c;
+        m[(1, 2)] = t * y * z - s * x;
+        m[(2, 0)] = t * x * z - s * y;
+        m[(2, 1)] = t * y * z + s * x;
+        m[(2, 2)] = t * z * z + c;
+        Self { matrix: m }
+    }
+
     /// Compose: `self` then `other` (self * other).
     pub fn then(&self, other: &Transform) -> Self {
         Self {
@@ -241,6 +261,27 @@ mod tests {
         let p = Point3::new(5.0, 6.0, 7.0);
         let result = composed.apply_point(&p);
         assert!((result - p).norm() < 1e-12);
+    }
+
+    #[test]
+    fn test_rotation_about_axis() {
+        // Rotate (1,0,0) by 90° about Z axis → (0,1,0)
+        let axis = Dir3::new_normalize(Vec3::z());
+        let t = Transform::rotation_about_axis(&axis, PI / 2.0);
+        let p = Point3::new(1.0, 0.0, 0.0);
+        let result = t.apply_point(&p);
+        assert!(result.x.abs() < 1e-12);
+        assert!((result.y - 1.0).abs() < 1e-12);
+        assert!(result.z.abs() < 1e-12);
+
+        // Rotate about (1,1,0) normalized by 180° — should swap x/y and negate z
+        let axis2 = Dir3::new_normalize(Vec3::new(1.0, 1.0, 0.0));
+        let t2 = Transform::rotation_about_axis(&axis2, PI);
+        let p2 = Point3::new(1.0, 0.0, 0.0);
+        let r2 = t2.apply_point(&p2);
+        assert!((r2.x - 0.0).abs() < 1e-12);
+        assert!((r2.y - 1.0).abs() < 1e-12);
+        assert!(r2.z.abs() < 1e-12);
     }
 
     #[test]

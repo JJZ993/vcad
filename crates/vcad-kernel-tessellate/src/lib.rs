@@ -172,21 +172,40 @@ fn tessellate_cylindrical_face(
     let n_circ = params.circle_segments as usize;
     let n_height = params.height_segments as usize;
 
-    // Determine height range from the vertices on the seam
+    // Determine the v (height) parameter range by projecting seam vertices
+    // onto the cylinder axis. This works correctly after any transform.
     let verts: Vec<_> = topo
         .loop_half_edges(face.outer_loop)
         .map(|he| topo.vertices[topo.half_edges[he].origin].point)
         .collect();
 
-    let z_min = verts.iter().map(|v| v.z).fold(f64::MAX, f64::min);
-    let z_max = verts.iter().map(|v| v.z).fold(f64::MIN, f64::max);
-    let height = z_max - z_min;
+    let (v_min, v_max) = if let Some(cyl) = surface
+        .as_any()
+        .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
+    {
+        // Project vertices onto axis to get v parameter
+        let mut vmin = f64::MAX;
+        let mut vmax = f64::MIN;
+        for pt in &verts {
+            let d = pt - cyl.center;
+            let v = d.dot(cyl.axis.as_ref());
+            vmin = vmin.min(v);
+            vmax = vmax.max(v);
+        }
+        (vmin, vmax)
+    } else {
+        // Fallback: use z coordinates
+        let z_min = verts.iter().map(|v| v.z).fold(f64::MAX, f64::min);
+        let z_max = verts.iter().map(|v| v.z).fold(f64::MIN, f64::max);
+        (z_min, z_max)
+    };
 
+    let height = v_max - v_min;
     let mut mesh = TriangleMesh::new();
 
-    // Generate grid of vertices
+    // Generate grid of vertices using surface.evaluate
     for j in 0..=n_height {
-        let v = z_min + height * (j as f64 / n_height as f64);
+        let v = v_min + height * (j as f64 / n_height as f64);
         for i in 0..=n_circ {
             let u = 2.0 * PI * (i as f64 / n_circ as f64);
             let pt = surface.evaluate(Point2::new(u, v));
@@ -293,62 +312,75 @@ fn tessellate_conical_face(
     let n_circ = params.circle_segments as usize;
     let n_height = params.height_segments as usize;
 
-    // Determine height range from vertices
+    // Get seam vertices to determine the cone extent
     let verts: Vec<_> = topo
         .loop_half_edges(face.outer_loop)
         .map(|he| topo.vertices[topo.half_edges[he].origin].point)
         .collect();
 
-    // For a cone, we need to find the v parameter range
-    // The cone surface is parameterized as distance from apex
-    // We'll compute v range from the vertex z coordinates and the cone geometry
-    let z_min = verts.iter().map(|v| v.z).fold(f64::MAX, f64::min);
-    let z_max = verts.iter().map(|v| v.z).fold(f64::MIN, f64::max);
+    // Extract cone geometry for axis-aware parameterization
+    let (axis, apex, ref_dir, half_angle) = if let Some(cone) = surface
+        .as_any()
+        .downcast_ref::<vcad_kernel_geom::ConeSurface>(
+    ) {
+        (
+            *cone.axis.as_ref(),
+            cone.apex,
+            *cone.ref_dir.as_ref(),
+            cone.half_angle,
+        )
+    } else {
+        // Fallback: assume Z-axis cone at origin
+        let z_min = verts.iter().map(|v| v.z).fold(f64::MAX, f64::min);
+        let z_max = verts.iter().map(|v| v.z).fold(f64::MIN, f64::max);
+        let r_min = verts
+            .iter()
+            .filter(|v| (v.z - z_min).abs() < 1e-6)
+            .map(|v| (v.x * v.x + v.y * v.y).sqrt())
+            .next()
+            .unwrap_or(0.0);
+        return tessellate_cone_direct(&verts, z_min, z_max, r_min, n_circ, n_height, reversed);
+    };
 
-    // Compute radii at z_min and z_max from vertex positions
-    let r_min = verts
-        .iter()
-        .filter(|v| (v.z - z_min).abs() < 1e-6)
-        .map(|v| (v.x * v.x + v.y * v.y).sqrt())
-        .next()
-        .unwrap_or(0.0);
-    let r_max = verts
-        .iter()
-        .filter(|v| (v.z - z_max).abs() < 1e-6)
-        .map(|v| (v.x * v.x + v.y * v.y).sqrt())
-        .next()
-        .unwrap_or(0.0);
+    // Project vertices onto axis to get v parameter range (distance from apex)
+    let mut v_min = f64::MAX;
+    let mut v_max = f64::MIN;
+    for pt in &verts {
+        let d = pt - apex;
+        let v = d.dot(&axis) / half_angle.cos();
+        v_min = v_min.min(v);
+        v_max = v_max.max(v);
+    }
 
-    let is_pointed = r_min < 1e-12 || r_max < 1e-12;
-    let _ = is_pointed;
-
-    // Use direct parameterization: generate ring of points at each height
+    // Generate mesh using surface.evaluate()
+    let y_dir = axis.cross(&ref_dir);
     let mut mesh = TriangleMesh::new();
     let mut rows: Vec<Vec<u32>> = Vec::new();
 
     for j in 0..=n_height {
         let t = j as f64 / n_height as f64;
-        let z = z_min + (z_max - z_min) * t;
-        let r = r_min + (r_max - r_min) * t;
+        let v = v_min + (v_max - v_min) * t;
+        let r = v * half_angle.sin();
 
         let mut row = Vec::new();
 
-        if r < 1e-12 {
-            // Degenerate point (apex)
+        if r.abs() < 1e-12 {
+            // Apex point
+            let pt = apex + v * half_angle.cos() * axis;
             let idx = mesh.num_vertices() as u32;
-            mesh.vertices.push(0.0f32);
-            mesh.vertices.push(0.0f32);
-            mesh.vertices.push(z as f32);
+            mesh.vertices.push(pt.x as f32);
+            mesh.vertices.push(pt.y as f32);
+            mesh.vertices.push(pt.z as f32);
             row.push(idx);
         } else {
+            let center = apex + v * half_angle.cos() * axis;
             for i in 0..=n_circ {
                 let u = 2.0 * PI * (i as f64 / n_circ as f64);
-                let x = r * u.cos();
-                let y = r * u.sin();
+                let pt = center + r * (u.cos() * ref_dir + u.sin() * y_dir);
                 let idx = mesh.num_vertices() as u32;
-                mesh.vertices.push(x as f32);
-                mesh.vertices.push(y as f32);
-                mesh.vertices.push(z as f32);
+                mesh.vertices.push(pt.x as f32);
+                mesh.vertices.push(pt.y as f32);
+                mesh.vertices.push(pt.z as f32);
                 row.push(idx);
             }
         }
@@ -362,33 +394,33 @@ fn tessellate_conical_face(
         let top = &rows[j + 1];
 
         if bot.len() == 1 {
-            // Fan from bottom point to top ring
-            let apex = bot[0];
+            let apex_idx = bot[0];
             for i in 0..(top.len() - 1) {
                 if reversed {
-                    mesh.indices.extend_from_slice(&[apex, top[i + 1], top[i]]);
+                    mesh.indices
+                        .extend_from_slice(&[apex_idx, top[i + 1], top[i]]);
                 } else {
-                    mesh.indices.extend_from_slice(&[apex, top[i], top[i + 1]]);
+                    mesh.indices
+                        .extend_from_slice(&[apex_idx, top[i], top[i + 1]]);
                 }
             }
         } else if top.len() == 1 {
-            // Fan from top point to bottom ring
-            let apex = top[0];
+            let apex_idx = top[0];
             for i in 0..(bot.len() - 1) {
                 if reversed {
-                    mesh.indices.extend_from_slice(&[bot[i], apex, bot[i + 1]]);
+                    mesh.indices
+                        .extend_from_slice(&[bot[i], apex_idx, bot[i + 1]]);
                 } else {
-                    mesh.indices.extend_from_slice(&[bot[i], bot[i + 1], apex]);
+                    mesh.indices
+                        .extend_from_slice(&[bot[i], bot[i + 1], apex_idx]);
                 }
             }
         } else {
-            // Quad strip
             for i in 0..n_circ {
                 let bl = bot[i];
                 let br = bot[i + 1];
                 let tl = top[i];
                 let tr = top[i + 1];
-
                 if reversed {
                     mesh.indices.extend_from_slice(&[bl, tl, br]);
                     mesh.indices.extend_from_slice(&[br, tl, tr]);
@@ -400,9 +432,133 @@ fn tessellate_conical_face(
         }
     }
 
-    // We ignore the surface parameter evaluation for cones and generate directly
-    // This avoids the complexity of inverting the cone parameterization
-    let _ = surface;
+    mesh
+}
+
+/// Fallback cone tessellation using direct z-axis coordinates.
+fn tessellate_cone_direct(
+    verts: &[Point3],
+    z_min: f64,
+    z_max: f64,
+    r_at_zmin: f64,
+    n_circ: usize,
+    n_height: usize,
+    reversed: bool,
+) -> TriangleMesh {
+    let r_at_zmax = verts
+        .iter()
+        .filter(|v| (v.z - z_max).abs() < 1e-6)
+        .map(|v| (v.x * v.x + v.y * v.y).sqrt())
+        .next()
+        .unwrap_or(0.0);
+
+    let mut mesh = TriangleMesh::new();
+    let mut rows: Vec<Vec<u32>> = Vec::new();
+
+    for j in 0..=n_height {
+        let t = j as f64 / n_height as f64;
+        let z = z_min + (z_max - z_min) * t;
+        let r = r_at_zmin + (r_at_zmax - r_at_zmin) * t;
+
+        let mut row = Vec::new();
+        if r < 1e-12 {
+            let idx = mesh.num_vertices() as u32;
+            mesh.vertices.extend_from_slice(&[0.0f32, 0.0f32, z as f32]);
+            row.push(idx);
+        } else {
+            for i in 0..=n_circ {
+                let u = 2.0 * PI * (i as f64 / n_circ as f64);
+                let idx = mesh.num_vertices() as u32;
+                mesh.vertices.extend_from_slice(&[
+                    (r * u.cos()) as f32,
+                    (r * u.sin()) as f32,
+                    z as f32,
+                ]);
+                row.push(idx);
+            }
+        }
+        rows.push(row);
+    }
+
+    for j in 0..n_height {
+        let bot = &rows[j];
+        let top = &rows[j + 1];
+        if bot.len() == 1 {
+            let a = bot[0];
+            for i in 0..(top.len() - 1) {
+                if reversed {
+                    mesh.indices.extend_from_slice(&[a, top[i + 1], top[i]]);
+                } else {
+                    mesh.indices.extend_from_slice(&[a, top[i], top[i + 1]]);
+                }
+            }
+        } else if top.len() == 1 {
+            let a = top[0];
+            for i in 0..(bot.len() - 1) {
+                if reversed {
+                    mesh.indices.extend_from_slice(&[bot[i], a, bot[i + 1]]);
+                } else {
+                    mesh.indices.extend_from_slice(&[bot[i], bot[i + 1], a]);
+                }
+            }
+        } else {
+            for i in 0..n_circ {
+                let bl = bot[i];
+                let br = bot[i + 1];
+                let tl = top[i];
+                let tr = top[i + 1];
+                if reversed {
+                    mesh.indices.extend_from_slice(&[bl, tl, br]);
+                    mesh.indices.extend_from_slice(&[br, tl, tr]);
+                } else {
+                    mesh.indices.extend_from_slice(&[bl, br, tl]);
+                    mesh.indices.extend_from_slice(&[br, tr, tl]);
+                }
+            }
+        }
+    }
+
+    mesh
+}
+
+/// Tessellate a planar disk with arbitrary orientation.
+/// `x_dir` and `y_dir` define the disk plane.
+fn tessellate_disk_general(
+    center: Point3,
+    radius: f64,
+    x_dir: vcad_kernel_math::Vec3,
+    y_dir: vcad_kernel_math::Vec3,
+    segments: u32,
+    flip: bool,
+) -> TriangleMesh {
+    let mut mesh = TriangleMesh::new();
+    let n = segments as usize;
+
+    // Center vertex
+    mesh.vertices.push(center.x as f32);
+    mesh.vertices.push(center.y as f32);
+    mesh.vertices.push(center.z as f32);
+
+    // Rim vertices
+    for i in 0..=n {
+        let u = 2.0 * PI * (i as f64 / n as f64);
+        let pt = center + radius * (u.cos() * x_dir + u.sin() * y_dir);
+        mesh.vertices.push(pt.x as f32);
+        mesh.vertices.push(pt.y as f32);
+        mesh.vertices.push(pt.z as f32);
+    }
+
+    // Fan triangles
+    for i in 0..n {
+        let v0 = 0u32;
+        let v1 = (i + 1) as u32;
+        let v2 = (i + 2) as u32;
+        if flip {
+            mesh.indices.extend_from_slice(&[v0, v2, v1]);
+        } else {
+            mesh.indices.extend_from_slice(&[v0, v1, v2]);
+        }
+    }
 
     mesh
 }
@@ -527,19 +683,29 @@ pub fn tessellate_brep(brep: &BRepSolid, segments: u32) -> TriangleMesh {
             SurfaceKind::Plane => {
                 if loop_len <= 1 {
                     // Cap face with a single vertex — this is a circular disk.
-                    // Determine center and radius from adjacent faces.
-                    // For cylinder/cone caps: the vertex is on the rim.
+                    // Use the plane surface's origin as center and compute
+                    // the radius from the vertex's distance to the center.
                     let verts: Vec<_> = brep
                         .topology
                         .loop_half_edges(face.outer_loop)
                         .map(|he| brep.topology.vertices[brep.topology.half_edges[he].origin].point)
                         .collect();
                     if let Some(&v) = verts.first() {
-                        let r = (v.x * v.x + v.y * v.y).sqrt();
-                        let disk = tessellate_disk(
-                            Point3::new(0.0, 0.0, v.z),
+                        let plane = &brep.geometry.surfaces[face.surface_index];
+                        let center = plane.evaluate(Point2::origin());
+                        let r = (v - center).norm();
+                        let x_dir = if r > 1e-12 {
+                            (v - center).normalize()
+                        } else {
+                            plane.d_du(Point2::origin()).normalize()
+                        };
+                        let normal = plane.normal(Point2::origin());
+                        let y_dir = normal.as_ref().cross(&x_dir);
+                        let disk = tessellate_disk_general(
+                            center,
                             r,
-                            v.z,
+                            x_dir,
+                            y_dir,
                             params.circle_segments,
                             reversed,
                         );
