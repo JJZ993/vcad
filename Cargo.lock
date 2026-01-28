@@ -816,6 +816,7 @@ name = "vcad-kernel"
 version = "0.1.0"
 dependencies = [
  "vcad-kernel-booleans",
+ "vcad-kernel-fillet",
  "vcad-kernel-geom",
  "vcad-kernel-math",
  "vcad-kernel-primitives",
@@ -825,6 +826,17 @@ dependencies = [
 
 [[package]]
 name = "vcad-kernel-booleans"
+version = "0.1.0"
+dependencies = [
+ "vcad-kernel-geom",
+ "vcad-kernel-math",
+ "vcad-kernel-primitives",
+ "vcad-kernel-tessellate",
+ "vcad-kernel-topo",
+]
+
+[[package]]
+name = "vcad-kernel-fillet"
 version = "0.1.0"
 dependencies = [
  "vcad-kernel-geom",
