@@ -1,6 +1,6 @@
 [package]
-name = "vcad-kernel"
-description = "High-level B-rep CAD kernel facade for vcad"
+name = "vcad-kernel-sketch"
+description = "Sketch-based extrude and revolve operations for vcad kernel"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,7 @@ vcad-kernel-math = { path = "../vcad-kernel-math" }
 vcad-kernel-topo = { path = "../vcad-kernel-topo" }
 vcad-kernel-geom = { path = "../vcad-kernel-geom" }
 vcad-kernel-primitives = { path = "../vcad-kernel-primitives" }
+thiserror.workspace = true
+
+[dev-dependencies]
 vcad-kernel-tessellate = { path = "../vcad-kernel-tessellate" }
-vcad-kernel-booleans = { path = "../vcad-kernel-booleans" }
-vcad-kernel-fillet = { path = "../vcad-kernel-fillet" }
-vcad-kernel-sketch = { path = "../vcad-kernel-sketch" }

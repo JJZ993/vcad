@@ -820,6 +820,7 @@ dependencies = [
  "vcad-kernel-geom",
  "vcad-kernel-math",
  "vcad-kernel-primitives",
+ "vcad-kernel-sketch",
  "vcad-kernel-tessellate",
  "vcad-kernel-topo",
 ]
@@ -874,6 +875,18 @@ version = "0.1.0"
 dependencies = [
  "vcad-kernel-geom",
  "vcad-kernel-math",
+ "vcad-kernel-topo",
+]
+
+[[package]]
+name = "vcad-kernel-sketch"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "vcad-kernel-geom",
+ "vcad-kernel-math",
+ "vcad-kernel-primitives",
+ "vcad-kernel-tessellate",
  "vcad-kernel-topo",
 ]
 

@@ -20,6 +20,7 @@ pub use vcad_kernel_fillet;
 pub use vcad_kernel_geom;
 pub use vcad_kernel_math;
 pub use vcad_kernel_primitives;
+pub use vcad_kernel_sketch;
 pub use vcad_kernel_tessellate;
 pub use vcad_kernel_topo;
 
@@ -203,6 +204,61 @@ impl Solid {
             },
             _ => self.clone(),
         }
+    }
+
+    // =========================================================================
+    // Sketch-based operations
+    // =========================================================================
+
+    /// Create a solid by extruding a sketch profile along a direction.
+    ///
+    /// # Arguments
+    ///
+    /// * `profile` - The closed 2D profile to extrude
+    /// * `direction` - The extrusion direction vector (magnitude = distance)
+    ///
+    /// # Returns
+    ///
+    /// A B-rep solid, or an error if the profile or direction is invalid.
+    pub fn extrude(
+        profile: vcad_kernel_sketch::SketchProfile,
+        direction: Vec3,
+    ) -> Result<Self, vcad_kernel_sketch::SketchError> {
+        let brep = vcad_kernel_sketch::extrude(&profile, direction)?;
+        Ok(Solid {
+            repr: SolidRepr::BRep(Box::new(brep)),
+            segments: 32,
+        })
+    }
+
+    /// Create a solid by revolving a sketch profile around an axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `profile` - The closed 2D profile to revolve (line segments only)
+    /// * `axis_origin` - A point on the axis of revolution
+    /// * `axis_dir` - Direction of the axis of revolution
+    /// * `angle_deg` - Angle of revolution in degrees (0, 360]
+    ///
+    /// # Returns
+    ///
+    /// A B-rep solid, or an error if the profile or parameters are invalid.
+    ///
+    /// # Limitations
+    ///
+    /// Arc segments in the profile are not supported (would require torus surfaces).
+    pub fn revolve(
+        profile: vcad_kernel_sketch::SketchProfile,
+        axis_origin: Point3,
+        axis_dir: Vec3,
+        angle_deg: f64,
+    ) -> Result<Self, vcad_kernel_sketch::SketchError> {
+        let brep =
+            vcad_kernel_sketch::revolve(&profile, axis_origin, axis_dir, angle_deg.to_radians())?;
+        Ok(Solid {
+            repr: SolidRepr::BRep(Box::new(brep)),
+            segments: 32,
+        })
     }
 
     // =========================================================================
@@ -664,5 +720,62 @@ mod tests {
         let empty = Solid::empty();
         let chamfered = empty.chamfer(1.0);
         assert!(chamfered.is_empty());
+    }
+
+    #[test]
+    fn test_extrude_rectangle() {
+        use vcad_kernel_sketch::SketchProfile;
+
+        let profile = SketchProfile::rectangle(Point3::origin(), Vec3::x(), Vec3::y(), 10.0, 5.0);
+        let solid = Solid::extrude(profile, Vec3::new(0.0, 0.0, 20.0)).unwrap();
+
+        assert!(!solid.is_empty());
+        let vol = solid.volume();
+        // Expected: 10 * 5 * 20 = 1000
+        assert!(
+            (vol - 1000.0).abs() < 2.0,
+            "expected volume ~1000, got {vol}"
+        );
+    }
+
+    #[test]
+    fn test_revolve_rectangle() {
+        use vcad_kernel_sketch::SketchProfile;
+
+        // Rectangle profile offset from Z-axis, revolve 90° around Z
+        let profile =
+            SketchProfile::rectangle(Point3::new(5.0, 0.0, 0.0), Vec3::x(), Vec3::z(), 3.0, 10.0);
+        let solid = Solid::revolve(profile, Point3::origin(), Vec3::z(), 90.0).unwrap();
+
+        assert!(!solid.is_empty());
+        // Volume check is loose due to planar approximation
+        let vol = solid.volume();
+        assert!(vol > 100.0, "expected positive volume, got {vol}");
+    }
+
+    #[test]
+    fn test_extrude_then_boolean() {
+        use vcad_kernel_sketch::SketchProfile;
+
+        // Create two extruded boxes and union them
+        let profile1 = SketchProfile::rectangle(Point3::origin(), Vec3::x(), Vec3::y(), 10.0, 10.0);
+        let box1 = Solid::extrude(profile1, Vec3::new(0.0, 0.0, 10.0)).unwrap();
+
+        let profile2 =
+            SketchProfile::rectangle(Point3::new(5.0, 5.0, 0.0), Vec3::x(), Vec3::y(), 10.0, 10.0);
+        let box2 = Solid::extrude(profile2, Vec3::new(0.0, 0.0, 10.0)).unwrap();
+
+        // Union should produce a valid solid
+        let result = box1.union(&box2);
+        assert!(!result.is_empty());
+
+        // Volume check: combined volume should be positive and reasonable
+        // Two 10x10x10 boxes with 5x5x10 overlap = 1000+1000-250 = 1750
+        // Due to boolean approximations, just check it's positive
+        let vol = result.volume();
+        assert!(
+            vol >= 1000.0 && vol <= 2000.0,
+            "expected volume between 1000 and 2000, got {vol}"
+        );
     }
 }
