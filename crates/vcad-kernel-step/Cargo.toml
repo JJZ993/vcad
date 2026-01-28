@@ -1,0 +1,16 @@
+[package]
+name = "vcad-kernel-step"
+description = "STEP file import/export for the vcad kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vcad-kernel-math = { path = "../vcad-kernel-math" }
+vcad-kernel-topo = { path = "../vcad-kernel-topo" }
+vcad-kernel-geom = { path = "../vcad-kernel-geom" }
+vcad-kernel-primitives = { path = "../vcad-kernel-primitives" }
+thiserror.workspace = true
+
+[dev-dependencies]

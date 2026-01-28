@@ -13,6 +13,7 @@ members = [
     "crates/vcad-kernel-fillet",
     "crates/vcad-kernel-sketch",
     "crates/vcad-kernel-shell",
+    "crates/vcad-kernel-step",
     "crates/vcad-kernel",
     "crates/vcad-kernel-constraints",
     "crates/vcad-kernel-wasm",
@@ -47,4 +48,5 @@ vcad-kernel-nurbs = { path = "crates/vcad-kernel-nurbs" }
 vcad-kernel-fillet = { path = "crates/vcad-kernel-fillet" }
 vcad-kernel-sketch = { path = "crates/vcad-kernel-sketch" }
 vcad-kernel-shell = { path = "crates/vcad-kernel-shell" }
+vcad-kernel-step = { path = "crates/vcad-kernel-step" }
 vcad-kernel-constraints = { path = "crates/vcad-kernel-constraints" }

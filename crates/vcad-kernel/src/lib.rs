@@ -23,6 +23,7 @@ pub use vcad_kernel_math;
 pub use vcad_kernel_primitives;
 pub use vcad_kernel_shell;
 pub use vcad_kernel_sketch;
+pub use vcad_kernel_step;
 pub use vcad_kernel_tessellate;
 pub use vcad_kernel_topo;
 
