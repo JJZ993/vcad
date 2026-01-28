@@ -3,6 +3,7 @@ import { OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { GridPlane } from "./GridPlane";
 import { SceneMesh } from "./SceneMesh";
+import { ClashMesh } from "./ClashMesh";
 import { TransformGizmo } from "./TransformGizmo";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { DimensionOverlay } from "./DimensionOverlay";
@@ -42,6 +43,11 @@ export function ViewportContent() {
           />
         );
       })}
+
+      {/* Clash visualization (zebra pattern on intersections) */}
+      {scene?.clashes.map((clashMesh, idx) => (
+        <ClashMesh key={`clash-${idx}`} mesh={clashMesh} />
+      ))}
 
       {/* Selection bounding box overlay */}
       <SelectionOverlay />
