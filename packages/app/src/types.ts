@@ -48,10 +48,32 @@ export interface RevolvePartInfo {
   translateNodeId: NodeId;
 }
 
-export type PartInfo = PrimitivePartInfo | BooleanPartInfo | ExtrudePartInfo | RevolvePartInfo;
+export interface SweepPartInfo {
+  id: string;
+  name: string;
+  kind: "sweep";
+  sketchNodeId: NodeId;
+  sweepNodeId: NodeId;
+  scaleNodeId: NodeId;
+  rotateNodeId: NodeId;
+  translateNodeId: NodeId;
+}
+
+export interface LoftPartInfo {
+  id: string;
+  name: string;
+  kind: "loft";
+  sketchNodeIds: NodeId[];  // Multiple profiles
+  loftNodeId: NodeId;
+  scaleNodeId: NodeId;
+  rotateNodeId: NodeId;
+  translateNodeId: NodeId;
+}
+
+export type PartInfo = PrimitivePartInfo | BooleanPartInfo | ExtrudePartInfo | RevolvePartInfo | SweepPartInfo | LoftPartInfo;
 
 export function isPrimitivePart(part: PartInfo): part is PrimitivePartInfo {
-  return part.kind !== "boolean" && part.kind !== "extrude" && part.kind !== "revolve";
+  return part.kind === "cube" || part.kind === "cylinder" || part.kind === "sphere";
 }
 
 export function isBooleanPart(part: PartInfo): part is BooleanPartInfo {
@@ -64,6 +86,14 @@ export function isExtrudePart(part: PartInfo): part is ExtrudePartInfo {
 
 export function isRevolvePart(part: PartInfo): part is RevolvePartInfo {
   return part.kind === "revolve";
+}
+
+export function isSweepPart(part: PartInfo): part is SweepPartInfo {
+  return part.kind === "sweep";
+}
+
+export function isLoftPart(part: PartInfo): part is LoftPartInfo {
+  return part.kind === "loft";
 }
 
 export type ToolMode = "select" | "primitive";

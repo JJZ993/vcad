@@ -1,6 +1,14 @@
 import { create } from "zustand";
-import type { Vec2, SketchSegment2D, SketchConstraint } from "@vcad/ir";
+import type { Vec2, Vec3, SketchSegment2D, SketchConstraint } from "@vcad/ir";
 import type { SketchPlane, SketchState, ConstraintTool } from "@/types";
+
+/** A saved profile snapshot for loft operations */
+export interface ProfileSnapshot {
+  id: string;
+  plane: SketchPlane;
+  origin: Vec3;
+  segments: SketchSegment2D[];
+}
 
 interface SketchStore extends SketchState {
   // Actions
@@ -27,6 +35,13 @@ interface SketchStore extends SketchState {
   applyParallel: () => void;
   applyPerpendicular: () => void;
   applyEqual: () => void;
+  // Loft mode actions
+  loftMode: boolean;
+  profiles: ProfileSnapshot[];
+  enterLoftMode: (plane: SketchPlane) => void;
+  saveProfile: () => void;
+  clearForNextProfile: (newOrigin: Vec3) => void;
+  exitLoftMode: () => ProfileSnapshot[] | null;
 }
 
 function makeRectangleSegments(p1: Vec2, p2: Vec2): SketchSegment2D[] {
@@ -65,6 +80,8 @@ function makeCircleSegments(center: Vec2, radius: number, n: number = 32): Sketc
   return segments;
 }
 
+let profileIdCounter = 0;
+
 export const useSketchStore = create<SketchStore>((set, get) => ({
   active: false,
   plane: "XY",
@@ -76,6 +93,8 @@ export const useSketchStore = create<SketchStore>((set, get) => ({
   points: [],
   selectedSegments: [],
   solved: true,
+  loftMode: false,
+  profiles: [],
 
   enterSketchMode: (plane) => {
     set({
@@ -89,11 +108,13 @@ export const useSketchStore = create<SketchStore>((set, get) => ({
       points: [],
       selectedSegments: [],
       solved: true,
+      loftMode: false,
+      profiles: [],
     });
   },
 
   exitSketchMode: () => {
-    set({ active: false, points: [] });
+    set({ active: false, points: [], loftMode: false, profiles: [] });
   },
 
   setTool: (tool) => {
@@ -373,5 +394,77 @@ export const useSketchStore = create<SketchStore>((set, get) => ({
 
     get().addConstraint({ type: "EqualLength", lineA: a!, lineB: b! });
     set({ selectedSegments: [], constraintTool: "none" });
+  },
+
+  // Loft mode actions
+  enterLoftMode: (plane) => {
+    set({
+      active: true,
+      plane,
+      origin: { x: 0, y: 0, z: 0 },
+      segments: [],
+      constraints: [],
+      tool: "rectangle",
+      constraintTool: "none",
+      points: [],
+      selectedSegments: [],
+      solved: true,
+      loftMode: true,
+      profiles: [],
+    });
+  },
+
+  saveProfile: () => {
+    const state = get();
+    if (state.segments.length === 0) return;
+
+    const profile: ProfileSnapshot = {
+      id: `profile-${++profileIdCounter}`,
+      plane: state.plane,
+      origin: state.origin,
+      segments: [...state.segments],
+    };
+
+    set({
+      profiles: [...state.profiles, profile],
+    });
+  },
+
+  clearForNextProfile: (newOrigin) => {
+    set({
+      segments: [],
+      constraints: [],
+      points: [],
+      selectedSegments: [],
+      solved: true,
+      origin: newOrigin,
+    });
+  },
+
+  exitLoftMode: () => {
+    const state = get();
+    if (!state.loftMode) return null;
+
+    // If there are unsaved segments, save them as the last profile
+    let allProfiles = [...state.profiles];
+    if (state.segments.length > 0) {
+      allProfiles.push({
+        id: `profile-${++profileIdCounter}`,
+        plane: state.plane,
+        origin: state.origin,
+        segments: [...state.segments],
+      });
+    }
+
+    set({
+      active: false,
+      loftMode: false,
+      profiles: [],
+      segments: [],
+      points: [],
+    });
+
+    // Return profiles only if we have at least 2
+    return allProfiles.length >= 2 ? allProfiles : null;
   },
 }));

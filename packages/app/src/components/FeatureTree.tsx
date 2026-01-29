@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Cube, Cylinder, Globe, Trash, Intersect, CaretRight, CaretDown } from "@phosphor-icons/react";
+import { Cube, Cylinder, Globe, Trash, Intersect, CaretRight, CaretDown, ArrowUp, ArrowsClockwise, Spiral, Stack } from "@phosphor-icons/react";
 import { Panel, PanelHeader, PanelBody } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ContextMenu } from "@/components/ContextMenu";
-import { useDocumentStore } from "@/stores/document-store";
-import { useUiStore } from "@/stores/ui-store";
-import type { PrimitiveKind, PartInfo, BooleanPartInfo } from "@/types";
-import { isBooleanPart } from "@/types";
+import { useDocumentStore, useUiStore, isBooleanPart } from "@vcad/core";
+import type { PrimitiveKind, PartInfo, BooleanPartInfo } from "@vcad/core";
 import { cn } from "@/lib/utils";
 
 const KIND_ICONS: Record<PrimitiveKind, typeof Cube> = {
@@ -18,6 +16,10 @@ const KIND_ICONS: Record<PrimitiveKind, typeof Cube> = {
 
 function getPartIcon(part: PartInfo): typeof Cube {
   if (part.kind === "boolean") return Intersect;
+  if (part.kind === "extrude") return ArrowUp;
+  if (part.kind === "revolve") return ArrowsClockwise;
+  if (part.kind === "sweep") return Spiral;
+  if (part.kind === "loft") return Stack;
   return KIND_ICONS[part.kind];
 }
 
@@ -57,7 +59,7 @@ function InlineRenameInput({
         if (e.key === "Enter") commit();
         if (e.key === "Escape") onDone();
       }}
-      className="flex-1 rounded border border-accent bg-surface px-1 py-0.5 text-xs text-text outline-none w-0"
+      className="flex-1  border border-accent bg-surface px-1 py-0.5 text-xs text-text outline-none w-0"
       autoFocus
     />
   );
@@ -88,6 +90,7 @@ function TreeNode({
   const select = useUiStore((s) => s.select);
   const toggleSelect = useUiStore((s) => s.toggleSelect);
   const clearSelection = useUiStore((s) => s.clearSelection);
+  const showDeleteConfirm = useUiStore((s) => s.showDeleteConfirm);
   const removePart = useDocumentStore((s) => s.removePart);
 
   const Icon = getPartIcon(part);
@@ -112,7 +115,7 @@ function TreeNode({
     <>
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-md px-2 py-1.5 text-xs cursor-pointer transition-colors",
+          "group flex items-center gap-1  px-2 py-1.5 text-xs cursor-pointer transition-colors",
           isSelected
             ? "bg-accent/20 text-accent"
             : isHovered
@@ -142,7 +145,7 @@ function TreeNode({
               e.stopPropagation();
               toggleExpanded(part.id);
             }}
-            className="shrink-0 p-0.5 hover:bg-border/30 rounded"
+            className="shrink-0 p-0.5 hover:bg-border/30 "
           >
             {isExpanded ? <CaretDown size={10} /> : <CaretRight size={10} />}
           </button>
@@ -160,15 +163,20 @@ function TreeNode({
           <span className="flex-1 truncate">{part.name}</span>
         )}
         {depth === 0 && (
-          <Tooltip content="Delete">
+          <Tooltip content="Delete (Shift+click to skip confirmation)">
             <Button
               variant="ghost"
               size="icon-sm"
               className="h-5 w-5 opacity-0 group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
-                removePart(part.id);
-                if (isSelected) clearSelection();
+                // Shift+click skips confirmation (power user fast delete)
+                if (e.shiftKey) {
+                  removePart(part.id);
+                  if (isSelected) clearSelection();
+                } else {
+                  showDeleteConfirm([part.id]);
+                }
               }}
             >
               <Trash size={12} />

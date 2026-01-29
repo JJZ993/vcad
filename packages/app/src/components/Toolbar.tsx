@@ -5,8 +5,6 @@ import {
   ArrowCounterClockwise,
   ArrowClockwise,
   SidebarSimple,
-  Sun,
-  Moon,
   Info,
   Unite,
   Subtract,
@@ -18,19 +16,20 @@ import {
   CubeTransparent,
   DotsThree,
   Command,
+  PencilSimple,
+  Stack,
+  ArrowsOutCardinal,
+  ArrowsClockwise,
+  ArrowsOut,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { useDocumentStore } from "@/stores/document-store";
-import { useUiStore } from "@/stores/ui-store";
-import { useEngineStore } from "@/stores/engine-store";
-import { useTheme } from "@/hooks/useTheme";
-import type { PrimitiveKind, BooleanType } from "@/types";
-import { exportStl } from "@/lib/export-stl";
-import { exportGltf } from "@/lib/export-gltf";
+import { useDocumentStore, useUiStore, useEngineStore, useSketchStore, exportStlBlob, exportGltfBlob, getUndoActionName, getRedoActionName } from "@vcad/core";
+import type { PrimitiveKind, BooleanType } from "@vcad/core";
 import { downloadBlob } from "@/lib/download";
+import { useToastStore } from "@/stores/toast-store";
 
 const PRIMITIVES: { kind: PrimitiveKind; icon: typeof Cube; label: string }[] =
   [
@@ -63,28 +62,33 @@ function OverflowMenu({
   const redo = useDocumentStore((s) => s.redo);
   const undoStack = useDocumentStore((s) => s.undoStack);
   const redoStack = useDocumentStore((s) => s.redoStack);
+  const undoActionName = useDocumentStore(getUndoActionName);
+  const redoActionName = useDocumentStore(getRedoActionName);
   const parts = useDocumentStore((s) => s.parts);
 
   const showWireframe = useUiStore((s) => s.showWireframe);
   const toggleWireframe = useUiStore((s) => s.toggleWireframe);
   const gridSnap = useUiStore((s) => s.gridSnap);
   const toggleGridSnap = useUiStore((s) => s.toggleGridSnap);
+  const snapIncrement = useUiStore((s) => s.snapIncrement);
+  const setSnapIncrement = useUiStore((s) => s.setSnapIncrement);
 
   const scene = useEngineStore((s) => s.scene);
-  const { isDark, toggleTheme } = useTheme();
 
   const hasParts = parts.length > 0;
 
   function handleExportStl() {
     if (!scene) return;
-    const blob = exportStl(scene);
+    const blob = exportStlBlob(scene);
     downloadBlob(blob, "model.stl");
+    useToastStore.getState().addToast("Exported model.stl", "success");
   }
 
   function handleExportGlb() {
     if (!scene) return;
-    const blob = exportGltf(scene);
+    const blob = exportGltfBlob(scene);
     downloadBlob(blob, "model.glb");
+    useToastStore.getState().addToast("Exported model.glb", "success");
   }
 
   return (
@@ -96,7 +100,7 @@ function OverflowMenu({
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          className="z-50 w-56 rounded-xl border border-border bg-card/95 p-2 shadow-2xl backdrop-blur-xl"
+          className="z-50 w-56 border border-border bg-card p-2 shadow-2xl"
           sideOffset={8}
           align="end"
         >
@@ -108,19 +112,21 @@ function OverflowMenu({
             <button
               onClick={undo}
               disabled={undoStack.length === 0}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={undoActionName ? `Undo: ${undoActionName} (⌘Z)` : "Undo (⌘Z)"}
             >
               <ArrowCounterClockwise size={14} />
-              <span>Undo</span>
+              <span>{undoActionName ? `Undo: ${undoActionName}` : "Undo"}</span>
               <span className="ml-auto text-text-muted">⌘Z</span>
             </button>
             <button
               onClick={redo}
               disabled={redoStack.length === 0}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={redoActionName ? `Redo: ${redoActionName} (⌘⇧Z)` : "Redo (⌘⇧Z)"}
             >
               <ArrowClockwise size={14} />
-              <span>Redo</span>
+              <span>{redoActionName ? `Redo: ${redoActionName}` : "Redo"}</span>
               <span className="ml-auto text-text-muted">⌘⇧Z</span>
             </button>
 
@@ -130,20 +136,49 @@ function OverflowMenu({
             </div>
             <button
               onClick={toggleWireframe}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30"
             >
               <CubeTransparent size={14} className={showWireframe ? "text-accent" : ""} />
               <span>Wireframe</span>
               <span className="ml-auto text-text-muted">X</span>
             </button>
-            <button
-              onClick={toggleGridSnap}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30"
-            >
-              <GridFour size={14} className={gridSnap ? "text-accent" : ""} />
-              <span>Grid Snap</span>
-              <span className="ml-auto text-text-muted">G</span>
-            </button>
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button
+                  className="col-span-2 flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30"
+                >
+                  <GridFour size={14} className={gridSnap ? "text-accent" : ""} />
+                  <span>Grid Snap</span>
+                  <span className="ml-auto text-text-muted">{gridSnap ? `${snapIncrement}mm` : "Off"}</span>
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  className="z-50 border border-border bg-card p-1.5 shadow-2xl"
+                  side="right"
+                  sideOffset={4}
+                  align="start"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      onClick={toggleGridSnap}
+                      className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-border/30"
+                    >
+                      <span className={!gridSnap ? "text-accent" : ""}>Off</span>
+                    </button>
+                    {[1, 2, 5, 10, 25, 50].map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setSnapIncrement(v)}
+                        className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-border/30"
+                      >
+                        <span className={gridSnap && snapIncrement === v ? "text-accent" : ""}>{v}mm</span>
+                      </button>
+                    ))}
+                  </div>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
 
             {/* File */}
             <div className="col-span-2 mt-2 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
@@ -151,7 +186,7 @@ function OverflowMenu({
             </div>
             <button
               onClick={onSave}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30"
             >
               <FloppyDisk size={14} />
               <span>Save</span>
@@ -159,7 +194,7 @@ function OverflowMenu({
             </button>
             <button
               onClick={onOpen}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30"
             >
               <FolderOpen size={14} />
               <span>Open</span>
@@ -168,7 +203,7 @@ function OverflowMenu({
             <button
               onClick={handleExportStl}
               disabled={!hasParts}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Export size={14} />
               <span>Export STL</span>
@@ -176,26 +211,19 @@ function OverflowMenu({
             <button
               onClick={handleExportGlb}
               disabled={!hasParts}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Export size={14} weight="fill" />
               <span>Export GLB</span>
             </button>
 
-            {/* Settings */}
+            {/* Help */}
             <div className="col-span-2 mt-2 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-              Settings
+              Help
             </div>
             <button
-              onClick={toggleTheme}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30"
-            >
-              {isDark ? <Sun size={14} /> : <Moon size={14} />}
-              <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
-            </button>
-            <button
               onClick={onAboutOpen}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2  px-2 py-1.5 text-xs text-text hover:bg-border/30"
             >
               <Info size={14} />
               <span>About</span>
@@ -221,10 +249,15 @@ export function Toolbar({
 
   const select = useUiStore((s) => s.select);
   const selectedPartIds = useUiStore((s) => s.selectedPartIds);
+  const transformMode = useUiStore((s) => s.transformMode);
   const setTransformMode = useUiStore((s) => s.setTransformMode);
   const toggleFeatureTree = useUiStore((s) => s.toggleFeatureTree);
   const toggleCommandPalette = useUiStore((s) => s.toggleCommandPalette);
 
+  const enterSketchMode = useSketchStore((s) => s.enterSketchMode);
+  const sketchActive = useSketchStore((s) => s.active);
+
+  const hasSelection = selectedPartIds.size > 0;
   const hasTwoSelected = selectedPartIds.size === 2;
 
   function handleAddPrimitive(kind: PrimitiveKind) {
@@ -242,7 +275,7 @@ export function Toolbar({
 
   return (
     <div className="fixed left-1/2 top-3 z-30 -translate-x-1/2">
-      <div className="flex items-center gap-1 rounded-xl border border-border bg-card/80 px-2 py-1.5 shadow-2xl backdrop-blur-xl">
+      <div className="flex items-center gap-1 border border-border bg-card px-2 py-1.5 shadow-2xl">
         {/* Feature tree toggle */}
         <Tooltip content="Toggle sidebar">
           <Button
@@ -263,11 +296,39 @@ export function Toolbar({
               variant="ghost"
               size="icon-sm"
               onClick={() => handleAddPrimitive(kind)}
+              disabled={sketchActive}
             >
               <Icon size={16} />
             </Button>
           </Tooltip>
         ))}
+
+        {/* Sketch */}
+        <Tooltip content="New Sketch (S)">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => enterSketchMode("XY")}
+            disabled={sketchActive}
+          >
+            <PencilSimple size={16} />
+          </Button>
+        </Tooltip>
+
+        {/* Loft */}
+        <Tooltip content="Loft (L)">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => {
+              const { enterLoftMode } = useSketchStore.getState();
+              enterLoftMode("XY");
+            }}
+            disabled={sketchActive}
+          >
+            <Stack size={16} />
+          </Button>
+        </Tooltip>
 
         <Separator orientation="vertical" className="mx-1 h-5" />
 
@@ -284,6 +345,40 @@ export function Toolbar({
             </Button>
           </Tooltip>
         ))}
+
+        {/* Transform mode - only when part selected */}
+        {hasSelection && (
+          <>
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <Tooltip content="Move (W)">
+              <Button
+                variant={transformMode === "translate" ? "default" : "ghost"}
+                size="icon-sm"
+                onClick={() => setTransformMode("translate")}
+              >
+                <ArrowsOutCardinal size={16} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Rotate (E)">
+              <Button
+                variant={transformMode === "rotate" ? "default" : "ghost"}
+                size="icon-sm"
+                onClick={() => setTransformMode("rotate")}
+              >
+                <ArrowsClockwise size={16} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Scale (R)">
+              <Button
+                variant={transformMode === "scale" ? "default" : "ghost"}
+                size="icon-sm"
+                onClick={() => setTransformMode("scale")}
+              >
+                <ArrowsOut size={16} />
+              </Button>
+            </Tooltip>
+          </>
+        )}
 
         <Separator orientation="vertical" className="mx-1 h-5" />
 
