@@ -1,0 +1,25 @@
+{
+  "name": "@vcad/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for vcad CAD operations",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "vcad-mcp": "dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@vcad/engine": "^0.1.0",
+    "@vcad/ir": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.7",
+    "vitest": "^3.0"
+  }
+}
