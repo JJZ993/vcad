@@ -61,8 +61,16 @@ pub fn split_face_by_curve(
     }
 
     // Find the two edges where the curve enters and exits the face
-    let entry_edge = find_closest_edge(&loop_verts, entry_point);
-    let exit_edge = find_closest_edge(&loop_verts, exit_point);
+    let (entry_edge, entry_dist) = find_closest_edge_with_dist(&loop_verts, entry_point);
+    let (exit_edge, exit_dist) = find_closest_edge_with_dist(&loop_verts, exit_point);
+
+    // If entry or exit point is too far from any edge, the split line doesn't cross this face
+    let max_dist_tolerance = 1.0; // Allow some tolerance for numerical precision
+    if entry_dist > max_dist_tolerance || exit_dist > max_dist_tolerance {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
 
     if entry_edge == exit_edge {
         // Curve enters and exits on the same edge — can't split simply
@@ -126,6 +134,9 @@ pub fn split_face_by_curve(
             .retain(|&f| f != face_id);
     }
 
+    // Remove the original face from topology (it's been replaced by sub-faces)
+    brep.topology.faces.remove(face_id);
+
     SplitResult {
         sub_faces: vec![face1, face2],
     }
@@ -133,7 +144,14 @@ pub fn split_face_by_curve(
 
 /// Find which edge of a polygon a point lies closest to.
 /// Returns the index of the starting vertex of that edge.
+#[cfg(test)]
 fn find_closest_edge(polygon: &[Point3], point: &Point3) -> usize {
+    find_closest_edge_with_dist(polygon, point).0
+}
+
+/// Find which edge of a polygon a point lies closest to.
+/// Returns (edge_index, distance) where edge_index is the starting vertex of that edge.
+fn find_closest_edge_with_dist(polygon: &[Point3], point: &Point3) -> (usize, f64) {
     let n = polygon.len();
     let mut best = 0;
     let mut best_dist = f64::INFINITY;
@@ -147,7 +165,24 @@ fn find_closest_edge(polygon: &[Point3], point: &Point3) -> usize {
         }
     }
 
-    best
+    (best, best_dist)
+}
+
+/// Find an existing vertex at the given point, or create a new one.
+fn find_or_create_vertex(
+    brep: &mut BRepSolid,
+    point: &Point3,
+    tolerance: f64,
+) -> vcad_kernel_topo::VertexId {
+    // Search for existing vertex within tolerance
+    for (vid, vertex) in &brep.topology.vertices {
+        let dist = (vertex.point - point).norm();
+        if dist < tolerance {
+            return vid;
+        }
+    }
+    // No existing vertex found, create new one
+    brep.topology.add_vertex(*point)
 }
 
 /// Distance from a point to a line segment.
@@ -166,17 +201,18 @@ fn point_to_segment_dist(p: &Point3, a: &Point3, b: &Point3) -> f64 {
 
 /// Create a new face in the BRep from a set of 3D points.
 ///
-/// Creates new vertices and half-edges, forming a loop, and creates a face.
+/// Reuses existing vertices within tolerance, creating new ones only when needed.
 fn create_face_from_points(
     brep: &mut BRepSolid,
     points: &[Point3],
     surface_index: usize,
     orientation: Orientation,
 ) -> FaceId {
-    // Create vertices
+    // Create or reuse vertices - reuse existing vertices within tolerance
+    let tolerance = 1e-6;
     let verts: Vec<_> = points
         .iter()
-        .map(|p| brep.topology.add_vertex(*p))
+        .map(|p| find_or_create_vertex(brep, p, tolerance))
         .collect();
 
     // Create half-edges
@@ -295,8 +331,8 @@ mod tests {
             // Should produce 2 sub-faces
             assert_eq!(result.sub_faces.len(), 2);
 
-            // Total faces should increase by 1 (removed 1, added 2)
-            assert_eq!(brep.topology.faces.len(), initial_face_count + 2);
+            // Total faces should increase by 1 (original removed, 2 new added: +2 - 1 = +1)
+            assert_eq!(brep.topology.faces.len(), initial_face_count + 1);
         }
     }
 }

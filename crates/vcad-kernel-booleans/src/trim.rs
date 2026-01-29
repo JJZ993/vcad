@@ -4,6 +4,40 @@
 //! we need to clip it to the actual bounded region of each face.
 //! This module tests whether points lie inside a face's trim loops
 //! and finds the parameter ranges where the curve enters/exits the face.
+//!
+//! # Important Implementation Note: Line Trimming Range
+//!
+//! When trimming a line to a face, we must compute the parameter range (t_min, t_max)
+//! based on where the line actually intersects the face's AABB, NOT based on the
+//! face's size divided by direction length.
+//!
+//! ## The Bug That Was Fixed
+//!
+//! SSI (Surface-Surface Intersection) computes a line between two planes. The line's
+//! origin is set to the intersection of the planes' origins, which can be FAR from
+//! the actual faces being intersected.
+//!
+//! Example: Plate at Y=6, Hole face at Z=36
+//! - SSI line origin: (0, 6, 36) - at X=0
+//! - Hole face X range: [34, 46]
+//! - Direction: (-1, 0, 0)
+//!
+//! Old (buggy) approach:
+//! - Face extent ≈ 17.7, direction length = 1.0
+//! - t_range = 17.7 * 2 ≈ 35.5
+//! - Sampled t from -35.5 to +35.5
+//! - Points sampled: X from 35.5 to -35.5
+//! - MISSED the face entirely (X=[34,46] requires t≈-34 to -46)
+//!
+//! Fixed approach:
+//! - Use ray-AABB intersection to find t values where line enters/exits face bounds
+//! - For X: t = (34 - 0) / (-1) = -34, t = (46 - 0) / (-1) = -46
+//! - Sample t from -46 to -34 (with padding)
+//! - Correctly covers the face
+//!
+//! This bug caused hole wall faces (Z=24, Z=36) to not be split at Y=0 and Y=6,
+//! resulting in the entire Z face being classified as Outside instead of having
+//! a middle strip (Y=0 to Y=6) classified as Inside.
 
 use vcad_kernel_geom::Surface;
 use vcad_kernel_math::{Point2, Point3};
@@ -243,21 +277,71 @@ pub fn trim_curve_to_face(
             }
         }
         IntersectionCurve::Line(line) => {
-            // Sample the line over a reasonable range
-            // For face trimming, we need to know what range to sample.
-            // Use the face's AABB to estimate the parameter range.
+            // CRITICAL: Use ray-AABB intersection to find the parameter range.
+            //
+            // The line's origin comes from SSI (Surface-Surface Intersection) and may be
+            // FAR from the face. We cannot simply use face_extent/direction_length as the
+            // range - that was a bug that caused hole walls to not be split correctly.
+            //
+            // Example of the bug:
+            //   Line origin: (0, 6, 36), direction: (-1, 0, 0)
+            //   Face X range: [34, 46]
+            //   Old code: t_range = 17.7, sampled t from -17.7 to +17.7
+            //   But we need t = -34 to -46 to reach the face!
+            //
+            // See module-level docs for full explanation.
             let aabb = crate::bbox::face_aabb(brep, face_id);
-            let extent = ((aabb.max.x - aabb.min.x).powi(2)
-                + (aabb.max.y - aabb.min.y).powi(2)
-                + (aabb.max.z - aabb.min.z).powi(2))
-            .sqrt();
             let dir_len = line.direction.norm();
             if dir_len < 1e-15 {
                 return Vec::new();
             }
-            let t_range = extent / dir_len * 2.0;
-            let t_min = -t_range;
-            let t_max = t_range;
+
+            // Ray-slab intersection: for each axis, find t where line enters/exits AABB
+            let mut t_min = f64::NEG_INFINITY;
+            let mut t_max = f64::INFINITY;
+
+            // X axis
+            if line.direction.x.abs() > 1e-15 {
+                let t1 = (aabb.min.x - line.origin.x) / line.direction.x;
+                let t2 = (aabb.max.x - line.origin.x) / line.direction.x;
+                let (t_enter, t_exit) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
+                t_min = t_min.max(t_enter);
+                t_max = t_max.min(t_exit);
+            } else if line.origin.x < aabb.min.x || line.origin.x > aabb.max.x {
+                return Vec::new(); // Line parallel to X but outside X range
+            }
+
+            // Y axis
+            if line.direction.y.abs() > 1e-15 {
+                let t1 = (aabb.min.y - line.origin.y) / line.direction.y;
+                let t2 = (aabb.max.y - line.origin.y) / line.direction.y;
+                let (t_enter, t_exit) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
+                t_min = t_min.max(t_enter);
+                t_max = t_max.min(t_exit);
+            } else if line.origin.y < aabb.min.y || line.origin.y > aabb.max.y {
+                return Vec::new(); // Line parallel to Y but outside Y range
+            }
+
+            // Z axis
+            if line.direction.z.abs() > 1e-15 {
+                let t1 = (aabb.min.z - line.origin.z) / line.direction.z;
+                let t2 = (aabb.max.z - line.origin.z) / line.direction.z;
+                let (t_enter, t_exit) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
+                t_min = t_min.max(t_enter);
+                t_max = t_max.min(t_exit);
+            } else if line.origin.z < aabb.min.z || line.origin.z > aabb.max.z {
+                return Vec::new(); // Line parallel to Z but outside Z range
+            }
+
+            // If t_min > t_max, line doesn't intersect AABB
+            if t_min > t_max {
+                return Vec::new();
+            }
+
+            // Expand slightly to ensure we catch boundaries
+            let padding = (t_max - t_min).max(1.0) * 0.1;
+            t_min -= padding;
+            t_max += padding;
 
             sample_and_trim(
                 |t| line.origin + t * line.direction,
@@ -324,8 +408,33 @@ pub fn trim_curve_to_face(
     }
 }
 
+/// Binary search to refine the exact parameter where inside/outside status changes.
+fn refine_crossing(
+    eval: &impl Fn(f64) -> Point3,
+    t_inside: f64,
+    t_outside: f64,
+    face_id: FaceId,
+    brep: &BRepSolid,
+    iterations: usize,
+) -> f64 {
+    let mut t_in = t_inside;
+    let mut t_out = t_outside;
+    for _ in 0..iterations {
+        let t_mid = 0.5 * (t_in + t_out);
+        let p = eval(t_mid);
+        if point_in_face(brep, face_id, &p) {
+            t_in = t_mid;
+        } else {
+            t_out = t_mid;
+        }
+    }
+    // Return the inside boundary (last point that's inside)
+    t_in
+}
+
 /// Generic helper: sample a curve, test each sample point against a face,
 /// and return parameter ranges where the curve is inside the face.
+/// Uses binary search to refine boundary crossings for accuracy.
 fn sample_and_trim(
     eval: impl Fn(f64) -> Point3,
     t_min: f64,
@@ -335,32 +444,65 @@ fn sample_and_trim(
     brep: &BRepSolid,
 ) -> Vec<TrimmedSegment> {
     let mut segments = Vec::new();
-    let mut in_segment = false;
-    let mut seg_start = t_min;
     let n = n_samples.max(2);
 
+    // First pass: find sample transitions
+    let mut samples: Vec<(f64, bool)> = Vec::with_capacity(n + 1);
     for i in 0..=n {
         let t = t_min + (t_max - t_min) * i as f64 / n as f64;
         let p = eval(t);
         let inside = point_in_face(brep, face_id, &p);
+        samples.push((t, inside));
+    }
 
-        if inside && !in_segment {
-            seg_start = t;
+    // Find transitions and refine them
+    let mut in_segment = false;
+    let mut seg_start = t_min;
+
+    for i in 1..samples.len() {
+        let (t_prev, inside_prev) = samples[i - 1];
+        let (t_curr, inside_curr) = samples[i];
+
+        if inside_curr && !inside_prev {
+            // Transition from outside to inside - refine to find exact entry
+            seg_start = refine_crossing(&eval, t_curr, t_prev, face_id, brep, 20);
             in_segment = true;
-        } else if !inside && in_segment {
-            segments.push(TrimmedSegment {
-                t_start: seg_start,
-                t_end: t,
-            });
-            in_segment = false;
+        } else if !inside_curr && inside_prev {
+            // Transition from inside to outside - refine to find exact exit
+            let seg_end = refine_crossing(&eval, t_prev, t_curr, face_id, brep, 20);
+            if in_segment {
+                segments.push(TrimmedSegment {
+                    t_start: seg_start,
+                    t_end: seg_end,
+                });
+                in_segment = false;
+            }
         }
     }
 
+    // Handle segment that extends to end
     if in_segment {
-        segments.push(TrimmedSegment {
-            t_start: seg_start,
+        // Check if we should refine the end or use t_max
+        let (t_last, inside_last) = samples[samples.len() - 1];
+        if inside_last {
+            segments.push(TrimmedSegment {
+                t_start: seg_start,
+                t_end: t_last,
+            });
+        }
+    }
+
+    // Handle case where first sample is inside (segment starts from beginning)
+    if !segments.is_empty() {
+        return segments;
+    }
+
+    // If no transitions found but some samples are inside, the entire sampled range might be inside
+    if samples.iter().any(|(_, inside)| *inside) && samples.iter().all(|(_, inside)| *inside) {
+        return vec![TrimmedSegment {
+            t_start: t_min,
             t_end: t_max,
-        });
+        }];
     }
 
     segments

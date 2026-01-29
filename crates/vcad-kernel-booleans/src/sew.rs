@@ -3,6 +3,44 @@
 //! After classification, we have sets of faces from both solids to keep.
 //! This module copies those faces into a new BRepSolid, merging vertices
 //! within tolerance and building proper shell/solid topology.
+//!
+//! # Important Implementation Note: Face Orientation Reversal
+//!
+//! When performing a boolean difference (A - B), faces from B that are kept
+//! need their normals flipped to point into the resulting solid (they become
+//! interior walls of holes/cavities).
+//!
+//! ## The Bug That Was Fixed
+//!
+//! There are two ways to flip a face's effective normal:
+//! 1. Flip the `orientation` field (Forward ↔ Reversed)
+//! 2. Reverse the loop vertex order (changes winding, which changes computed normal)
+//!
+//! The old code did BOTH when `reverse_b=true`:
+//! - `copy_loop` reversed vertex order → normal flipped
+//! - `copy_faces` flipped orientation → normal flipped again
+//!
+//! Two flips cancel out! The faces ended up with their original normal direction,
+//! pointing OUTWARD from the hole instead of INWARD. This caused:
+//! - Hole walls to contribute POSITIVE volume instead of negative
+//! - Result volume was 29088 instead of expected 27936
+//! - Visual artifacts (faces rendering incorrectly)
+//!
+//! ## The Fix
+//!
+//! Only flip the orientation field, NOT the loop vertex order. The orientation
+//! field is the proper B-rep mechanism for controlling face normal direction
+//! relative to the underlying surface.
+//!
+//! ```text
+//! // WRONG (double flip = no flip):
+//! copy_loop(..., reverse=true)  // flips winding
+//! orientation = !orientation    // flips again → back to original
+//!
+//! // CORRECT (single flip):
+//! copy_loop(..., reverse=false) // preserve winding
+//! orientation = !orientation    // flips once → correct direction
+//! ```
 
 use vcad_kernel_geom::GeometryStore;
 use vcad_kernel_math::Point3;
@@ -86,11 +124,19 @@ fn copy_faces(
             target_geom.add_surface(surface)
         });
 
-        // Copy outer loop vertices and half-edges
+        // Copy outer loop vertices and half-edges.
+        //
+        // CRITICAL: We do NOT reverse the loop vertices here, even when reverse_orientation=true.
+        // The orientation field flip alone is sufficient to reverse the face normal.
+        // If we also reversed the loop vertices, we'd double-flip and end up with the
+        // original normal direction (see module docs for detailed explanation).
+        //
+        // This was a bug that caused boolean difference to produce wrong results:
+        // hole walls pointed outward instead of inward, adding volume instead of subtracting.
         let tgt_outer_loop = copy_loop(
             source,
             src_face.outer_loop,
-            reverse_orientation,
+            false, // NEVER reverse loop - orientation flip handles normal reversal
             target_topo,
             &mut vertex_map,
         );
@@ -112,7 +158,7 @@ fn copy_faces(
             let tgt_inner = copy_loop(
                 source,
                 inner_loop,
-                reverse_orientation,
+                false, // Never reverse loop for orientation flip
                 target_topo,
                 &mut vertex_map,
             );
