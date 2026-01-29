@@ -86,11 +86,25 @@ export function ViewportContent() {
         dy *= 100;
       } // pages → pixels
 
+      // Shift + scroll = zoom
+      if (e.shiftKey) {
+        const zoomSpeed = 0.002;
+        const delta = -(Math.abs(dy) > Math.abs(dx) ? dy : dx) * zoomSpeed;
+        const target = controls.target;
+        const offset = offsetRef.current.subVectors(camera.position, target);
+        const distance = offset.length();
+        const newDistance = Math.max(1, distance * (1 + delta));
+        offset.normalize().multiplyScalar(newDistance);
+        camera.position.copy(target).add(offset);
+        controls.update();
+        return;
+      }
+
       // OrbitControls formula: viewport height = 2π radians
       const rotateSpeed = (2 * Math.PI) / domElement.clientHeight;
 
       // Accumulate velocity: deltaX → azimuthal (theta), deltaY → polar (phi)
-      velocityRef.current.theta -= dx * rotateSpeed;
+      velocityRef.current.theta += dx * rotateSpeed;
       velocityRef.current.phi += dy * rotateSpeed;
 
       // Start animation loop if not already running
@@ -161,8 +175,8 @@ export function ViewportContent() {
       {/* Orientation gizmo */}
       <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
         <GizmoViewport
-          axisColors={["#ef4444", "#22c55e", "#3b82f6"]}
-          labelColor="white"
+          axisColors={["#7a6a65", "#657a6a", "#656a7a"]}
+          labelColor="#75715E"
         />
       </GizmoHelper>
     </>
