@@ -610,10 +610,10 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   loadDocument: (file) => {
     set({
       document: file.document,
-      parts: file.parts,
+      parts: file.parts ?? [],
       consumedParts: file.consumedParts ?? {},
-      nextNodeId: file.nextNodeId,
-      nextPartNum: file.nextPartNum,
+      nextNodeId: file.nextNodeId ?? 1,
+      nextPartNum: file.nextPartNum ?? 1,
       isDirty: false,
       undoStack: [],
       redoStack: [],
