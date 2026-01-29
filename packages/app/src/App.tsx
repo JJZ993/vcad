@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastContainer } from "@/components/ui/toast";
-import { Viewport } from "@/components/Viewport";
+import { AppShell } from "@/components/AppShell";
+import { Header } from "@/components/Header";
 import { Toolbar } from "@/components/Toolbar";
+import { StatusBar } from "@/components/StatusBar";
+import { Viewport } from "@/components/Viewport";
 import { FeatureTree } from "@/components/FeatureTree";
 import { PropertyPanel } from "@/components/PropertyPanel";
-import { WelcomeScreen } from "@/components/WelcomeScreen";
+import { WelcomeModal } from "@/components/WelcomeModal";
 import { AboutModal } from "@/components/AboutModal";
 import { CommandPalette } from "@/components/CommandPalette";
 import { SketchCanvas } from "@/components/SketchCanvas";
@@ -16,6 +19,7 @@ import { useEngine } from "@/hooks/useEngine";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { saveDocument } from "@/lib/save-load";
 import { useToastStore } from "@/stores/toast-store";
+import { useOnboardingStore } from "@/stores/onboarding-store";
 
 function LoadingScreen() {
   return (
@@ -46,6 +50,7 @@ export function App() {
   useKeyboardShortcuts();
 
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const engineReady = useEngineStore((s) => s.engineReady);
@@ -62,6 +67,15 @@ export function App() {
   const clearSelection = useUiStore((s) => s.clearSelection);
   const parts = useDocumentStore((s) => s.parts);
   const removePart = useDocumentStore((s) => s.removePart);
+
+  const welcomeModalDismissed = useOnboardingStore((s) => s.welcomeModalDismissed);
+
+  // Close welcome modal when parts are added
+  useEffect(() => {
+    if (hasParts && welcomeOpen) {
+      setWelcomeOpen(false);
+    }
+  }, [hasParts, welcomeOpen]);
 
   const handleSave = useCallback(() => {
     const state = useDocumentStore.getState();
@@ -144,19 +158,33 @@ export function App() {
   if (error && !engineReady) return <ErrorScreen message={error} />;
   if (loading || !engineReady) return <LoadingScreen />;
 
+  // Determine if welcome modal should show
+  const showWelcomeModal = !hasParts && !welcomeModalDismissed && welcomeOpen && !sketchActive;
+
   return (
     <TooltipProvider>
-      <Viewport />
-      <Toolbar
-        onAboutOpen={() => setAboutOpen(true)}
-        onSave={handleSave}
-        onOpen={handleOpen}
-      />
-      {featureTreeOpen && !sketchActive && <FeatureTree />}
-      {hasSelection && !sketchActive && <PropertyPanel />}
-      {!hasParts && !sketchActive && <WelcomeScreen />}
-      <SketchCanvas />
-      <SketchToolbar />
+      <AppShell
+        header={
+          <Header
+            onAboutOpen={() => setAboutOpen(true)}
+            onSave={handleSave}
+            onOpen={handleOpen}
+          />
+        }
+        toolbar={<Toolbar />}
+        sidebar={<FeatureTree />}
+        sidebarVisible={featureTreeOpen && !sketchActive}
+        properties={<PropertyPanel />}
+        propertiesVisible={hasSelection && !sketchActive}
+        statusBar={<StatusBar />}
+      >
+        <Viewport />
+        <SketchCanvas />
+        <SketchToolbar />
+      </AppShell>
+
+      {/* Modals */}
+      <WelcomeModal open={showWelcomeModal} onOpenChange={setWelcomeOpen} />
       <AboutModal open={aboutOpen} onOpenChange={setAboutOpen} />
       <CommandPalette
         open={commandPaletteOpen}

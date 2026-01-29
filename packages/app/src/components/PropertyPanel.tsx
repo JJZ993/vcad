@@ -1,4 +1,4 @@
-import { Panel, PanelHeader, PanelBody } from "@/components/ui/panel";
+import { PanelHeader, PanelBody } from "@/components/ui/panel";
 import { Separator } from "@/components/ui/separator";
 import { ScrubInput } from "@/components/ui/scrub-input";
 import { useDocumentStore, useUiStore, isPrimitivePart } from "@vcad/core";
@@ -276,24 +276,35 @@ function SphereDimensions({
   );
 }
 
-export function PropertyPanel() {
+function PropertyPanelContent() {
   const selectedPartIds = useUiStore((s) => s.selectedPartIds);
   const parts = useDocumentStore((s) => s.parts);
   const document = useDocumentStore((s) => s.document);
 
-  if (selectedPartIds.size === 0) return null;
+  if (selectedPartIds.size === 0) {
+    return (
+      <div className="flex h-full flex-col">
+        <PanelHeader>Properties</PanelHeader>
+        <PanelBody>
+          <div className="px-1 py-4 text-center text-xs text-text-muted">
+            Select a part to edit properties
+          </div>
+        </PanelBody>
+      </div>
+    );
+  }
 
   // Multi-select: show count only
   if (selectedPartIds.size > 1) {
     return (
-      <Panel side="right">
+      <div className="flex h-full flex-col">
         <PanelHeader>{selectedPartIds.size} parts selected</PanelHeader>
         <PanelBody>
           <div className="px-1 text-xs text-text-muted">
             Select a single part to edit properties.
           </div>
         </PanelBody>
-      </Panel>
+      </div>
     );
   }
 
@@ -315,7 +326,7 @@ export function PropertyPanel() {
       : { x: 0, y: 0, z: 0 };
 
   return (
-    <Panel side="right">
+    <div className="flex h-full flex-col">
       <PanelHeader>{part.name}</PanelHeader>
       <PanelBody className="flex flex-col gap-3">
         {/* Dimensions by type (primitives only) */}
@@ -354,6 +365,10 @@ export function PropertyPanel() {
 
         <MaterialPicker partId={part.id} />
       </PanelBody>
-    </Panel>
+    </div>
   );
+}
+
+export function PropertyPanel() {
+  return <PropertyPanelContent />;
 }

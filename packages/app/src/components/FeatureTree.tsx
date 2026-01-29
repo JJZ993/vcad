@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Cube, Cylinder, Globe, Trash, Intersect, CaretRight, CaretDown, ArrowUp, ArrowsClockwise, Spiral, Stack } from "@phosphor-icons/react";
-import { Panel, PanelHeader, PanelBody } from "@/components/ui/panel";
+import { PanelHeader, PanelBody } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ContextMenu } from "@/components/ContextMenu";
@@ -237,7 +237,7 @@ export function FeatureTree() {
   }
 
   return (
-    <Panel side="left">
+    <div className="flex h-full flex-col">
       <PanelHeader>Features</PanelHeader>
       <PanelBody>
         <ContextMenu>
@@ -262,6 +262,6 @@ export function FeatureTree() {
           </div>
         </ContextMenu>
       </PanelBody>
-    </Panel>
+    </div>
   );
 }

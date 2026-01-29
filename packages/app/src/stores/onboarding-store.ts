@@ -4,8 +4,10 @@ import { persist } from "zustand/middleware";
 interface OnboardingState {
   examplesOpened: string[];
   projectsCreated: number;
+  welcomeModalDismissed: boolean;
   markExampleOpened: (id: string) => void;
   incrementProjectsCreated: () => void;
+  dismissWelcomeModal: () => void;
 }
 
 export const useOnboardingStore = create<OnboardingState>()(
@@ -13,6 +15,7 @@ export const useOnboardingStore = create<OnboardingState>()(
     (set) => ({
       examplesOpened: [],
       projectsCreated: 0,
+      welcomeModalDismissed: false,
 
       markExampleOpened: (id) =>
         set((state) => ({
@@ -25,6 +28,9 @@ export const useOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           projectsCreated: state.projectsCreated + 1,
         })),
+
+      dismissWelcomeModal: () =>
+        set({ welcomeModalDismissed: true }),
     }),
     {
       name: "vcad-onboarding",
