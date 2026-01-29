@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Vec2, Vec3, SketchSegment2D, SketchConstraint } from "@vcad/ir";
-import type { SketchPlane, SketchState, ConstraintTool, ConstraintStatus } from "../types.js";
+import type { SketchPlane, SketchState, ConstraintTool, ConstraintStatus, FaceInfo } from "../types.js";
+import { computePlaneFromFace } from "../types.js";
 
 /** A saved profile snapshot for loft operations */
 export interface ProfileSnapshot {
@@ -16,8 +17,17 @@ export interface SketchStore extends SketchState {
   // Confirmation state
   pendingExit: boolean;
 
+  // Face selection state
+  faceSelectionMode: boolean;
+  hoveredFace: FaceInfo | null;
+  selectedFace: FaceInfo | null;
+
   // Actions
-  enterSketchMode: (plane: SketchPlane) => void;
+  enterFaceSelectionMode: () => void;
+  setHoveredFace: (face: FaceInfo | null) => void;
+  selectFace: (face: FaceInfo) => void;
+  cancelFaceSelection: () => void;
+  enterSketchMode: (plane: SketchPlane, origin?: Vec3) => void;
   exitSketchMode: () => SketchExitStatus;
   requestExit: () => boolean; // Returns true if immediate exit, false if needs confirmation
   confirmExit: () => SketchExitStatus;
@@ -124,12 +134,32 @@ export const useSketchStore = create<SketchStore>((set, get) => ({
   loftMode: false,
   profiles: [],
   pendingExit: false,
+  faceSelectionMode: false,
+  hoveredFace: null,
+  selectedFace: null,
 
-  enterSketchMode: (plane) => {
+  enterFaceSelectionMode: () => {
     set({
+      faceSelectionMode: true,
+      hoveredFace: null,
+      selectedFace: null,
+    });
+  },
+
+  setHoveredFace: (face) => {
+    set({ hoveredFace: face });
+  },
+
+  selectFace: (face) => {
+    const plane = computePlaneFromFace(face);
+    set({
+      faceSelectionMode: false,
+      selectedFace: face,
+      hoveredFace: null,
+      // Enter sketch mode with the computed plane
       active: true,
       plane,
-      origin: { x: 0, y: 0, z: 0 },
+      origin: plane.origin,
       segments: [],
       constraints: [],
       tool: "rectangle",
@@ -144,10 +174,50 @@ export const useSketchStore = create<SketchStore>((set, get) => ({
     });
   },
 
+  cancelFaceSelection: () => {
+    set({
+      faceSelectionMode: false,
+      hoveredFace: null,
+      selectedFace: null,
+    });
+  },
+
+  enterSketchMode: (plane, origin) => {
+    const planeOrigin = origin ?? (typeof plane === "string" ? { x: 0, y: 0, z: 0 } : plane.origin);
+    set({
+      active: true,
+      plane,
+      origin: planeOrigin,
+      segments: [],
+      constraints: [],
+      tool: "rectangle",
+      constraintTool: "none",
+      points: [],
+      selectedSegments: [],
+      solved: true,
+      constraintStatus: "under",
+      loftMode: false,
+      profiles: [],
+      pendingExit: false,
+      faceSelectionMode: false,
+      hoveredFace: null,
+      selectedFace: null,
+    });
+  },
+
   exitSketchMode: (): SketchExitStatus => {
     const state = get();
     const hasSegments = state.segments.length > 0;
-    set({ active: false, points: [], loftMode: false, profiles: [], pendingExit: false });
+    set({
+      active: false,
+      points: [],
+      loftMode: false,
+      profiles: [],
+      pendingExit: false,
+      faceSelectionMode: false,
+      hoveredFace: null,
+      selectedFace: null,
+    });
     return hasSegments ? "has_segments" : "empty";
   },
 

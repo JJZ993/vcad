@@ -67,7 +67,7 @@ function ToolbarButton({
 }
 
 function Divider() {
-  return <div className="h-6 w-px bg-border/50" />;
+  return <div className="h-6 w-px bg-border" />;
 }
 
 function StatusSection() {
@@ -111,7 +111,10 @@ export function BottomToolbar() {
   const toggleCommandPalette = useUiStore((s) => s.toggleCommandPalette);
 
   const enterSketchMode = useSketchStore((s) => s.enterSketchMode);
+  const enterFaceSelectionMode = useSketchStore((s) => s.enterFaceSelectionMode);
   const sketchActive = useSketchStore((s) => s.active);
+  const faceSelectionMode = useSketchStore((s) => s.faceSelectionMode);
+  const parts = useDocumentStore((s) => s.parts);
 
   const hasSelection = selectedPartIds.size > 0;
   const hasTwoSelected = selectedPartIds.size === 2;
@@ -134,9 +137,9 @@ export function BottomToolbar() {
       <div
         className={cn(
           "flex items-center gap-1 px-2 py-1.5",
-          "bg-surface/80 backdrop-blur-md",
-          "border border-border/50",
-          "shadow-lg shadow-black/20"
+          "bg-surface",
+          "border border-border",
+          "shadow-lg shadow-black/30"
         )}
       >
         {/* Primitives */}
@@ -154,8 +157,15 @@ export function BottomToolbar() {
         {/* Sketch */}
         <ToolbarButton
           tooltip="New Sketch (S)"
+          active={faceSelectionMode}
           disabled={sketchActive}
-          onClick={() => enterSketchMode("XY")}
+          onClick={() => {
+            if (parts.length > 0) {
+              enterFaceSelectionMode();
+            } else {
+              enterSketchMode("XY");
+            }
+          }}
         >
           <PencilSimple size={20} />
         </ToolbarButton>

@@ -3,6 +3,9 @@ export type {
   PrimitiveKind,
   BooleanType,
   SketchPlane,
+  AxisAlignedPlane,
+  ArbitraryPlane,
+  FaceInfo,
   PrimitivePartInfo,
   BooleanPartInfo,
   ExtrudePartInfo,
@@ -26,6 +29,9 @@ export {
   isSweepPart,
   isLoftPart,
   getSketchPlaneDirections,
+  isAxisAlignedPlane,
+  computePlaneFromFace,
+  getSketchPlaneName,
 } from "./types.js";
 
 // Stores

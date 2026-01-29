@@ -2,7 +2,29 @@ import type { NodeId, Vec2, Vec3, SketchSegment2D, SketchConstraint } from "@vca
 
 export type PrimitiveKind = "cube" | "cylinder" | "sphere";
 export type BooleanType = "union" | "difference" | "intersection";
-export type SketchPlane = "XY" | "XZ" | "YZ";
+
+/** Axis-aligned sketch plane */
+export type AxisAlignedPlane = "XY" | "XZ" | "YZ";
+
+/** Arbitrary sketch plane defined by face selection */
+export interface ArbitraryPlane {
+  type: "face";
+  origin: Vec3;
+  xDir: Vec3;
+  yDir: Vec3;
+  normal: Vec3;
+}
+
+/** Sketch plane - can be axis-aligned or arbitrary (from face) */
+export type SketchPlane = AxisAlignedPlane | ArbitraryPlane;
+
+/** Information about a selected face */
+export interface FaceInfo {
+  partId: string;
+  faceIndex: number;
+  normal: Vec3;
+  centroid: Vec3;
+}
 
 export interface PrimitivePartInfo {
   id: string;
@@ -143,13 +165,56 @@ export interface SketchState {
 }
 
 /** Get the X and Y direction vectors for a sketch plane */
-export function getSketchPlaneDirections(plane: SketchPlane): { x_dir: Vec3; y_dir: Vec3 } {
-  switch (plane) {
-    case "XY":
-      return { x_dir: { x: 1, y: 0, z: 0 }, y_dir: { x: 0, y: 1, z: 0 } };
-    case "XZ":
-      return { x_dir: { x: 1, y: 0, z: 0 }, y_dir: { x: 0, y: 0, z: 1 } };
-    case "YZ":
-      return { x_dir: { x: 0, y: 1, z: 0 }, y_dir: { x: 0, y: 0, z: 1 } };
+export function getSketchPlaneDirections(plane: SketchPlane): { x_dir: Vec3; y_dir: Vec3; normal: Vec3 } {
+  if (typeof plane === "string") {
+    switch (plane) {
+      case "XY":
+        return { x_dir: { x: 1, y: 0, z: 0 }, y_dir: { x: 0, y: 1, z: 0 }, normal: { x: 0, y: 0, z: 1 } };
+      case "XZ":
+        return { x_dir: { x: 1, y: 0, z: 0 }, y_dir: { x: 0, y: 0, z: 1 }, normal: { x: 0, y: 1, z: 0 } };
+      case "YZ":
+        return { x_dir: { x: 0, y: 1, z: 0 }, y_dir: { x: 0, y: 0, z: 1 }, normal: { x: 1, y: 0, z: 0 } };
+    }
   }
+  // Arbitrary plane from face selection
+  return { x_dir: plane.xDir, y_dir: plane.yDir, normal: plane.normal };
+}
+
+/** Check if a plane is axis-aligned */
+export function isAxisAlignedPlane(plane: SketchPlane): plane is AxisAlignedPlane {
+  return typeof plane === "string";
+}
+
+/** Helper to compute cross product */
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
+/** Helper to normalize a vector */
+function normalize(v: Vec3): Vec3 {
+  const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+  if (len < 0.0001) return { x: 0, y: 0, z: 1 };
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
+}
+
+/** Compute a sketch plane from a face selection */
+export function computePlaneFromFace(face: FaceInfo): ArbitraryPlane {
+  const normal = normalize(face.normal);
+
+  // Build orthonormal basis - pick reference vector that isn't parallel to normal
+  const ref = Math.abs(normal.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+  const xDir = normalize(cross(ref, normal));
+  const yDir = cross(normal, xDir);
+
+  return { type: "face", origin: face.centroid, xDir, yDir, normal };
+}
+
+/** Get display name for a sketch plane */
+export function getSketchPlaneName(plane: SketchPlane): string {
+  if (typeof plane === "string") return plane;
+  return "Face";
 }

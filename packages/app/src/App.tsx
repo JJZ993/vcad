@@ -12,6 +12,7 @@ import { AboutModal } from "@/components/AboutModal";
 import { CommandPalette } from "@/components/CommandPalette";
 import { SketchCanvas } from "@/components/SketchCanvas";
 import { SketchToolbar } from "@/components/SketchToolbar";
+import { FaceSelectionOverlay } from "@/components/FaceSelectionOverlay";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useSketchStore, useEngineStore, useDocumentStore, useUiStore, parseVcadFile } from "@vcad/core";
 import { useEngine } from "@/hooks/useEngine";
@@ -165,6 +166,7 @@ export function App() {
         <Viewport />
         <SketchCanvas />
         <SketchToolbar />
+        <FaceSelectionOverlay />
 
         {/* Floating UI elements */}
         <CornerIcons

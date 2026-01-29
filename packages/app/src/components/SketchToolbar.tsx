@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   LineSegment,
   Rectangle,
@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { useSketchStore, useDocumentStore, useUiStore } from "@vcad/core";
+import { useSketchStore, useDocumentStore, useUiStore, getSketchPlaneDirections } from "@vcad/core";
 import { useToastStore } from "@/stores/toast-store";
 import type { SketchState, ConstraintTool } from "@vcad/core";
 
@@ -295,6 +295,17 @@ export function SketchToolbar() {
   const select = useUiStore((s) => s.select);
   const addToast = useToastStore((s) => s.addToast);
 
+  // Listen for quick extrude keyboard shortcut
+  useEffect(() => {
+    const handleQuickExtrude = () => {
+      if (active && segments.length > 0 && !loftMode) {
+        setShowExtrudeDialog(true);
+      }
+    };
+    window.addEventListener("vcad:sketch-extrude", handleQuickExtrude);
+    return () => window.removeEventListener("vcad:sketch-extrude", handleQuickExtrude);
+  }, [active, segments.length, loftMode]);
+
   if (!active) return null;
 
   const hasSegments = segments.length > 0;
@@ -339,17 +350,13 @@ export function SketchToolbar() {
   function handleExtrude(depth: number) {
     if (!hasSegments) return;
 
-    // Determine extrusion direction based on plane
-    const direction = (() => {
-      switch (plane) {
-        case "XY":
-          return { x: 0, y: 0, z: depth };
-        case "XZ":
-          return { x: 0, y: depth, z: 0 };
-        case "YZ":
-          return { x: depth, y: 0, z: 0 };
-      }
-    })();
+    // Determine extrusion direction based on plane normal
+    const { normal } = getSketchPlaneDirections(plane);
+    const direction = {
+      x: normal.x * depth,
+      y: normal.y * depth,
+      z: normal.z * depth,
+    };
 
     const partId = addExtrude(plane, origin, segments, direction);
     if (partId) {
@@ -364,20 +371,16 @@ export function SketchToolbar() {
     if (!hasSegments) return;
 
     // Create path based on type
+    const { normal } = getSketchPlaneDirections(plane);
     const path = (() => {
       if (params.type === "line") {
         // Line path along the normal direction of the sketch plane
         const start = origin;
-        const end = (() => {
-          switch (plane) {
-            case "XY":
-              return { x: origin.x, y: origin.y, z: origin.z + params.height };
-            case "XZ":
-              return { x: origin.x, y: origin.y + params.height, z: origin.z };
-            case "YZ":
-              return { x: origin.x + params.height, y: origin.y, z: origin.z };
-          }
-        })();
+        const end = {
+          x: origin.x + normal.x * params.height,
+          y: origin.y + normal.y * params.height,
+          z: origin.z + normal.z * params.height,
+        };
         return { type: "Line" as const, start, end };
       } else {
         // Helix path
@@ -404,17 +407,13 @@ export function SketchToolbar() {
     // Save current profile and prepare for next
     saveProfile();
 
-    // Calculate new origin with Z offset
-    const newOrigin = (() => {
-      switch (plane) {
-        case "XY":
-          return { x: origin.x, y: origin.y, z: origin.z + zOffset };
-        case "XZ":
-          return { x: origin.x, y: origin.y + zOffset, z: origin.z };
-        case "YZ":
-          return { x: origin.x + zOffset, y: origin.y, z: origin.z };
-      }
-    })();
+    // Calculate new origin with offset along plane normal
+    const { normal } = getSketchPlaneDirections(plane);
+    const newOrigin = {
+      x: origin.x + normal.x * zOffset,
+      y: origin.y + normal.y * zOffset,
+      z: origin.z + normal.z * zOffset,
+    };
 
     clearForNextProfile(newOrigin);
     setShowLoftHeightDialog(false);
@@ -618,7 +617,7 @@ export function SketchToolbar() {
         {!loftMode && (
           <>
             {/* Extrude */}
-            <Tooltip content="Extrude sketch">
+            <Tooltip content="Extrude sketch (E)">
               <Button
                 variant={hasSegments ? "default" : "ghost"}
                 size="icon-sm"

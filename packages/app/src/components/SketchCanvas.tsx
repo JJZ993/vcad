@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from "react";
-import { useSketchStore, useUiStore } from "@vcad/core";
+import { useSketchStore, useUiStore, getSketchPlaneName } from "@vcad/core";
 import { useTheme } from "@/hooks/useTheme";
 import type { Vec2, SketchSegment2D } from "@vcad/ir";
 
@@ -389,7 +389,7 @@ export function SketchCanvas() {
       />
       <div className="absolute left-4 top-4  bg-surface border border-border px-3 py-2 text-xs text-text">
         <span className="font-medium">Sketch Mode</span>
-        <span className="ml-2 text-text-muted">Plane: {plane}</span>
+        <span className="ml-2 text-text-muted">Plane: {getSketchPlaneName(plane)}</span>
         {isConstraintMode && (
           <span className="ml-2 text-amber-400">
             Constraint: {constraintTool} ({selectedSegments.length} selected)

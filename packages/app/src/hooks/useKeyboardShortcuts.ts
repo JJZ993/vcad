@@ -174,11 +174,28 @@ export function useKeyboardShortcuts() {
 
       // Enter sketch mode: S
       if (e.key === "s" || e.key === "S") {
-        const { active } = useSketchStore.getState();
-        if (!active) {
-          useSketchStore.getState().enterSketchMode("XY");
+        const { active, faceSelectionMode } = useSketchStore.getState();
+        if (!active && !faceSelectionMode) {
+          const hasParts = useDocumentStore.getState().parts.length > 0;
+          if (hasParts) {
+            // Has parts - enter face selection mode first
+            useSketchStore.getState().enterFaceSelectionMode();
+          } else {
+            // No parts - go directly to XY plane sketch
+            useSketchStore.getState().enterSketchMode("XY");
+          }
         }
         return;
+      }
+
+      // Quick extrude: E (when in sketch mode with segments)
+      if ((e.key === "e" || e.key === "E") && !mod) {
+        const { active, segments } = useSketchStore.getState();
+        if (active && segments.length > 0) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("vcad:sketch-extrude"));
+          return;
+        }
       }
 
       // Focus camera on selection
@@ -208,9 +225,17 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Escape: exit sketch mode or deselect
+      // Escape: exit sketch mode, cancel face selection, or deselect
       if (e.key === "Escape") {
-        const { active, pendingExit, requestExit, cancelExit } = useSketchStore.getState();
+        const { active, faceSelectionMode, pendingExit, requestExit, cancelExit, cancelFaceSelection } = useSketchStore.getState();
+
+        // Cancel face selection mode
+        if (faceSelectionMode) {
+          cancelFaceSelection();
+          useToastStore.getState().addToast("Face selection cancelled", "info");
+          return;
+        }
+
         if (active) {
           // If confirmation dialog is showing, cancel it
           if (pendingExit) {
