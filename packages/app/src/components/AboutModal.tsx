@@ -19,26 +19,41 @@ const WHY = [
   { title: "agent-native", desc: "small api, operator overloads, consistent patterns. ai agents generate models." },
 ];
 
-const SHORTCUTS = [
-  { keys: "W", desc: "Move tool" },
-  { keys: "E", desc: "Rotate tool" },
-  { keys: "R", desc: "Scale tool" },
-  { keys: "Del", desc: "Delete selected" },
-  { keys: "Esc", desc: "Deselect" },
-  { keys: "\u2318Z", desc: "Undo" },
-  { keys: "\u2318\u21E7Z", desc: "Redo" },
-  { keys: "\u2318D", desc: "Duplicate" },
-  { keys: "\u2318C/V", desc: "Copy / Paste" },
-  { keys: "\u2318S", desc: "Save" },
-  { keys: "\u2318O", desc: "Open" },
-  { keys: "\u2318\u21E7U", desc: "Union (2 sel)" },
-  { keys: "\u2318\u21E7D", desc: "Difference (2 sel)" },
-  { keys: "\u2318\u21E7I", desc: "Intersection (2 sel)" },
-  { keys: "X", desc: "Wireframe" },
-  { keys: "G", desc: "Grid snap" },
-  { keys: "F", desc: "Focus selection" },
-  { keys: "Shift+Click", desc: "Multi-select" },
-];
+const SHORTCUTS = {
+  transform: [
+    { keys: "W", desc: "Move tool" },
+    { keys: "E", desc: "Rotate tool" },
+    { keys: "R", desc: "Scale tool" },
+  ],
+  editing: [
+    { keys: "Del", desc: "Delete selected" },
+    { keys: "⌘D", desc: "Duplicate" },
+    { keys: "⌘C", desc: "Copy" },
+    { keys: "⌘V", desc: "Paste" },
+    { keys: "⌘Z", desc: "Undo" },
+    { keys: "⌘⇧Z", desc: "Redo" },
+  ],
+  booleans: [
+    { keys: "⌘⇧U", desc: "Union (2 selected)" },
+    { keys: "⌘⇧D", desc: "Difference (2 selected)" },
+    { keys: "⌘⇧I", desc: "Intersection (2 selected)" },
+  ],
+  tools: [
+    { keys: "S", desc: "Sketch mode" },
+    { keys: "X", desc: "Toggle wireframe" },
+    { keys: "G", desc: "Toggle grid snap" },
+    { keys: "F", desc: "Focus selection" },
+    { keys: "Esc", desc: "Exit sketch / Deselect" },
+  ],
+  file: [
+    { keys: "⌘K", desc: "Command palette" },
+    { keys: "⌘S", desc: "Save" },
+    { keys: "⌘O", desc: "Open" },
+  ],
+  mouse: [
+    { keys: "Shift+Click", desc: "Multi-select" },
+  ],
+};
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -117,13 +132,22 @@ export function AboutModal({
 
             {/* Keyboard shortcuts */}
             <Section title="keyboard shortcuts">
-              <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-xs">
-                {SHORTCUTS.map((s) => (
-                  <div key={s.keys} className="flex items-center gap-2">
-                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center  border border-border bg-surface px-1.5 text-[10px] font-bold text-text-muted">
-                      {s.keys}
-                    </kbd>
-                    <span className="text-text-muted/70">{s.desc}</span>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-xs">
+                {Object.entries(SHORTCUTS).map(([group, items]) => (
+                  <div key={group}>
+                    <div className="mb-1 text-[9px] font-medium uppercase tracking-wide text-text-muted/50">
+                      {group}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {items.map((s) => (
+                        <div key={s.keys} className="flex items-center gap-2">
+                          <kbd className="inline-flex h-5 min-w-5 items-center justify-center border border-border bg-surface px-1.5 text-[10px] font-bold text-text-muted">
+                            {s.keys}
+                          </kbd>
+                          <span className="text-text-muted/70">{s.desc}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
