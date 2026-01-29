@@ -26,7 +26,7 @@ function MenuItem({
 }) {
   return (
     <RadixContextMenu.Item
-      className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-text outline-none cursor-pointer data-[disabled]:opacity-40 data-[disabled]:cursor-default data-[highlighted]:bg-accent/20 data-[highlighted]:text-accent"
+      className="group flex items-center gap-2  px-2 py-1.5 text-xs text-text outline-none cursor-pointer data-[disabled]:opacity-40 data-[disabled]:cursor-default data-[highlighted]:bg-accent/20 data-[highlighted]:text-accent"
       disabled={disabled}
       onClick={onClick}
     >
@@ -74,7 +74,7 @@ export function ContextMenu({ children }: { children: ReactNode }) {
     <RadixContextMenu.Root>
       <RadixContextMenu.Trigger asChild>{children}</RadixContextMenu.Trigger>
       <RadixContextMenu.Portal>
-        <RadixContextMenu.Content className="z-50 min-w-[180px] rounded-lg border border-border bg-card p-1 shadow-xl backdrop-blur-xl">
+        <RadixContextMenu.Content className="z-50 min-w-[180px]  border border-border bg-card p-1 shadow-xl">
           <MenuItem
             icon={Copy}
             label="Duplicate"

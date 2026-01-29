@@ -4,8 +4,10 @@ import { Line, Html } from "@react-three/drei";
 import { useUiStore } from "@/stores/ui-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { useEngineStore } from "@/stores/engine-store";
+import { useTheme } from "@/hooks/useTheme";
 
-const ACCENT_COLOR = "#60a5fa";
+const ACCENT_DARK = "#00d4ff";
+const ACCENT_LIGHT = "#0891b2"; // darker cyan for light mode contrast
 
 const MODE_LABELS: Record<string, string> = {
   translate: "move",
@@ -13,7 +15,7 @@ const MODE_LABELS: Record<string, string> = {
   scale: "scale",
 };
 
-function BoundingBoxLines({ box }: { box: THREE.Box3 }) {
+function BoundingBoxLines({ box, color }: { box: THREE.Box3; color: string }) {
   const min = box.min;
   const max = box.max;
 
@@ -42,7 +44,7 @@ function BoundingBoxLines({ box }: { box: THREE.Box3 }) {
         <Line
           key={i}
           points={edge}
-          color={ACCENT_COLOR}
+          color={color}
           lineWidth={1}
           dashed
           dashSize={2}
@@ -61,6 +63,9 @@ export function SelectionOverlay() {
   const isDraggingGizmo = useUiStore((s) => s.isDraggingGizmo);
   const parts = useDocumentStore((s) => s.parts);
   const scene = useEngineStore((s) => s.scene);
+  const { isDark } = useTheme();
+
+  const accentColor = isDark ? ACCENT_DARK : ACCENT_LIGHT;
 
   // Compute combined bounding box for all selected parts
   const { box, labelPosition } = useMemo(() => {
@@ -111,22 +116,22 @@ export function SelectionOverlay() {
   return (
     <>
       {/* Dashed wireframe bounding box */}
-      <BoundingBoxLines box={box} />
+      <BoundingBoxLines box={box} color={accentColor} />
 
       {/* Corner handles (small spheres) */}
       <mesh position={[box.min.x, box.min.y, box.min.z]}>
         <sphereGeometry args={[0.5, 8, 8]} />
-        <meshBasicMaterial color={ACCENT_COLOR} transparent opacity={0.6} />
+        <meshBasicMaterial color={accentColor} transparent opacity={0.6} />
       </mesh>
       <mesh position={[box.max.x, box.max.y, box.max.z]}>
         <sphereGeometry args={[0.5, 8, 8]} />
-        <meshBasicMaterial color={ACCENT_COLOR} transparent opacity={0.6} />
+        <meshBasicMaterial color={accentColor} transparent opacity={0.6} />
       </mesh>
 
       {/* Mode label */}
       {labelPosition && (
         <Html position={labelPosition} center style={{ pointerEvents: "none" }}>
-          <div className="rounded bg-accent/90 px-1.5 py-0.5 text-[10px] font-medium text-white whitespace-nowrap">
+          <div className=" bg-accent/90 px-1.5 py-0.5 text-[10px] font-medium text-white whitespace-nowrap">
             {MODE_LABELS[transformMode]}
           </div>
         </Html>

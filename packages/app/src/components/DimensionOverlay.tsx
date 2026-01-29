@@ -60,7 +60,7 @@ function DimensionLine({ start, end, label, offset = new THREE.Vector3() }: Dime
       />
       {/* Label */}
       <Html position={mid} center style={{ pointerEvents: "none" }}>
-        <div className="rounded bg-card/80 px-1 py-0.5 text-[10px] text-text-muted backdrop-blur-sm whitespace-nowrap">
+        <div className=" bg-surface border border-border px-1 py-0.5 text-[10px] text-text-muted whitespace-nowrap">
           {label}
         </div>
       </Html>

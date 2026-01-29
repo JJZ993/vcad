@@ -23,7 +23,6 @@ export function createCommandRegistry(actions: {
   toggleWireframe: () => void;
   toggleGridSnap: () => void;
   toggleFeatureTree: () => void;
-  toggleTheme: () => void;
   save: () => void;
   open: () => void;
   exportStl: () => void;
@@ -186,13 +185,6 @@ export function createCommandRegistry(actions: {
       icon: "SidebarSimple",
       keywords: ["sidebar", "panel", "tree", "features"],
       action: actions.toggleFeatureTree,
-    },
-    {
-      id: "toggle-theme",
-      label: "Toggle Theme",
-      icon: "Sun",
-      keywords: ["theme", "dark", "light", "mode"],
-      action: actions.toggleTheme,
     },
 
     // File operations

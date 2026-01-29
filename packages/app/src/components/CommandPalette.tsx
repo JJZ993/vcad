@@ -104,7 +104,6 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
   const toggleWireframe = useUiStore((s) => s.toggleWireframe);
   const toggleGridSnap = useUiStore((s) => s.toggleGridSnap);
   const toggleFeatureTree = useUiStore((s) => s.toggleFeatureTree);
-  const toggleTheme = useUiStore((s) => s.toggleTheme);
 
   const scene = useEngineStore((s) => s.scene);
 
@@ -146,10 +145,6 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
       },
       toggleFeatureTree: () => {
         toggleFeatureTree();
-        onOpenChange(false);
-      },
-      toggleTheme: () => {
-        toggleTheme();
         onOpenChange(false);
       },
       save: () => {
@@ -221,7 +216,6 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
     setTransformMode,
     toggleFeatureTree,
     toggleGridSnap,
-    toggleTheme,
     toggleWireframe,
     undo,
     undoStack.length,
@@ -293,7 +287,7 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
         <Dialog.Content
-          className="fixed left-1/2 top-[20%] z-50 w-full max-w-md -translate-x-1/2 rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-xl"
+          className="fixed left-1/2 top-[20%] z-50 w-full max-w-md -translate-x-1/2  border border-border bg-card shadow-2xl"
           onKeyDown={handleKeyDown}
           aria-describedby={undefined}
         >
@@ -311,7 +305,7 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
               className="flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
               autoFocus
             />
-            <kbd className="rounded bg-border/50 px-1.5 py-0.5 text-[10px] text-text-muted">esc</kbd>
+            <kbd className=" bg-border/50 px-1.5 py-0.5 text-[10px] text-text-muted">esc</kbd>
           </div>
           <div ref={listRef} className="max-h-[300px] overflow-y-auto p-1">
             {filteredCommands.length === 0 ? (
@@ -331,7 +325,7 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
                     disabled={isDisabled}
                     onClick={() => executeCommand(cmd)}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                      "flex w-full items-center gap-3  px-3 py-2 text-left text-sm transition-colors",
                       isSelected && !isDisabled && "bg-accent/20",
                       isDisabled && "opacity-40 cursor-not-allowed",
                       !isSelected && !isDisabled && "hover:bg-border/30",
@@ -340,7 +334,7 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
                     <Icon size={16} className="shrink-0 text-text-muted" />
                     <span className="flex-1">{highlightMatch(cmd.label, query)}</span>
                     {cmd.shortcut && (
-                      <kbd className="rounded bg-border/50 px-1.5 py-0.5 text-[10px] text-text-muted">
+                      <kbd className=" bg-border/50 px-1.5 py-0.5 text-[10px] text-text-muted">
                         {cmd.shortcut}
                       </kbd>
                     )}

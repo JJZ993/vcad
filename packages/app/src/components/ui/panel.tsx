@@ -13,8 +13,8 @@ export function Panel({
   return (
     <div
       className={cn(
-        "fixed top-14 bottom-4 z-20 flex w-64 flex-col overflow-hidden rounded-lg",
-        "bg-card/80 backdrop-blur-xl border border-border shadow-2xl",
+        "fixed top-14 bottom-4 z-20 flex w-64 flex-col overflow-hidden",
+        "bg-card border border-border shadow-2xl",
         side === "left" ? "left-4" : "right-4",
         className,
       )}

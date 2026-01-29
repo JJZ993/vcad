@@ -6,7 +6,7 @@ import type { PartInfo } from "@/types";
 import { useUiStore } from "@/stores/ui-store";
 import { useDocumentStore } from "@/stores/document-store";
 
-const HOVER_EMISSIVE = new THREE.Color(0xfbbf24); // warm amber
+const HOVER_EMISSIVE = new THREE.Color(0xffb800); // neon amber
 
 interface SceneMeshProps {
   partInfo: PartInfo;
@@ -107,11 +107,12 @@ export function SceneMesh({ partInfo, mesh, selected }: SceneMeshProps) {
         metalness={0.1}
         roughness={0.6}
         flatShading={false}
+        side={THREE.DoubleSide}
       />
       {showWireframe && <Edges threshold={15} color="#666" />}
       {isHovered && !selected && (
         <Html position={center} center style={{ pointerEvents: "none" }}>
-          <div className="rounded bg-card/90 px-2 py-1 text-xs text-text shadow-lg backdrop-blur-sm whitespace-nowrap">
+          <div className=" bg-surface border border-border px-2 py-1 text-xs text-text shadow-lg whitespace-nowrap">
             {partInfo.name}
           </div>
         </Html>

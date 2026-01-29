@@ -130,7 +130,7 @@ export function ScrubInput({
       <div className="relative flex-1">
         {/* Background fill indicator */}
         <div
-          className="absolute inset-y-0 left-0 rounded bg-accent/10 transition-all pointer-events-none"
+          className="absolute inset-y-0 left-0 bg-accent/10 transition-all pointer-events-none"
           style={{ width: `${fillPercent}%` }}
         />
         <input
@@ -150,7 +150,7 @@ export function ScrubInput({
           onDoubleClick={handleDoubleClick}
           readOnly={!isEditing}
           className={cn(
-            "w-full rounded border border-border bg-transparent px-2 py-1 text-xs text-text outline-none focus:border-accent relative z-10",
+            "w-full border border-border bg-transparent px-2 py-1 text-xs text-text outline-none focus:border-accent relative z-10",
             !isEditing && "cursor-ew-resize select-none",
             isScrubbing && "cursor-ew-resize",
           )}

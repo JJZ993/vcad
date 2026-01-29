@@ -32,12 +32,9 @@ interface UiState {
   copyToClipboard: (partIds: string[]) => void;
 }
 
-function loadTheme(): Theme {
-  try {
-    const stored = localStorage.getItem("vcad-theme");
-    if (stored === "light" || stored === "dark") return stored;
-  } catch {
-    // ignore
+function getSystemTheme(): Theme {
+  if (typeof window !== "undefined" && window.matchMedia) {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
   return "dark";
 }
@@ -56,13 +53,21 @@ function applyTheme(theme: Theme) {
   const root = document.documentElement;
   root.classList.remove("dark", "light");
   root.classList.add(theme);
-  localStorage.setItem("vcad-theme", theme);
 }
 
 export const useUiStore = create<UiState>((set) => {
-  const initialTheme = loadTheme();
+  const initialTheme = getSystemTheme();
   // Apply on init
   queueMicrotask(() => applyTheme(initialTheme));
+
+  // Listen for system theme changes
+  if (typeof window !== "undefined" && window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+      const newTheme = e.matches ? "dark" : "light";
+      applyTheme(newTheme);
+      set({ theme: newTheme });
+    });
+  }
 
   return {
     selectedPartIds: new Set(),
@@ -115,12 +120,9 @@ export const useUiStore = create<UiState>((set) => {
         return { featureTreeOpen: next };
       }),
 
-    toggleTheme: () =>
-      set((s) => {
-        const next = s.theme === "dark" ? "light" : "dark";
-        applyTheme(next);
-        return { theme: next };
-      }),
+    toggleTheme: () => {
+      // Theme follows system - toggle does nothing now
+    },
 
     toggleWireframe: () =>
       set((s) => ({ showWireframe: !s.showWireframe })),

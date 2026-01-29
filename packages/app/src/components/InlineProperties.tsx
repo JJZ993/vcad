@@ -44,7 +44,7 @@ function InlineRenameInput({
         if (e.key === "Enter") commit();
         if (e.key === "Escape") onDone();
       }}
-      className="w-full rounded border border-accent bg-surface px-1.5 py-0.5 text-xs text-text outline-none"
+      className="w-full  border border-accent bg-surface px-1.5 py-0.5 text-xs text-text outline-none"
       autoFocus
     />
   );
@@ -228,7 +228,7 @@ export function InlineProperties() {
 
   return (
     <Html position={anchorPosition} style={{ pointerEvents: "auto" }}>
-      <div className="rounded-lg border border-border bg-card/95 p-2 shadow-lg backdrop-blur-xl min-w-[140px]">
+      <div className=" border border-border bg-card p-2 shadow-lg min-w-[140px]">
         {/* Part name */}
         <div className="mb-2">
           {isRenaming ? (

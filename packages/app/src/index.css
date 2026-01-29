@@ -15,28 +15,40 @@
   --font-mono: "Berkeley Mono", ui-monospace, monospace;
   --font-sans: "Berkeley Mono", ui-monospace, monospace;
 
-  --color-bg: oklch(0.129 0.021 264);
-  --color-bg-light: oklch(0.961 0.009 248);
-  --color-surface: oklch(0.168 0.022 264);
-  --color-surface-light: oklch(0.968 0.007 247);
-  --color-card: oklch(0.208 0.024 264);
-  --color-card-light: oklch(1 0 0);
-  --color-border: oklch(0.282 0.023 264);
-  --color-border-light: oklch(0.869 0.013 253);
-  --color-text: oklch(0.966 0.007 247);
-  --color-text-light: oklch(0.208 0.024 264);
-  --color-text-muted: oklch(0.554 0.017 259);
-  --color-text-muted-light: oklch(0.554 0.017 259);
-  --color-accent: oklch(0.707 0.165 254);
-  --color-accent-hover: oklch(0.654 0.177 261);
-  --color-danger: oklch(0.637 0.237 25);
+  /* These get overridden by .light class below */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+
+  /* Primary: Neon cyan - same in both modes */
+  --color-accent: oklch(0.78 0.18 195);
+  --color-accent-hover: oklch(0.72 0.19 195);
+  --color-danger: oklch(0.65 0.25 25);
 }
 
+/* Dark mode (default) */
 :root {
   color-scheme: dark;
+  --bg: oklch(0.08 0.01 270);
+  --surface: oklch(0.12 0.015 270);
+  --card: oklch(0.14 0.018 270);
+  --border: oklch(0.22 0.02 270);
+  --text: oklch(0.93 0.01 250);
+  --text-muted: oklch(0.55 0.015 260);
 }
+
+/* Light mode */
 :root.light {
   color-scheme: light;
+  --bg: oklch(0.97 0.005 250);
+  --surface: oklch(0.94 0.008 250);
+  --card: oklch(1 0 0);
+  --border: oklch(0.85 0.01 250);
+  --text: oklch(0.15 0.02 270);
+  --text-muted: oklch(0.45 0.015 260);
 }
 
 body {
@@ -44,14 +56,6 @@ body {
   font-family: var(--font-mono);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-.dark body,
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-}
-.light body {
-  background: var(--color-bg-light);
-  color: var(--color-text-light);
+  background: var(--bg);
+  color: var(--text);
 }

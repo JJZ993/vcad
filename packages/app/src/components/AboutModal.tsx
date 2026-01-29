@@ -65,7 +65,7 @@ export function AboutModal({
         <Dialog.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
-            "rounded-xl border border-border bg-card p-6 shadow-2xl",
+            " border border-border bg-card p-6 shadow-2xl",
             "max-h-[85vh] overflow-y-auto",
             "focus:outline-none",
           )}
@@ -75,19 +75,19 @@ export function AboutModal({
             <Dialog.Title className="text-2xl font-bold tracking-tight text-text">
               vcad<span className="text-accent">.</span>
             </Dialog.Title>
-            <Dialog.Close className="rounded-md p-1 text-text-muted hover:bg-border/50 hover:text-text transition-colors cursor-pointer">
+            <Dialog.Close className=" p-1 text-text-muted hover:bg-border/50 hover:text-text transition-colors cursor-pointer">
               <X size={16} />
             </Dialog.Close>
           </div>
 
           <p className="mb-5 text-xs text-text-muted leading-relaxed">
-            parametric cad in rust. csg primitives, boolean operators, multi-format export.
+            parametric cad for everyone. csg primitives, boolean operators, multi-format export.
             built on <a href="https://github.com/ecto/vcad/tree/main/crates/vcad-kernel" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">vcad-kernel</a>. mit licensed.
           </p>
 
           <div className="flex flex-col gap-5">
             {/* Install */}
-            <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs font-mono text-text-muted">
+            <div className=" border border-border bg-surface px-3 py-2 text-xs font-mono text-text-muted">
               <span className="text-text-muted/50">$</span> cargo add vcad
             </div>
 
@@ -120,7 +120,7 @@ export function AboutModal({
               <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-xs">
                 {SHORTCUTS.map((s) => (
                   <div key={s.keys} className="flex items-center gap-2">
-                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border bg-surface px-1.5 text-[10px] font-bold text-text-muted">
+                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center  border border-border bg-surface px-1.5 text-[10px] font-bold text-text-muted">
                       {s.keys}
                     </kbd>
                     <span className="text-text-muted/70">{s.desc}</span>

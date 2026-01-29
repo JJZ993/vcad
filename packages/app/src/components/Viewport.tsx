@@ -7,8 +7,8 @@ import { useDocumentStore } from "@/stores/document-store";
 import { useEngineStore } from "@/stores/engine-store";
 import { useTheme } from "@/hooks/useTheme";
 
-const BG_DARK = "#0f172a";
-const BG_LIGHT = "#f1f5f9";
+const BG_DARK = "#0d0e12";
+const BG_LIGHT = "#f5f5f7";
 const MIN_DRAG_THRESHOLD = 5;
 
 function BoxSelectHandler({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
