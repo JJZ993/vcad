@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
+import { useUiStore, useDocumentStore, useSketchStore } from "@vcad/core";
+import { useToastStore } from "../stores/toast-store";
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -68,10 +68,16 @@ export function useKeyboardShortcuts() {
 
       // Copy: Ctrl/Cmd+C
       if (mod && !e.shiftKey && e.key === "c") {
-        if (selectedPartIds.size > 0) {
-          e.preventDefault();
-          copyToClipboard(Array.from(selectedPartIds));
+        e.preventDefault();
+        if (selectedPartIds.size === 0) {
+          useToastStore.getState().addToast("Nothing to copy", "info");
+          return;
         }
+        copyToClipboard(Array.from(selectedPartIds));
+        const count = selectedPartIds.size;
+        useToastStore
+          .getState()
+          .addToast(`Copied ${count} part${count > 1 ? "s" : ""}`, "success");
         return;
       }
 
@@ -82,6 +88,13 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           const newIds = duplicateParts(clipboard);
           useUiStore.getState().selectMultiple(newIds);
+          const count = newIds.length;
+          useToastStore
+            .getState()
+            .addToast(
+              `Pasted ${count} part${count > 1 ? "s" : ""}`,
+              "success"
+            );
         }
         return;
       }
@@ -151,6 +164,15 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // Enter sketch mode: S
+      if (e.key === "s" || e.key === "S") {
+        const { active } = useSketchStore.getState();
+        if (!active) {
+          useSketchStore.getState().enterSketchMode("XY");
+        }
+        return;
+      }
+
       // Focus camera on selection
       if (e.key === "f" || e.key === "F") {
         if (selectedPartIds.size > 0) {
@@ -165,16 +187,37 @@ export function useKeyboardShortcuts() {
         selectedPartIds.size > 0
       ) {
         e.preventDefault();
-        for (const id of selectedPartIds) {
-          removePart(id);
+        const ids = Array.from(selectedPartIds);
+        // Shift+Delete skips confirmation (power user fast delete)
+        if (e.shiftKey) {
+          for (const id of ids) {
+            removePart(id);
+          }
+          clearSelection();
+        } else {
+          useUiStore.getState().showDeleteConfirm(ids);
         }
-        clearSelection();
         return;
       }
 
-      // Escape: deselect
+      // Escape: exit sketch mode or deselect
       if (e.key === "Escape") {
-        clearSelection();
+        const { active, pendingExit, requestExit, cancelExit } = useSketchStore.getState();
+        if (active) {
+          // If confirmation dialog is showing, cancel it
+          if (pendingExit) {
+            cancelExit();
+            return;
+          }
+          // Request exit - returns true if exited immediately (empty sketch)
+          const exited = requestExit();
+          if (exited) {
+            useToastStore.getState().addToast("Sketch cancelled", "info");
+          }
+          // If not exited, confirmation dialog will show in SketchToolbar
+        } else {
+          clearSelection();
+        }
         return;
       }
     }
