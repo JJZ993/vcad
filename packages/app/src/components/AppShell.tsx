@@ -49,7 +49,7 @@ export function AppShell({
 
         {/* Right sidebar (properties) */}
         {propertiesVisible && (
-          <aside className="w-72 shrink-0 overflow-hidden border-l border-border bg-surface">
+          <aside className="w-60 shrink-0 overflow-hidden border-l border-border bg-surface">
             {properties}
           </aside>
         )}

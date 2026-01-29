@@ -1,5 +1,4 @@
-import { PanelHeader, PanelBody } from "@/components/ui/panel";
-import { Separator } from "@/components/ui/separator";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ScrubInput } from "@/components/ui/scrub-input";
 import { useDocumentStore, useUiStore, isPrimitivePart } from "@vcad/core";
 import type { PartInfo, PrimitivePartInfo } from "@vcad/core";
@@ -21,11 +20,34 @@ function hexToRgb(hex: string): [number, number, number] {
   return [r, g, b];
 }
 
+function SectionHeader({ children, tooltip }: { children: string; tooltip?: string }) {
+  const content = (
+    <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted pt-2 pb-1">
+      {children}
+    </div>
+  );
+
+  if (tooltip) {
+    return (
+      <Tooltip content={tooltip} side="left">
+        <div className="cursor-help">{content}</div>
+      </Tooltip>
+    );
+  }
+  return content;
+}
+
+function PartTypeBadge({ kind }: { kind: string }) {
+  return (
+    <span className="text-[10px] px-1.5 py-0.5 bg-card border border-border text-text-muted uppercase tracking-wide">
+      {kind}
+    </span>
+  );
+}
+
 function MaterialPicker({ partId }: { partId: string }) {
   const document = useDocumentStore((s) => s.document);
   const setPartMaterial = useDocumentStore((s) => s.setPartMaterial);
-
-  // Find current material for this part
   const parts = useDocumentStore((s) => s.parts);
   const part = parts.find((p) => p.id === partId);
   if (!part) return null;
@@ -34,7 +56,6 @@ function MaterialPicker({ partId }: { partId: string }) {
   const currentMaterial = rootEntry?.material ?? "default";
 
   function handleSelect(swatch: (typeof MATERIAL_SWATCHES)[number]) {
-    // Ensure the material exists in the document
     const state = useDocumentStore.getState();
     const newDoc = structuredClone(state.document);
     if (!newDoc.materials[swatch.key]) {
@@ -45,39 +66,28 @@ function MaterialPicker({ partId }: { partId: string }) {
         metallic: 0.1,
         roughness: 0.6,
       };
-      // We need to set both the material definition and the part material
-      // but setPartMaterial only sets the root entry. Let's just update doc directly
     }
-    // Use the store method
     setPartMaterial(partId, swatch.key);
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <SectionLabel>Material</SectionLabel>
-      <div className="flex gap-1.5 px-1">
+    <div>
+      <SectionHeader tooltip="Assign a material color to this part">Material</SectionHeader>
+      <div className="flex gap-1.5">
         {MATERIAL_SWATCHES.map((swatch) => (
-          <button
-            key={swatch.key}
-            title={swatch.label}
-            className={`h-5 w-5 rounded-full border-2 transition-all cursor-pointer ${
-              currentMaterial === swatch.key
-                ? "border-accent scale-110"
-                : "border-border/50 hover:border-border"
-            }`}
-            style={{ backgroundColor: swatch.color }}
-            onClick={() => handleSelect(swatch)}
-          />
+          <Tooltip key={swatch.key} content={swatch.label} side="bottom">
+            <button
+              className={`h-5 w-5 rounded-full border-2 transition-all cursor-pointer ${
+                currentMaterial === swatch.key
+                  ? "border-accent scale-110"
+                  : "border-transparent hover:border-border"
+              }`}
+              style={{ backgroundColor: swatch.color }}
+              onClick={() => handleSelect(swatch)}
+            />
+          </Tooltip>
         ))}
       </div>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <div className="px-1 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-      {children}
     </div>
   );
 }
@@ -92,29 +102,25 @@ function PositionSection({
   const setTranslation = useDocumentStore((s) => s.setTranslation);
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <SectionLabel>Position</SectionLabel>
-      <ScrubInput
-        label="X"
-        value={offset.x}
-        onChange={(v) =>
-          setTranslation(part.id, { ...offset, x: v })
-        }
-      />
-      <ScrubInput
-        label="Y"
-        value={offset.y}
-        onChange={(v) =>
-          setTranslation(part.id, { ...offset, y: v })
-        }
-      />
-      <ScrubInput
-        label="Z"
-        value={offset.z}
-        onChange={(v) =>
-          setTranslation(part.id, { ...offset, z: v })
-        }
-      />
+    <div>
+      <SectionHeader tooltip="Position offset from origin (mm)">Position</SectionHeader>
+      <div className="space-y-0.5">
+        <ScrubInput
+          label="X"
+          value={offset.x}
+          onChange={(v) => setTranslation(part.id, { ...offset, x: v })}
+        />
+        <ScrubInput
+          label="Y"
+          value={offset.y}
+          onChange={(v) => setTranslation(part.id, { ...offset, y: v })}
+        />
+        <ScrubInput
+          label="Z"
+          value={offset.z}
+          onChange={(v) => setTranslation(part.id, { ...offset, z: v })}
+        />
+      </div>
     </div>
   );
 }
@@ -129,41 +135,33 @@ function RotationSection({
   const setRotation = useDocumentStore((s) => s.setRotation);
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <SectionLabel>Rotation</SectionLabel>
-      <ScrubInput
-        label="Rx"
-        value={angles.x}
-        step={1}
-        onChange={(v) =>
-          setRotation(part.id, { ...angles, x: v })
-        }
-      />
-      <ScrubInput
-        label="Ry"
-        value={angles.y}
-        step={1}
-        onChange={(v) =>
-          setRotation(part.id, { ...angles, y: v })
-        }
-      />
-      <ScrubInput
-        label="Rz"
-        value={angles.z}
-        step={1}
-        onChange={(v) =>
-          setRotation(part.id, { ...angles, z: v })
-        }
-      />
+    <div>
+      <SectionHeader tooltip="Rotation angles around each axis (degrees)">Rotation</SectionHeader>
+      <div className="space-y-0.5">
+        <ScrubInput
+          label="X"
+          value={angles.x}
+          step={1}
+          onChange={(v) => setRotation(part.id, { ...angles, x: v })}
+        />
+        <ScrubInput
+          label="Y"
+          value={angles.y}
+          step={1}
+          onChange={(v) => setRotation(part.id, { ...angles, y: v })}
+        />
+        <ScrubInput
+          label="Z"
+          value={angles.z}
+          step={1}
+          onChange={(v) => setRotation(part.id, { ...angles, z: v })}
+        />
+      </div>
     </div>
   );
 }
 
-function CubeDimensions({
-  part,
-}: {
-  part: PrimitivePartInfo;
-}) {
+function CubeDimensions({ part }: { part: PrimitivePartInfo }) {
   const document = useDocumentStore((s) => s.document);
   const updatePrimitiveOp = useDocumentStore((s) => s.updatePrimitiveOp);
 
@@ -173,50 +171,39 @@ function CubeDimensions({
   const { size } = node.op;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <SectionLabel>Dimensions</SectionLabel>
-      <ScrubInput
-        label="W"
-        value={size.x}
-        min={0.1}
-        onChange={(v) =>
-          updatePrimitiveOp(part.id, {
-            type: "Cube",
-            size: { ...size, x: v },
-          })
-        }
-      />
-      <ScrubInput
-        label="H"
-        value={size.y}
-        min={0.1}
-        onChange={(v) =>
-          updatePrimitiveOp(part.id, {
-            type: "Cube",
-            size: { ...size, y: v },
-          })
-        }
-      />
-      <ScrubInput
-        label="D"
-        value={size.z}
-        min={0.1}
-        onChange={(v) =>
-          updatePrimitiveOp(part.id, {
-            type: "Cube",
-            size: { ...size, z: v },
-          })
-        }
-      />
+    <div>
+      <SectionHeader tooltip="Width, height, and depth of the box (mm)">Dimensions</SectionHeader>
+      <div className="space-y-0.5">
+        <ScrubInput
+          label="W"
+          value={size.x}
+          min={0.1}
+          onChange={(v) =>
+            updatePrimitiveOp(part.id, { type: "Cube", size: { ...size, x: v } })
+          }
+        />
+        <ScrubInput
+          label="H"
+          value={size.y}
+          min={0.1}
+          onChange={(v) =>
+            updatePrimitiveOp(part.id, { type: "Cube", size: { ...size, y: v } })
+          }
+        />
+        <ScrubInput
+          label="D"
+          value={size.z}
+          min={0.1}
+          onChange={(v) =>
+            updatePrimitiveOp(part.id, { type: "Cube", size: { ...size, z: v } })
+          }
+        />
+      </div>
     </div>
   );
 }
 
-function CylinderDimensions({
-  part,
-}: {
-  part: PrimitivePartInfo;
-}) {
+function CylinderDimensions({ part }: { part: PrimitivePartInfo }) {
   const document = useDocumentStore((s) => s.document);
   const updatePrimitiveOp = useDocumentStore((s) => s.updatePrimitiveOp);
 
@@ -226,33 +213,27 @@ function CylinderDimensions({
   const op = node.op;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <SectionLabel>Dimensions</SectionLabel>
-      <ScrubInput
-        label="R"
-        value={op.radius}
-        min={0.1}
-        onChange={(v) =>
-          updatePrimitiveOp(part.id, { ...op, radius: v })
-        }
-      />
-      <ScrubInput
-        label="H"
-        value={op.height}
-        min={0.1}
-        onChange={(v) =>
-          updatePrimitiveOp(part.id, { ...op, height: v })
-        }
-      />
+    <div>
+      <SectionHeader tooltip="Radius and height of the cylinder (mm)">Dimensions</SectionHeader>
+      <div className="space-y-0.5">
+        <ScrubInput
+          label="R"
+          value={op.radius}
+          min={0.1}
+          onChange={(v) => updatePrimitiveOp(part.id, { ...op, radius: v })}
+        />
+        <ScrubInput
+          label="H"
+          value={op.height}
+          min={0.1}
+          onChange={(v) => updatePrimitiveOp(part.id, { ...op, height: v })}
+        />
+      </div>
     </div>
   );
 }
 
-function SphereDimensions({
-  part,
-}: {
-  part: PrimitivePartInfo;
-}) {
+function SphereDimensions({ part }: { part: PrimitivePartInfo }) {
   const document = useDocumentStore((s) => s.document);
   const updatePrimitiveOp = useDocumentStore((s) => s.updatePrimitiveOp);
 
@@ -262,18 +243,22 @@ function SphereDimensions({
   const op = node.op;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <SectionLabel>Dimensions</SectionLabel>
-      <ScrubInput
-        label="R"
-        value={op.radius}
-        min={0.1}
-        onChange={(v) =>
-          updatePrimitiveOp(part.id, { ...op, radius: v })
-        }
-      />
+    <div>
+      <SectionHeader tooltip="Radius of the sphere (mm)">Dimensions</SectionHeader>
+      <div className="space-y-0.5">
+        <ScrubInput
+          label="R"
+          value={op.radius}
+          min={0.1}
+          onChange={(v) => updatePrimitiveOp(part.id, { ...op, radius: v })}
+        />
+      </div>
     </div>
   );
+}
+
+function Divider() {
+  return <div className="border-t border-border my-2" />;
 }
 
 function PropertyPanelContent() {
@@ -283,27 +268,23 @@ function PropertyPanelContent() {
 
   if (selectedPartIds.size === 0) {
     return (
-      <div className="flex h-full flex-col">
-        <PanelHeader>Properties</PanelHeader>
-        <PanelBody>
-          <div className="px-1 py-4 text-center text-xs text-text-muted">
-            Select a part to edit properties
-          </div>
-        </PanelBody>
+      <div className="h-full flex flex-col items-center justify-center p-4">
+        <div className="text-xs text-text-muted text-center">
+          Select a part to edit properties
+        </div>
       </div>
     );
   }
 
-  // Multi-select: show count only
   if (selectedPartIds.size > 1) {
     return (
-      <div className="flex h-full flex-col">
-        <PanelHeader>{selectedPartIds.size} parts selected</PanelHeader>
-        <PanelBody>
-          <div className="px-1 text-xs text-text-muted">
-            Select a single part to edit properties.
-          </div>
-        </PanelBody>
+      <div className="p-3">
+        <div className="text-xs font-medium text-text mb-1">
+          {selectedPartIds.size} parts selected
+        </div>
+        <div className="text-[10px] text-text-muted">
+          Select a single part to edit properties
+        </div>
       </div>
     );
   }
@@ -326,45 +307,56 @@ function PropertyPanelContent() {
       : { x: 0, y: 0, z: 0 };
 
   return (
-    <div className="flex h-full flex-col">
-      <PanelHeader>{part.name}</PanelHeader>
-      <PanelBody className="flex flex-col gap-3">
+    <div className="h-full overflow-y-auto scrollbar-thin">
+      {/* Header with name and type */}
+      <div className="p-3 border-b border-border">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-medium text-text truncate flex-1">
+            {part.name}
+          </div>
+          <PartTypeBadge kind={part.kind} />
+        </div>
+      </div>
+
+      {/* Properties */}
+      <div className="p-3 space-y-1">
         {/* Dimensions by type (primitives only) */}
         {isPrimitivePart(part) && part.kind === "cube" && (
-          <CubeDimensions part={part} />
+          <>
+            <CubeDimensions part={part} />
+            <Divider />
+          </>
         )}
         {isPrimitivePart(part) && part.kind === "cylinder" && (
-          <CylinderDimensions part={part} />
+          <>
+            <CylinderDimensions part={part} />
+            <Divider />
+          </>
         )}
         {isPrimitivePart(part) && part.kind === "sphere" && (
-          <SphereDimensions part={part} />
+          <>
+            <SphereDimensions part={part} />
+            <Divider />
+          </>
         )}
 
-        {isPrimitivePart(part) && <Separator />}
-
-        {/* Boolean type label */}
+        {/* Boolean type info */}
         {part.kind === "boolean" && (
           <>
-            <div className="flex flex-col gap-1.5">
-              <SectionLabel>Boolean</SectionLabel>
-              <div className="px-1 text-xs text-text-muted capitalize">
-                {part.booleanType}
-              </div>
+            <div>
+              <SectionHeader>Operation</SectionHeader>
+              <div className="text-xs text-text capitalize">{part.booleanType}</div>
             </div>
-            <Separator />
+            <Divider />
           </>
         )}
 
         <PositionSection part={part} offset={offset} />
-
-        <Separator />
-
+        <Divider />
         <RotationSection part={part} angles={angles} />
-
-        <Separator />
-
+        <Divider />
         <MaterialPicker partId={part.id} />
-      </PanelBody>
+      </div>
     </div>
   );
 }

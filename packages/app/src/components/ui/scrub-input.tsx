@@ -59,13 +59,6 @@ export function ScrubInput({
       setIsScrubbing(true);
       scrubStartX.current = e.clientX;
       scrubStartValue.current = value;
-
-      // Try to lock pointer for unlimited travel
-      try {
-        (e.target as HTMLElement).requestPointerLock?.();
-      } catch {
-        // Pointer lock not supported or denied
-      }
     },
     [isEditing, value],
   );
@@ -74,14 +67,8 @@ export function ScrubInput({
     (e: PointerEvent) => {
       if (!isScrubbing) return;
 
-      // Calculate delta (use movementX if pointer locked, otherwise clientX diff)
-      let deltaX: number;
-      if (document.pointerLockElement) {
-        deltaX = e.movementX;
-      } else {
-        deltaX = e.clientX - scrubStartX.current;
-        scrubStartX.current = e.clientX;
-      }
+      const deltaX = e.clientX - scrubStartX.current;
+      scrubStartX.current = e.clientX;
 
       // Determine modifier
       let modifier = 1;
@@ -101,7 +88,6 @@ export function ScrubInput({
   const handlePointerUp = useCallback(() => {
     if (!isScrubbing) return;
     setIsScrubbing(false);
-    document.exitPointerLock?.();
   }, [isScrubbing]);
 
   // Global event listeners for scrubbing
@@ -121,41 +107,32 @@ export function ScrubInput({
     setTimeout(() => inputRef.current?.select(), 0);
   }
 
-  // Compute fill percentage for visual feedback (within typical range)
-  const fillPercent = Math.max(0, Math.min(100, ((value + 100) / 200) * 100));
-
   return (
-    <label className={cn("flex items-center gap-2 text-xs", className)}>
-      <span className="w-5 shrink-0 text-text-muted font-bold">{label}</span>
-      <div className="relative flex-1">
-        {/* Background fill indicator */}
-        <div
-          className="absolute inset-y-0 left-0 bg-accent/10 transition-all pointer-events-none"
-          style={{ width: `${fillPercent}%` }}
-        />
-        <input
-          ref={inputRef}
-          type="text"
-          value={isEditing ? text : String(round(value))}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") {
-              setText(String(round(value)));
-              setIsEditing(false);
-            }
-          }}
-          onPointerDown={handlePointerDown}
-          onDoubleClick={handleDoubleClick}
-          readOnly={!isEditing}
-          className={cn(
-            "w-full border border-border bg-transparent px-2 py-1 text-xs text-text outline-none focus:border-accent relative z-10",
-            !isEditing && "cursor-ew-resize select-none",
-            isScrubbing && "cursor-ew-resize",
-          )}
-        />
-      </div>
+    <label className={cn("flex items-center gap-1.5 text-xs", className)}>
+      <span className="w-4 shrink-0 text-text-muted text-[10px] font-medium">{label}</span>
+      <input
+        ref={inputRef}
+        type="text"
+        value={isEditing ? text : String(round(value))}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") {
+            setText(String(round(value)));
+            setIsEditing(false);
+          }
+        }}
+        onPointerDown={handlePointerDown}
+        onDoubleClick={handleDoubleClick}
+        readOnly={!isEditing}
+        className={cn(
+          "flex-1 min-w-0 bg-card border border-border px-2 py-1 text-xs text-text outline-none transition-colors",
+          "hover:border-text-muted focus:border-accent",
+          !isEditing && "cursor-ew-resize select-none",
+          isScrubbing && "cursor-ew-resize",
+        )}
+      />
     </label>
   );
 }
