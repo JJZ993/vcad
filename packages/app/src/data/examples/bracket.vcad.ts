@@ -75,12 +75,7 @@ const parts: PartInfo[] = [
 
 export const bracketExample: Example = {
   id: "bracket",
-  name: "L-Bracket",
-  description: "An L-shaped mounting bracket with holes. Demonstrates union and boolean difference.",
-  difficulty: "beginner",
-  thumbnail: "/assets/bracket.png",
-  features: ["Multi-part", "Union", "Boolean Difference"],
-  unlockAfter: 0,
+  name: "Bracket",
   file: {
     document,
     parts,

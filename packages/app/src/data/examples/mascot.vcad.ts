@@ -153,12 +153,7 @@ const parts: PartInfo[] = [
 
 export const mascotExample: Example = {
   id: "mascot",
-  name: "Robot Mascot",
-  description: "A friendly robot character. Demonstrates multi-part assemblies with materials.",
-  difficulty: "advanced",
-  thumbnail: "/assets/mascot.png",
-  features: ["Multi-part", "Materials", "Scene"],
-  unlockAfter: 2,
+  name: "Mascot",
   file: {
     document,
     parts,
