@@ -23,6 +23,7 @@ export function useKeyboardShortcuts() {
         toggleGridSnap,
         copyToClipboard,
         toggleCommandPalette,
+        toggleFeatureTree,
       } = useUiStore.getState();
       const {
         undo,
@@ -38,6 +39,13 @@ export function useKeyboardShortcuts() {
       if (mod && e.key === "k") {
         e.preventDefault();
         toggleCommandPalette();
+        return;
+      }
+
+      // Toggle feature tree: backtick or Cmd+1
+      if (e.key === "`" || (mod && e.key === "1")) {
+        e.preventDefault();
+        toggleFeatureTree();
         return;
       }
 

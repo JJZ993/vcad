@@ -2,9 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastContainer } from "@/components/ui/toast";
 import { AppShell } from "@/components/AppShell";
-import { Header } from "@/components/Header";
-import { Toolbar } from "@/components/Toolbar";
-import { StatusBar } from "@/components/StatusBar";
+import { CornerIcons } from "@/components/CornerIcons";
+import { BottomToolbar } from "@/components/BottomToolbar";
 import { Viewport } from "@/components/Viewport";
 import { FeatureTree } from "@/components/FeatureTree";
 import { PropertyPanel } from "@/components/PropertyPanel";
@@ -26,8 +25,8 @@ function LoadingScreen() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg">
       <div className="flex flex-col items-center gap-3">
         <div className="text-sm text-text-muted">initializing engine...</div>
-        <div className="h-0.5 w-32 overflow-hidden  bg-border">
-          <div className="h-full w-1/3 animate-pulse  bg-accent" />
+        <div className="h-0.5 w-32 overflow-hidden rounded bg-border">
+          <div className="h-full w-1/3 animate-pulse rounded bg-accent" />
         </div>
       </div>
     </div>
@@ -56,10 +55,8 @@ export function App() {
   const engineReady = useEngineStore((s) => s.engineReady);
   const loading = useEngineStore((s) => s.loading);
   const error = useEngineStore((s) => s.error);
-  const featureTreeOpen = useUiStore((s) => s.featureTreeOpen);
   const commandPaletteOpen = useUiStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
-  const hasSelection = useUiStore((s) => s.selectedPartIds.size > 0);
   const hasParts = useDocumentStore((s) => s.parts.length > 0);
   const sketchActive = useSketchStore((s) => s.active);
   const deleteConfirmParts = useUiStore((s) => s.deleteConfirmParts);
@@ -163,24 +160,21 @@ export function App() {
 
   return (
     <TooltipProvider>
-      <AppShell
-        header={
-          <Header
-            onAboutOpen={() => setAboutOpen(true)}
-            onSave={handleSave}
-            onOpen={handleOpen}
-          />
-        }
-        toolbar={<Toolbar />}
-        sidebar={<FeatureTree />}
-        sidebarVisible={featureTreeOpen && !sketchActive}
-        properties={<PropertyPanel />}
-        propertiesVisible={hasSelection && !sketchActive}
-        statusBar={<StatusBar />}
-      >
+      <AppShell>
+        {/* Full-bleed viewport */}
         <Viewport />
         <SketchCanvas />
         <SketchToolbar />
+
+        {/* Floating UI elements */}
+        <CornerIcons
+          onAboutOpen={() => setAboutOpen(true)}
+          onSave={handleSave}
+          onOpen={handleOpen}
+        />
+        {!sketchActive && <FeatureTree />}
+        {!sketchActive && <PropertyPanel />}
+        {!sketchActive && <BottomToolbar />}
       </AppShell>
 
       {/* Modals */}

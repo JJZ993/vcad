@@ -1,8 +1,11 @@
+import { useEffect, useRef } from "react";
+import { X } from "@phosphor-icons/react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ScrubInput } from "@/components/ui/scrub-input";
 import { useDocumentStore, useUiStore, isPrimitivePart } from "@vcad/core";
 import type { PartInfo, PrimitivePartInfo } from "@vcad/core";
 import type { Vec3 } from "@vcad/ir";
+import { cn } from "@/lib/utils";
 
 const MATERIAL_SWATCHES = [
   { key: "default", label: "Default", color: "#b3b3bf" },
@@ -39,7 +42,7 @@ function SectionHeader({ children, tooltip }: { children: string; tooltip?: stri
 
 function PartTypeBadge({ kind }: { kind: string }) {
   return (
-    <span className="text-[10px] px-1.5 py-0.5 bg-card border border-border text-text-muted uppercase tracking-wide">
+    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 border border-border/50 text-text-muted uppercase tracking-wide">
       {kind}
     </span>
   );
@@ -258,31 +261,52 @@ function SphereDimensions({ part }: { part: PrimitivePartInfo }) {
 }
 
 function Divider() {
-  return <div className="border-t border-border my-2" />;
+  return <div className="border-t border-border/50 my-2" />;
 }
 
-function PropertyPanelContent() {
+export function PropertyPanel() {
   const selectedPartIds = useUiStore((s) => s.selectedPartIds);
+  const clearSelection = useUiStore((s) => s.clearSelection);
   const parts = useDocumentStore((s) => s.parts);
   const document = useDocumentStore((s) => s.document);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  if (selectedPartIds.size === 0) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center p-4">
-        <div className="text-xs text-text-muted text-center">
-          Select a part to edit properties
-        </div>
-      </div>
-    );
-  }
+  // Close panel on Escape
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && selectedPartIds.size > 0) {
+        clearSelection();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedPartIds.size, clearSelection]);
+
+  if (selectedPartIds.size === 0) return null;
 
   if (selectedPartIds.size > 1) {
     return (
-      <div className="p-3">
-        <div className="text-xs font-medium text-text mb-1">
-          {selectedPartIds.size} parts selected
+      <div
+        ref={panelRef}
+        className={cn(
+          "absolute top-14 right-3 z-20 w-60",
+          "rounded-xl border border-border/50",
+          "bg-surface/80 backdrop-blur-md",
+          "shadow-lg shadow-black/20"
+        )}
+      >
+        <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3">
+          <span className="text-xs font-medium text-text">
+            {selectedPartIds.size} parts selected
+          </span>
+          <button
+            onClick={clearSelection}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10"
+          >
+            <X size={14} />
+          </button>
         </div>
-        <div className="text-[10px] text-text-muted">
+        <div className="p-3 text-[10px] text-text-muted">
           Select a single part to edit properties
         </div>
       </div>
@@ -307,19 +331,34 @@ function PropertyPanelContent() {
       : { x: 0, y: 0, z: 0 };
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-thin">
-      {/* Header with name and type */}
-      <div className="p-3 border-b border-border">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-xs font-medium text-text truncate flex-1">
+    <div
+      ref={panelRef}
+      className={cn(
+        "absolute top-14 right-3 z-20 w-60",
+        "rounded-xl border border-border/50",
+        "bg-surface/80 backdrop-blur-md",
+        "shadow-lg shadow-black/20",
+        "max-h-[calc(100vh-120px)] flex flex-col"
+      )}
+    >
+      {/* Header */}
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-medium text-text truncate">
             {part.name}
-          </div>
+          </span>
           <PartTypeBadge kind={part.kind} />
         </div>
+        <button
+          onClick={clearSelection}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10"
+        >
+          <X size={14} />
+        </button>
       </div>
 
-      {/* Properties */}
-      <div className="p-3 space-y-1">
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin">
         {/* Dimensions by type (primitives only) */}
         {isPrimitivePart(part) && part.kind === "cube" && (
           <>
@@ -359,8 +398,4 @@ function PropertyPanelContent() {
       </div>
     </div>
   );
-}
-
-export function PropertyPanel() {
-  return <PropertyPanelContent />;
 }

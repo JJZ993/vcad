@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Cube, Cylinder, Globe, Trash, Intersect, CaretRight, CaretDown, ArrowUp, ArrowsClockwise, Spiral, Stack } from "@phosphor-icons/react";
-import { PanelHeader, PanelBody } from "@/components/ui/panel";
+import { Cube, Cylinder, Globe, Trash, Intersect, CaretRight, CaretDown, ArrowUp, ArrowsClockwise, Spiral, Stack, X } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ContextMenu } from "@/components/ContextMenu";
@@ -59,7 +58,7 @@ function InlineRenameInput({
         if (e.key === "Enter") commit();
         if (e.key === "Escape") onDone();
       }}
-      className="flex-1  border border-accent bg-surface px-1 py-0.5 text-xs text-text outline-none w-0"
+      className="flex-1 rounded border border-accent bg-surface px-1 py-0.5 text-xs text-text outline-none w-0"
       autoFocus
     />
   );
@@ -98,12 +97,10 @@ function TreeNode({
   const isHovered = hoveredPartId === part.id;
   const isRenaming = renamingId === part.id;
 
-  // Check if this is a boolean with children
   const isBoolean = isBooleanPart(part);
   const hasChildren = isBoolean && part.sourcePartIds.length > 0;
   const isExpanded = expandedIds.has(part.id);
 
-  // Get child parts for booleans
   const childParts = useMemo(() => {
     if (!isBoolean) return [];
     return (part as BooleanPartInfo).sourcePartIds
@@ -115,18 +112,17 @@ function TreeNode({
     <>
       <div
         className={cn(
-          "group flex items-center gap-1  px-2 py-1.5 text-xs cursor-pointer transition-colors",
+          "group flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs cursor-pointer transition-colors",
           isSelected
             ? "bg-accent/20 text-accent"
             : isHovered
-              ? "bg-border/20 text-text"
-              : "text-text-muted hover:bg-border/30 hover:text-text",
+              ? "bg-white/10 text-text"
+              : "text-text-muted hover:bg-white/10 hover:text-text",
           depth > 0 && "opacity-70",
         )}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={(e) => {
           if (isRenaming) return;
-          // Only root parts (depth 0) are selectable
           if (depth > 0) return;
           if (e.shiftKey) {
             toggleSelect(part.id);
@@ -138,19 +134,18 @@ function TreeNode({
         onMouseEnter={() => setHoveredPartId(part.id)}
         onMouseLeave={() => setHoveredPartId(null)}
       >
-        {/* Expand/collapse triangle for booleans */}
         {hasChildren ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
               toggleExpanded(part.id);
             }}
-            className="shrink-0 p-0.5 hover:bg-border/30 "
+            className="shrink-0 p-0.5 hover:bg-white/10 rounded"
           >
             {isExpanded ? <CaretDown size={10} /> : <CaretRight size={10} />}
           </button>
         ) : (
-          <span className="w-4" /> // spacer
+          <span className="w-4" />
         )}
         <Icon size={14} className="shrink-0" />
         {isRenaming ? (
@@ -170,7 +165,6 @@ function TreeNode({
               className="h-5 w-5 opacity-0 group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
-                // Shift+click skips confirmation (power user fast delete)
                 if (e.shiftKey) {
                   removePart(part.id);
                   if (isSelected) clearSelection();
@@ -185,7 +179,6 @@ function TreeNode({
         )}
       </div>
 
-      {/* Render children if expanded */}
       {hasChildren && isExpanded && (
         <>
           {childParts.map((child) => (
@@ -209,10 +202,11 @@ function TreeNode({
 export function FeatureTree() {
   const parts = useDocumentStore((s) => s.parts);
   const consumedParts = useDocumentStore((s) => s.consumedParts);
+  const featureTreeOpen = useUiStore((s) => s.featureTreeOpen);
+  const setFeatureTreeOpen = useUiStore((s) => s.setFeatureTreeOpen);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  // Listen for rename event from context menu
   useEffect(() => {
     function handleRename() {
       const { selectedPartIds } = useUiStore.getState();
@@ -236,10 +230,33 @@ export function FeatureTree() {
     });
   }
 
+  if (!featureTreeOpen) return null;
+
   return (
-    <div className="flex h-full flex-col">
-      <PanelHeader>Features</PanelHeader>
-      <PanelBody>
+    <div
+      className={cn(
+        "absolute top-14 left-3 z-20 w-56",
+        "rounded-xl border border-border/50",
+        "bg-surface/80 backdrop-blur-md",
+        "shadow-lg shadow-black/20",
+        "max-h-[calc(100vh-120px)] flex flex-col"
+      )}
+    >
+      {/* Header */}
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3">
+        <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
+          Features
+        </span>
+        <button
+          onClick={() => setFeatureTreeOpen(false)}
+          className="flex h-6 w-6 items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
         <ContextMenu>
           <div>
             {parts.length === 0 && (
@@ -261,7 +278,7 @@ export function FeatureTree() {
             ))}
           </div>
         </ContextMenu>
-      </PanelBody>
+      </div>
     </div>
   );
 }

@@ -1,18 +1,55 @@
-import { Sun, Moon, Command, DotsThree, ArrowCounterClockwise, ArrowClockwise, FloppyDisk, FolderOpen, Export, Info, CubeTransparent, GridFour } from "@phosphor-icons/react";
+import { Sun, Moon, Command, DotsThree, List } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
-import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useDocumentStore, useUiStore, useEngineStore, exportStlBlob, exportGltfBlob, getUndoActionName, getRedoActionName } from "@vcad/core";
 import { downloadBlob } from "@/lib/download";
 import { useToastStore } from "@/stores/toast-store";
+import {
+  ArrowCounterClockwise,
+  ArrowClockwise,
+  FloppyDisk,
+  FolderOpen,
+  Export,
+  Info,
+  CubeTransparent,
+  GridFour,
+} from "@phosphor-icons/react";
+import { cn } from "@/lib/utils";
 
-interface HeaderProps {
+interface CornerIconsProps {
   onAboutOpen: () => void;
   onSave: () => void;
   onOpen: () => void;
 }
 
-function OverflowMenu({
+function IconButton({
+  children,
+  onClick,
+  tooltip,
+  active,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  tooltip: string;
+  active?: boolean;
+}) {
+  return (
+    <Tooltip content={tooltip}>
+      <button
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-lg transition-all",
+          "text-text-muted/70 hover:text-text hover:bg-white/10",
+          active && "text-accent"
+        )}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
+
+function SettingsMenu({
   onAboutOpen,
   onSave,
   onOpen,
@@ -57,13 +94,18 @@ function OverflowMenu({
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <Button variant="ghost" size="icon-sm">
-          <DotsThree size={16} weight="bold" />
-        </Button>
+        <button
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg transition-all",
+            "text-text-muted/70 hover:text-text hover:bg-white/10"
+          )}
+        >
+          <DotsThree size={20} weight="bold" />
+        </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          className="z-50 w-56 border border-border bg-card p-2 shadow-2xl"
+          className="z-50 w-56 rounded-xl border border-border/50 bg-surface/95 backdrop-blur-md p-2 shadow-xl"
           sideOffset={8}
           align="end"
         >
@@ -75,7 +117,7 @@ function OverflowMenu({
             <button
               onClick={undo}
               disabled={undoStack.length === 0}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
               title={undoActionName ? `Undo: ${undoActionName} (⌘Z)` : "Undo (⌘Z)"}
             >
               <ArrowCounterClockwise size={14} />
@@ -85,7 +127,7 @@ function OverflowMenu({
             <button
               onClick={redo}
               disabled={redoStack.length === 0}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
               title={redoActionName ? `Redo: ${redoActionName} (⌘⇧Z)` : "Redo (⌘⇧Z)"}
             >
               <ArrowClockwise size={14} />
@@ -99,7 +141,7 @@ function OverflowMenu({
             </div>
             <button
               onClick={toggleWireframe}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10"
             >
               <CubeTransparent size={14} className={showWireframe ? "text-accent" : ""} />
               <span>Wireframe</span>
@@ -108,7 +150,7 @@ function OverflowMenu({
             <Popover.Root>
               <Popover.Trigger asChild>
                 <button
-                  className="col-span-2 flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30"
+                  className="col-span-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10"
                 >
                   <GridFour size={14} className={gridSnap ? "text-accent" : ""} />
                   <span>Grid Snap</span>
@@ -117,7 +159,7 @@ function OverflowMenu({
               </Popover.Trigger>
               <Popover.Portal>
                 <Popover.Content
-                  className="z-50 border border-border bg-card p-1.5 shadow-2xl"
+                  className="z-50 rounded-lg border border-border/50 bg-surface/95 backdrop-blur-md p-1.5 shadow-xl"
                   side="right"
                   sideOffset={4}
                   align="start"
@@ -125,7 +167,7 @@ function OverflowMenu({
                   <div className="flex flex-col gap-0.5">
                     <button
                       onClick={toggleGridSnap}
-                      className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-border/30"
+                      className="flex items-center gap-2 rounded px-2 py-1 text-xs text-text hover:bg-white/10"
                     >
                       <span className={!gridSnap ? "text-accent" : ""}>Off</span>
                     </button>
@@ -133,7 +175,7 @@ function OverflowMenu({
                       <button
                         key={v}
                         onClick={() => setSnapIncrement(v)}
-                        className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-border/30"
+                        className="flex items-center gap-2 rounded px-2 py-1 text-xs text-text hover:bg-white/10"
                       >
                         <span className={gridSnap && snapIncrement === v ? "text-accent" : ""}>{v}mm</span>
                       </button>
@@ -149,7 +191,7 @@ function OverflowMenu({
             </div>
             <button
               onClick={onSave}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10"
             >
               <FloppyDisk size={14} />
               <span>Save</span>
@@ -157,7 +199,7 @@ function OverflowMenu({
             </button>
             <button
               onClick={onOpen}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10"
             >
               <FolderOpen size={14} />
               <span>Open</span>
@@ -166,7 +208,7 @@ function OverflowMenu({
             <button
               onClick={handleExportStl}
               disabled={!hasParts}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Export size={14} />
               <span>Export STL</span>
@@ -174,7 +216,7 @@ function OverflowMenu({
             <button
               onClick={handleExportGlb}
               disabled={!hasParts}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Export size={14} weight="fill" />
               <span>Export GLB</span>
@@ -186,7 +228,7 @@ function OverflowMenu({
             </div>
             <button
               onClick={onAboutOpen}
-              className="flex items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-border/30"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-white/10"
             >
               <Info size={14} />
               <span>About</span>
@@ -198,45 +240,49 @@ function OverflowMenu({
   );
 }
 
-export function Header({ onAboutOpen, onSave, onOpen }: HeaderProps) {
+export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
   const isDirty = useDocumentStore((s) => s.isDirty);
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
   const toggleCommandPalette = useUiStore((s) => s.toggleCommandPalette);
+  const toggleFeatureTree = useUiStore((s) => s.toggleFeatureTree);
+  const featureTreeOpen = useUiStore((s) => s.featureTreeOpen);
 
   return (
     <>
-      {/* Logo */}
-      <div className="flex items-center gap-2">
-        <span className="text-lg font-bold tracking-tighter text-text">
-          vcad<span className="text-accent">.</span>
-        </span>
+      {/* Top-left: hamburger + logo */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+        <IconButton
+          tooltip="Toggle sidebar (`)"
+          onClick={toggleFeatureTree}
+          active={featureTreeOpen}
+        >
+          <List size={20} />
+        </IconButton>
+        <div className="flex items-center gap-1 pl-1">
+          <span className="text-sm font-bold tracking-tighter text-text">
+            vcad<span className="text-accent">.</span>
+          </span>
+          {isDirty && <span className="text-accent text-xs">*</span>}
+        </div>
       </div>
 
-      {/* Document name */}
-      <span className="ml-4 text-xs text-text-muted">
-        Untitled{isDirty && <span className="text-accent ml-0.5">*</span>}
-      </span>
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Theme toggle */}
-      <Tooltip content={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
-        <Button variant="ghost" size="icon-sm" onClick={toggleTheme}>
-          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-        </Button>
-      </Tooltip>
-
-      {/* Command palette */}
-      <Tooltip content="Command palette (⌘K)">
-        <Button variant="ghost" size="icon-sm" onClick={toggleCommandPalette}>
-          <Command size={16} />
-        </Button>
-      </Tooltip>
-
-      {/* Overflow menu */}
-      <OverflowMenu onAboutOpen={onAboutOpen} onSave={onSave} onOpen={onOpen} />
+      {/* Top-right: theme, command palette, settings */}
+      <div className="absolute top-3 right-3 z-20 flex items-center gap-1">
+        <IconButton
+          tooltip="Command palette (⌘K)"
+          onClick={toggleCommandPalette}
+        >
+          <Command size={18} />
+        </IconButton>
+        <IconButton
+          tooltip={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          onClick={toggleTheme}
+        >
+          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+        </IconButton>
+        <SettingsMenu onAboutOpen={onAboutOpen} onSave={onSave} onOpen={onOpen} />
+      </div>
     </>
   );
 }
