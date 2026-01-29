@@ -18,23 +18,23 @@ const document: Document = {
     // Union base and wall into L-shape
     "4": { id: 4, name: null, op: { type: "Union", left: 1, right: 3 } },
 
-    // Mounting hole template (5x20x5 rectangular holes)
-    "10": { id: 10, name: null, op: { type: "Cube", size: { x: 5, y: 20, z: 5 } } },
+    // Cylindrical hole template for base (through Y axis)
+    "10": { id: 10, name: null, op: { type: "Cylinder", radius: 2.5, height: 20, segments: 32 } },
+    // Rotate to align with Y axis (vertical holes)
+    "12": { id: 12, name: null, op: { type: "Rotate", child: 10, angles: { x: -90, y: 0, z: 0 } } },
 
-    // Base holes - 2 holes in the base plate (vertical through base)
-    // Left hole at x=12.5
-    "20": { id: 20, name: null, op: { type: "Translate", child: 10, offset: { x: 10, y: -8, z: 16 } } },
-    // Right hole at x=47.5
-    "21": { id: 21, name: null, op: { type: "Translate", child: 10, offset: { x: 45, y: -8, z: 16 } } },
+    // Base holes - 2 cylindrical holes in the base plate (vertical through base)
+    // Base is 60x4x40, holes at x=12.5 and x=47.5, z=20 (center of base depth)
+    "20": { id: 20, name: null, op: { type: "Translate", child: 12, offset: { x: 12.5, y: -7, z: 20 } } },
+    "21": { id: 21, name: null, op: { type: "Translate", child: 12, offset: { x: 47.5, y: -7, z: 20 } } },
 
-    // Wall hole template (5x5x20 - horizontal through wall)
-    "11": { id: 11, name: null, op: { type: "Cube", size: { x: 5, y: 5, z: 20 } } },
+    // Cylindrical hole template for wall (through Z axis - default orientation)
+    "11": { id: 11, name: null, op: { type: "Cylinder", radius: 2.5, height: 20, segments: 32 } },
 
-    // Wall holes - 2 holes in the wall plate (horizontal through wall)
-    // Left hole at x=12.5, y=22
-    "22": { id: 22, name: null, op: { type: "Translate", child: 11, offset: { x: 10, y: 20, z: 30 } } },
-    // Right hole at x=47.5, y=22
-    "23": { id: 23, name: null, op: { type: "Translate", child: 11, offset: { x: 45, y: 20, z: 30 } } },
+    // Wall holes - 2 cylindrical holes in the wall plate (horizontal through wall)
+    // Wall is at z=36-40, holes go through it at x=12.5 and x=47.5, y=22 (middle of wall)
+    "22": { id: 22, name: null, op: { type: "Translate", child: 11, offset: { x: 12.5, y: 22, z: 28 } } },
+    "23": { id: 23, name: null, op: { type: "Translate", child: 11, offset: { x: 47.5, y: 22, z: 28 } } },
 
     // Union all holes together
     "30": { id: 30, name: null, op: { type: "Union", left: 20, right: 21 } },
