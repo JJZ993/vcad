@@ -1,8 +1,7 @@
 import { Plus } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { ExampleCard } from "./ExampleCard";
-import { useDocumentStore } from "@/stores/document-store";
-import { useUiStore } from "@/stores/ui-store";
+import { useDocumentStore, useUiStore } from "@vcad/core";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { getVisibleExamples, getLockedCount } from "@/data/examples";
 import type { Example } from "@/data/examples";

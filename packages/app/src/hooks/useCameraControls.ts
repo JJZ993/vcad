@@ -1,9 +1,7 @@
 import { useEffect } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useEngineStore } from "@/stores/engine-store";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
+import { useEngineStore, useUiStore, useDocumentStore } from "@vcad/core";
 
 // Predefined camera positions (distance from origin)
 const CAMERA_DISTANCE = 80;

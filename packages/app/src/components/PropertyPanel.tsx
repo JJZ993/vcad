@@ -1,11 +1,9 @@
 import { Panel, PanelHeader, PanelBody } from "@/components/ui/panel";
 import { Separator } from "@/components/ui/separator";
 import { ScrubInput } from "@/components/ui/scrub-input";
-import { useDocumentStore } from "@/stores/document-store";
-import { useUiStore } from "@/stores/ui-store";
+import { useDocumentStore, useUiStore, isPrimitivePart } from "@vcad/core";
+import type { PartInfo, PrimitivePartInfo } from "@vcad/core";
 import type { Vec3 } from "@vcad/ir";
-import type { PartInfo, PrimitivePartInfo } from "@/types";
-import { isPrimitivePart } from "@/types";
 
 const MATERIAL_SWATCHES = [
   { key: "default", label: "Default", color: "#b3b3bf" },

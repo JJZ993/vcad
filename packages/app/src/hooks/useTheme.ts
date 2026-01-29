@@ -1,4 +1,4 @@
-import { useUiStore } from "@/stores/ui-store";
+import { useUiStore } from "@vcad/core";
 
 export function useTheme() {
   const theme = useUiStore((s) => s.theme);

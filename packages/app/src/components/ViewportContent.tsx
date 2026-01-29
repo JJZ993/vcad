@@ -10,9 +10,7 @@ import { TransformGizmo } from "./TransformGizmo";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { DimensionOverlay } from "./DimensionOverlay";
 import { InlineProperties } from "./InlineProperties";
-import { useEngineStore } from "@/stores/engine-store";
-import { useDocumentStore } from "@/stores/document-store";
-import { useUiStore } from "@/stores/ui-store";
+import { useEngineStore, useDocumentStore, useUiStore } from "@vcad/core";
 import { useCameraControls } from "@/hooks/useCameraControls";
 
 export function ViewportContent() {

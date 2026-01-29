@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from "react";
-import { useSketchStore } from "@/stores/sketch-store";
-import { useUiStore } from "@/stores/ui-store";
+import { useSketchStore, useUiStore } from "@vcad/core";
+import { useTheme } from "@/hooks/useTheme";
 import type { Vec2, SketchSegment2D } from "@vcad/ir";
 
 const GRID_SIZE = 10; // mm
@@ -70,6 +70,7 @@ export function SketchCanvas() {
   const finishShape = useSketchStore((s) => s.finishShape);
   const toggleSegmentSelection = useSketchStore((s) => s.toggleSegmentSelection);
   const gridSnap = useUiStore((s) => s.gridSnap);
+  const { isDark } = useTheme();
 
   const isConstraintMode = constraintTool !== "none";
 
@@ -218,7 +219,7 @@ export function SketchCanvas() {
       ctx.stroke();
 
       // Draw vertices
-      ctx.fillStyle = isSelected ? "#fbbf24" : "#60a5fa";
+      ctx.fillStyle = isSelected ? "#fbbf24" : isDark ? "#00d4ff" : "#0891b2";
       ctx.beginPath();
       ctx.arc(sx, sy, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -359,7 +360,7 @@ export function SketchCanvas() {
       ctx.arc(cx + pt.x * SCALE, cy - pt.y * SCALE, 5, 0, Math.PI * 2);
       ctx.fill();
     }
-  }, [active, segments, constraints, points, mousePos, tool, selectedSegments]);
+  }, [active, segments, constraints, points, mousePos, tool, selectedSegments, isDark]);
 
   // Resize observer
   useEffect(() => {
@@ -386,7 +387,7 @@ export function SketchCanvas() {
         onDoubleClick={handleDoubleClick}
         onMouseLeave={() => setMousePos(null)}
       />
-      <div className="absolute left-4 top-4 rounded-lg bg-card/90 px-3 py-2 text-xs text-text backdrop-blur">
+      <div className="absolute left-4 top-4  bg-surface border border-border px-3 py-2 text-xs text-text">
         <span className="font-medium">Sketch Mode</span>
         <span className="ml-2 text-text-muted">Plane: {plane}</span>
         {isConstraintMode && (

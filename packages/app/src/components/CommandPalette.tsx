@@ -25,13 +25,8 @@ import {
   X,
   MagnifyingGlass,
 } from "@phosphor-icons/react";
-import type { Command } from "@/lib/commands";
-import { createCommandRegistry } from "@/lib/commands";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
-import { useEngineStore } from "@/stores/engine-store";
-import { exportStl } from "@/lib/export-stl";
-import { exportGltf } from "@/lib/export-gltf";
+import type { Command } from "@vcad/core";
+import { createCommandRegistry, useUiStore, useDocumentStore, useEngineStore, exportStlBlob, exportGltfBlob } from "@vcad/core";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
@@ -157,14 +152,14 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
       },
       exportStl: () => {
         if (scene) {
-          const blob = exportStl(scene);
+          const blob = exportStlBlob(scene);
           downloadBlob(blob, "model.stl");
         }
         onOpenChange(false);
       },
       exportGlb: () => {
         if (scene) {
-          const blob = exportGltf(scene);
+          const blob = exportGltfBlob(scene);
           downloadBlob(blob, "model.glb");
         }
         onOpenChange(false);

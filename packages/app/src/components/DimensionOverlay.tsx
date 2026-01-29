@@ -1,10 +1,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import { Line, Html } from "@react-three/drei";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
-import { useEngineStore } from "@/stores/engine-store";
-import { isPrimitivePart } from "@/types";
+import { useUiStore, useDocumentStore, useEngineStore, isPrimitivePart } from "@vcad/core";
 
 const DIM_COLOR = "#94a3b8"; // muted accent
 

@@ -1,11 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
-import { useEngineStore } from "@/stores/engine-store";
+import { useUiStore, useDocumentStore, useEngineStore, isPrimitivePart } from "@vcad/core";
 import { ScrubInput } from "@/components/ui/scrub-input";
-import { isPrimitivePart } from "@/types";
 import type { CsgOp } from "@vcad/ir";
 
 function InlineRenameInput({

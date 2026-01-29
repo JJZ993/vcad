@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { TransformControls } from "@react-three/drei";
 import * as THREE from "three";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
+import { useUiStore, useDocumentStore } from "@vcad/core";
 import type { RefObject } from "react";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 

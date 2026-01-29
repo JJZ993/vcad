@@ -1,10 +1,8 @@
 import { useEffect, useRef, useMemo } from "react";
 import * as THREE from "three";
 import { Edges, Html } from "@react-three/drei";
-import type { TriangleMesh } from "@vcad/engine";
-import type { PartInfo } from "@/types";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
+import type { TriangleMesh, PartInfo } from "@vcad/core";
+import { useUiStore, useDocumentStore } from "@vcad/core";
 
 const HOVER_EMISSIVE = new THREE.Color(0xffb800); // neon amber
 

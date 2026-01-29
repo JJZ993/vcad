@@ -7,8 +7,7 @@ import {
   Subtract,
   Intersect,
 } from "@phosphor-icons/react";
-import { useDocumentStore } from "@/stores/document-store";
-import { useUiStore } from "@/stores/ui-store";
+import { useDocumentStore, useUiStore } from "@vcad/core";
 import type { ReactNode } from "react";
 
 function MenuItem({

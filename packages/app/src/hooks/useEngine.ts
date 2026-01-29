@@ -1,7 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Engine } from "@vcad/engine";
-import { useDocumentStore } from "@/stores/document-store";
-import { useEngineStore } from "@/stores/engine-store";
+import { Engine, useDocumentStore, useEngineStore } from "@vcad/core";
 
 export function useEngine() {
   const engineRef = useRef<Engine | null>(null);

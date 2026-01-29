@@ -1,9 +1,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import { Line, Html } from "@react-three/drei";
-import { useUiStore } from "@/stores/ui-store";
-import { useDocumentStore } from "@/stores/document-store";
-import { useEngineStore } from "@/stores/engine-store";
+import { useUiStore, useDocumentStore, useEngineStore } from "@vcad/core";
 import { useTheme } from "@/hooks/useTheme";
 
 const ACCENT_DARK = "#00d4ff";
