@@ -543,6 +543,7 @@ fn tessellate_cylindrical_face(
 }
 
 /// Tessellate a spherical face.
+/// Uses a single vertex at each pole to avoid normal computation artifacts.
 fn tessellate_spherical_face(
     geom: &GeometryStore,
     face_id: FaceId,
@@ -556,8 +557,14 @@ fn tessellate_spherical_face(
 
     let mut mesh = TriangleMesh::new();
 
-    // Generate vertices in a latitude/longitude grid
-    for j in 0..=n_lat {
+    // South pole - single vertex (index 0)
+    let south = surface.evaluate(Point2::new(0.0, -PI / 2.0));
+    mesh.vertices.push(south.x as f32);
+    mesh.vertices.push(south.y as f32);
+    mesh.vertices.push(south.z as f32);
+
+    // Middle latitude bands (j = 1 to n_lat - 1)
+    for j in 1..n_lat {
         let v = -PI / 2.0 + PI * (j as f64 / n_lat as f64);
         for i in 0..=n_lon {
             let u = 2.0 * PI * (i as f64 / n_lon as f64);
@@ -568,36 +575,57 @@ fn tessellate_spherical_face(
         }
     }
 
-    // Generate triangles
-    let stride = (n_lon + 1) as u32;
-    for j in 0..n_lat {
-        for i in 0..n_lon {
-            let bl = j as u32 * stride + i as u32;
-            let br = bl + 1;
-            let tl = bl + stride;
-            let tr = tl + 1;
+    // North pole - single vertex (last index)
+    let north = surface.evaluate(Point2::new(0.0, PI / 2.0));
+    mesh.vertices.push(north.x as f32);
+    mesh.vertices.push(north.y as f32);
+    mesh.vertices.push(north.z as f32);
 
-            if j == 0 {
-                // Bottom row: only one triangle (degenerate at south pole)
-                if reversed {
-                    mesh.indices.extend_from_slice(&[bl, tl, tr]);
-                } else {
-                    mesh.indices.extend_from_slice(&[bl, tr, tl]);
-                }
-            } else if j == n_lat - 1 {
-                // Top row: only one triangle (degenerate at north pole)
-                if reversed {
-                    mesh.indices.extend_from_slice(&[bl, br, tr]);
-                } else {
-                    mesh.indices.extend_from_slice(&[bl, tr, br]);
-                }
-            } else if reversed {
+    let south_idx = 0u32;
+    let north_idx = mesh.num_vertices() as u32 - 1;
+    let stride = (n_lon + 1) as u32;
+
+    // South pole triangles (fan from south pole to first latitude band)
+    let first_band_start = 1u32;
+    for i in 0..n_lon {
+        let v1 = first_band_start + i as u32;
+        let v2 = first_band_start + (i + 1) as u32;
+        if reversed {
+            mesh.indices.extend_from_slice(&[south_idx, v1, v2]);
+        } else {
+            mesh.indices.extend_from_slice(&[south_idx, v2, v1]);
+        }
+    }
+
+    // Middle bands (quads between latitude bands)
+    for j in 0..(n_lat - 2) {
+        let band_start = 1 + j as u32 * stride;
+        let next_band_start = band_start + stride;
+        for i in 0..n_lon {
+            let bl = band_start + i as u32;
+            let br = band_start + (i + 1) as u32;
+            let tl = next_band_start + i as u32;
+            let tr = next_band_start + (i + 1) as u32;
+
+            if reversed {
                 mesh.indices.extend_from_slice(&[bl, tl, br]);
                 mesh.indices.extend_from_slice(&[br, tl, tr]);
             } else {
                 mesh.indices.extend_from_slice(&[bl, br, tl]);
                 mesh.indices.extend_from_slice(&[br, tr, tl]);
             }
+        }
+    }
+
+    // North pole triangles (fan from last latitude band to north pole)
+    let last_band_start = 1 + (n_lat - 2) as u32 * stride;
+    for i in 0..n_lon {
+        let v1 = last_band_start + i as u32;
+        let v2 = last_band_start + (i + 1) as u32;
+        if reversed {
+            mesh.indices.extend_from_slice(&[north_idx, v2, v1]);
+        } else {
+            mesh.indices.extend_from_slice(&[north_idx, v1, v2]);
         }
     }
 
