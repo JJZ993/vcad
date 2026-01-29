@@ -28,8 +28,9 @@ pub enum FaceClassification {
 
 /// Compute a sample point in the interior of a face.
 ///
-/// Returns a 3D point that lies on the face's surface, inside its boundary.
-/// Uses the centroid of the outer loop vertices projected onto the surface.
+/// Returns a 3D point that lies on the face's surface, inside its boundary
+/// but outside any holes (inner loops). Uses different strategies depending
+/// on whether the face has holes.
 pub fn face_sample_point(brep: &BRepSolid, face_id: FaceId) -> Point3 {
     let topo = &brep.topology;
     let face = &topo.faces[face_id];
@@ -44,7 +45,36 @@ pub fn face_sample_point(brep: &BRepSolid, face_id: FaceId) -> Point3 {
         return Point3::origin();
     }
 
-    // Compute centroid
+    // If face has inner loops (holes), we need a smarter sample point
+    // that's outside the holes but inside the outer boundary.
+    if !face.inner_loops.is_empty() {
+        // Strategy: pick a point on the outer boundary's edge midpoint
+        // and move slightly inward. This avoids the hole in the center.
+        if vertices.len() >= 2 {
+            // Take the midpoint of the first edge
+            let edge_mid = Point3::new(
+                (vertices[0].x + vertices[1].x) / 2.0,
+                (vertices[0].y + vertices[1].y) / 2.0,
+                (vertices[0].z + vertices[1].z) / 2.0,
+            );
+
+            // Compute face centroid
+            let n = vertices.len() as f64;
+            let cx = vertices.iter().map(|v| v.x).sum::<f64>() / n;
+            let cy = vertices.iter().map(|v| v.y).sum::<f64>() / n;
+            let cz = vertices.iter().map(|v| v.z).sum::<f64>() / n;
+            let centroid = Point3::new(cx, cy, cz);
+
+            // Move from edge_mid slightly toward centroid, but only 10% of the way
+            // This keeps the sample point near the outer boundary, avoiding holes
+            let dir = centroid - edge_mid;
+            let sample = edge_mid + 0.1 * dir;
+
+            return sample;
+        }
+    }
+
+    // Standard case: no holes, use centroid
     let n = vertices.len() as f64;
     let cx = vertices.iter().map(|v| v.x).sum::<f64>() / n;
     let cy = vertices.iter().map(|v| v.y).sum::<f64>() / n;

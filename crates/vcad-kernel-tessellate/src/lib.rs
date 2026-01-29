@@ -123,27 +123,314 @@ fn tessellate_face(
 }
 
 /// Tessellate a planar face by triangulating its boundary polygon.
+/// Handles faces with inner loops (holes) using constrained triangulation.
 fn tessellate_planar_face(topo: &Topology, face_id: FaceId, reversed: bool) -> TriangleMesh {
     let face = &topo.faces[face_id];
-    let verts: Vec<_> = topo
+    let outer_verts: Vec<_> = topo
         .loop_half_edges(face.outer_loop)
         .map(|he| topo.vertices[topo.half_edges[he].origin].point)
         .collect();
 
-    if verts.len() < 3 {
+    if outer_verts.len() < 3 {
         return TriangleMesh::new();
+    }
+
+    // Check if face has inner loops (holes)
+    if !face.inner_loops.is_empty() {
+        return tessellate_planar_face_with_holes(topo, face_id, reversed);
     }
 
     let mut mesh = TriangleMesh::new();
 
     // Add all vertices
-    for v in &verts {
+    for v in &outer_verts {
         mesh.vertices.push(v.x as f32);
         mesh.vertices.push(v.y as f32);
         mesh.vertices.push(v.z as f32);
     }
 
     // Fan triangulation (valid for convex polygons — all our planar primitives are convex)
+    for i in 1..(outer_verts.len() - 1) {
+        if reversed {
+            mesh.indices.push(0);
+            mesh.indices.push((i + 1) as u32);
+            mesh.indices.push(i as u32);
+        } else {
+            mesh.indices.push(0);
+            mesh.indices.push(i as u32);
+            mesh.indices.push((i + 1) as u32);
+        }
+    }
+
+    mesh
+}
+
+/// Tessellate a planar face with inner loops (holes).
+/// Uses a simple bridge-based approach: connects outer boundary to inner loops.
+fn tessellate_planar_face_with_holes(topo: &Topology, face_id: FaceId, reversed: bool) -> TriangleMesh {
+    let face = &topo.faces[face_id];
+
+    // Get outer loop vertices
+    let outer_verts: Vec<Point3> = topo
+        .loop_half_edges(face.outer_loop)
+        .map(|he| topo.vertices[topo.half_edges[he].origin].point)
+        .collect();
+
+    if outer_verts.len() < 3 {
+        return TriangleMesh::new();
+    }
+
+    // Get all inner loop vertices
+    let mut inner_loops: Vec<Vec<Point3>> = Vec::new();
+    for &inner_loop in &face.inner_loops {
+        let inner_verts: Vec<Point3> = topo
+            .loop_half_edges(inner_loop)
+            .map(|he| topo.vertices[topo.half_edges[he].origin].point)
+            .collect();
+        if inner_verts.len() >= 3 {
+            inner_loops.push(inner_verts);
+        }
+    }
+
+    if inner_loops.is_empty() {
+        // No valid inner loops, fall back to simple triangulation
+        return tessellate_simple_polygon(&outer_verts, reversed);
+    }
+
+    // Build a 2D projection for triangulation
+    // Compute the face plane from first 3 vertices
+    let e1 = outer_verts[1] - outer_verts[0];
+    let e2 = outer_verts[2] - outer_verts[0];
+    let normal = e1.cross(&e2);
+    if normal.norm() < 1e-12 {
+        return TriangleMesh::new();
+    }
+
+    let u_axis = e1.normalize();
+    let v_axis = normal.cross(&e1).normalize();
+    let origin = outer_verts[0];
+
+    // Project 3D points to 2D
+    let project = |p: &Point3| -> (f64, f64) {
+        let d = *p - origin;
+        (d.dot(&u_axis), d.dot(&v_axis))
+    };
+
+    // Project outer loop
+    let outer_2d: Vec<(f64, f64)> = outer_verts.iter().map(&project).collect();
+
+    // Project inner loops
+    let inner_2d: Vec<Vec<(f64, f64)>> = inner_loops
+        .iter()
+        .map(|loop_verts| loop_verts.iter().map(&project).collect())
+        .collect();
+
+    // Use ear-clipping with hole bridging
+    triangulate_polygon_with_holes(&outer_2d, &inner_2d, &outer_verts, &inner_loops, reversed)
+}
+
+/// Triangulate a polygon with holes using ear-clipping with bridge construction.
+fn triangulate_polygon_with_holes(
+    outer_2d: &[(f64, f64)],
+    inner_2d: &[Vec<(f64, f64)>],
+    outer_3d: &[Point3],
+    inner_3d: &[Vec<Point3>],
+    reversed: bool,
+) -> TriangleMesh {
+    let mut mesh = TriangleMesh::new();
+
+    // Collect all vertices
+    let mut all_verts_3d: Vec<Point3> = outer_3d.to_vec();
+    let mut all_verts_2d: Vec<(f64, f64)> = outer_2d.to_vec();
+
+    // Track where each inner loop starts
+    let mut inner_starts: Vec<usize> = Vec::new();
+    for (inner_loop_3d, inner_loop_2d) in inner_3d.iter().zip(inner_2d.iter()) {
+        inner_starts.push(all_verts_3d.len());
+        all_verts_3d.extend_from_slice(inner_loop_3d);
+        all_verts_2d.extend_from_slice(inner_loop_2d);
+    }
+
+    // Add all vertices to mesh
+    for v in &all_verts_3d {
+        mesh.vertices.push(v.x as f32);
+        mesh.vertices.push(v.y as f32);
+        mesh.vertices.push(v.z as f32);
+    }
+
+    // Build a merged polygon by bridging outer to each inner loop
+    let mut poly_indices: Vec<usize> = (0..outer_2d.len()).collect();
+
+    for (hole_idx, inner_start) in inner_starts.iter().enumerate() {
+        let inner_len = inner_2d[hole_idx].len();
+
+        // Find the rightmost vertex of the hole
+        let mut rightmost_inner = 0;
+        let mut max_x = f64::NEG_INFINITY;
+        for i in 0..inner_len {
+            let (x, _) = all_verts_2d[inner_start + i];
+            if x > max_x {
+                max_x = x;
+                rightmost_inner = i;
+            }
+        }
+
+        // Find the closest visible vertex on the outer polygon
+        let inner_pt = all_verts_2d[inner_start + rightmost_inner];
+        let mut best_outer_idx = 0;
+        let mut best_dist = f64::MAX;
+
+        for (i, &outer_idx) in poly_indices.iter().enumerate() {
+            let outer_pt = all_verts_2d[outer_idx];
+            let dist = (outer_pt.0 - inner_pt.0).powi(2) + (outer_pt.1 - inner_pt.1).powi(2);
+            if dist < best_dist {
+                best_dist = dist;
+                best_outer_idx = i;
+            }
+        }
+
+        // Insert bridge: outer -> hole -> back to outer
+        let inner_global_start = *inner_start;
+        let hole_indices: Vec<usize> = (0..inner_len)
+            .map(|i| inner_global_start + ((rightmost_inner + i) % inner_len))
+            .collect();
+
+        // Insert after best_outer_idx:
+        // poly[0..=best_outer_idx] + hole_indices + [hole_indices[0], poly[best_outer_idx]] + poly[best_outer_idx+1..]
+        // Simplified: insert hole loop with bridge vertices
+        let bridge_outer = poly_indices[best_outer_idx];
+        let bridge_inner = hole_indices[0];
+
+        let mut new_poly = Vec::new();
+        new_poly.extend_from_slice(&poly_indices[..=best_outer_idx]);
+        new_poly.extend_from_slice(&hole_indices);
+        new_poly.push(bridge_inner);
+        new_poly.push(bridge_outer);
+        new_poly.extend_from_slice(&poly_indices[best_outer_idx + 1..]);
+
+        poly_indices = new_poly;
+    }
+
+    // Now triangulate the merged polygon using ear clipping
+    ear_clip_triangulate(&all_verts_2d, &poly_indices, &mut mesh.indices, reversed);
+
+    mesh
+}
+
+/// Simple ear-clipping triangulation for a polygon (defined by indices into a vertex array).
+fn ear_clip_triangulate(
+    verts_2d: &[(f64, f64)],
+    indices: &[usize],
+    out_indices: &mut Vec<u32>,
+    reversed: bool,
+) {
+    if indices.len() < 3 {
+        return;
+    }
+
+    let mut remaining: Vec<usize> = indices.to_vec();
+
+    while remaining.len() > 3 {
+        let n = remaining.len();
+        let mut found_ear = false;
+
+        for i in 0..n {
+            let prev = (i + n - 1) % n;
+            let next = (i + 1) % n;
+
+            let a = verts_2d[remaining[prev]];
+            let b = verts_2d[remaining[i]];
+            let c = verts_2d[remaining[next]];
+
+            // Check if this is a convex vertex (ear candidate)
+            let cross = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
+            let is_convex = if reversed { cross < 0.0 } else { cross > 0.0 };
+
+            if !is_convex {
+                continue;
+            }
+
+            // Check if any other vertex is inside this triangle
+            let mut is_ear = true;
+            for j in 0..n {
+                if j == prev || j == i || j == next {
+                    continue;
+                }
+                let p = verts_2d[remaining[j]];
+                if point_in_triangle_2d(p, a, b, c) {
+                    is_ear = false;
+                    break;
+                }
+            }
+
+            if is_ear {
+                // Add triangle
+                if reversed {
+                    out_indices.push(remaining[prev] as u32);
+                    out_indices.push(remaining[next] as u32);
+                    out_indices.push(remaining[i] as u32);
+                } else {
+                    out_indices.push(remaining[prev] as u32);
+                    out_indices.push(remaining[i] as u32);
+                    out_indices.push(remaining[next] as u32);
+                }
+                remaining.remove(i);
+                found_ear = true;
+                break;
+            }
+        }
+
+        if !found_ear {
+            // Degenerate case - just triangulate remaining as fan
+            break;
+        }
+    }
+
+    // Final triangle
+    if remaining.len() == 3 {
+        if reversed {
+            out_indices.push(remaining[0] as u32);
+            out_indices.push(remaining[2] as u32);
+            out_indices.push(remaining[1] as u32);
+        } else {
+            out_indices.push(remaining[0] as u32);
+            out_indices.push(remaining[1] as u32);
+            out_indices.push(remaining[2] as u32);
+        }
+    }
+}
+
+/// Check if a point is inside a triangle in 2D using barycentric coordinates.
+fn point_in_triangle_2d(p: (f64, f64), a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> bool {
+    let v0 = (c.0 - a.0, c.1 - a.1);
+    let v1 = (b.0 - a.0, b.1 - a.1);
+    let v2 = (p.0 - a.0, p.1 - a.1);
+
+    let dot00 = v0.0 * v0.0 + v0.1 * v0.1;
+    let dot01 = v0.0 * v1.0 + v0.1 * v1.1;
+    let dot02 = v0.0 * v2.0 + v0.1 * v2.1;
+    let dot11 = v1.0 * v1.0 + v1.1 * v1.1;
+    let dot12 = v1.0 * v2.0 + v1.1 * v2.1;
+
+    let inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+    let u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
+    let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
+
+    // Use small epsilon to avoid boundary issues
+    let eps = 1e-10;
+    u > eps && v > eps && (u + v) < 1.0 - eps
+}
+
+/// Simple fan triangulation for a convex polygon.
+fn tessellate_simple_polygon(verts: &[Point3], reversed: bool) -> TriangleMesh {
+    let mut mesh = TriangleMesh::new();
+
+    for v in verts {
+        mesh.vertices.push(v.x as f32);
+        mesh.vertices.push(v.y as f32);
+        mesh.vertices.push(v.z as f32);
+    }
+
     for i in 1..(verts.len() - 1) {
         if reversed {
             mesh.indices.push(0);
