@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LineSegment,
   Rectangle,
@@ -191,34 +191,71 @@ function ExtrudeDialog({
   const engine = useEngineStore((s) => s.engine);
   const setPreviewMesh = useEngineStore((s) => s.setPreviewMesh);
 
+  // Animated depth for smooth preview transitions
+  const animatedDepthRef = useRef(20);
+  const targetDepthRef = useRef(20);
+  const rafRef = useRef<number>(0);
+
   const displayDir = flip ? negateDirection(normalDir) : normalDir;
 
-  // Compute preview on mount and when depth/flip changes
+  // Update target when depth/flip changes
+  useEffect(() => {
+    targetDepthRef.current = flip ? -depth : depth;
+  }, [depth, flip]);
+
+  // Animation loop for smooth preview
   useEffect(() => {
     if (!engine || segments.length === 0) return;
 
     const { x_dir, y_dir, normal } = getSketchPlaneDirections(plane);
-    const effectiveDepth = flip ? -depth : depth;
-    const direction = {
-      x: normal.x * effectiveDepth,
-      y: normal.y * effectiveDepth,
-      z: normal.z * effectiveDepth,
+    let lastRenderedDepth = animatedDepthRef.current;
+
+    const animate = () => {
+      const target = targetDepthRef.current;
+      const current = animatedDepthRef.current;
+      const diff = target - current;
+
+      // Lerp toward target (0.15 = smooth, 0.35 = snappy)
+      if (Math.abs(diff) > 0.1) {
+        animatedDepthRef.current = current + diff * 0.35;
+      } else {
+        animatedDepthRef.current = target;
+      }
+
+      // Only regenerate mesh if depth changed significantly (saves CPU/GPU)
+      const depthChange = Math.abs(animatedDepthRef.current - lastRenderedDepth);
+      if (depthChange > 0.5) {
+        lastRenderedDepth = animatedDepthRef.current;
+
+        const direction = {
+          x: normal.x * animatedDepthRef.current,
+          y: normal.y * animatedDepthRef.current,
+          z: normal.z * animatedDepthRef.current,
+        };
+
+        const mesh = engine.evaluateExtrudePreview(origin, x_dir, y_dir, segments, direction);
+        setPreviewMesh(mesh);
+      }
+
+      rafRef.current = requestAnimationFrame(animate);
     };
 
+    // Generate initial preview
+    const direction = {
+      x: normal.x * animatedDepthRef.current,
+      y: normal.y * animatedDepthRef.current,
+      z: normal.z * animatedDepthRef.current,
+    };
     const mesh = engine.evaluateExtrudePreview(origin, x_dir, y_dir, segments, direction);
     setPreviewMesh(mesh);
 
-    return () => {
-      setPreviewMesh(null);
-    };
-  }, [engine, plane, origin, segments, depth, flip, setPreviewMesh]);
+    rafRef.current = requestAnimationFrame(animate);
 
-  // Clear preview on unmount
-  useEffect(() => {
     return () => {
+      cancelAnimationFrame(rafRef.current);
       setPreviewMesh(null);
     };
-  }, [setPreviewMesh]);
+  }, [engine, plane, origin, segments, setPreviewMesh]);
 
   return (
     <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 border border-border bg-card p-4 shadow-2xl">
