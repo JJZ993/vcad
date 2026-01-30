@@ -56,55 +56,71 @@ pub struct TrimmedSegment {
     pub t_end: f64,
 }
 
-/// Test if a 2D point is inside a closed polygon using the winding number method.
+/// Test if a 2D point is inside a closed polygon using a robust winding method.
 ///
 /// `polygon` is a sequence of vertices forming a closed loop (last connects to first).
-/// Returns true if the point is inside or on the boundary.
+/// Returns true if the point is inside or within the tolerance of the boundary.
 pub fn point_in_polygon(point: &Point2, polygon: &[Point2]) -> bool {
-    let n = polygon.len();
-    if n < 3 {
-        return false;
-    }
-
-    let mut winding = 0i32;
-    for i in 0..n {
-        let j = (i + 1) % n;
-        let yi = polygon[i].y;
-        let yj = polygon[j].y;
-
-        if yi <= point.y {
-            if yj > point.y {
-                // Upward crossing
-                let val = cross_2d(
-                    polygon[j].x - polygon[i].x,
-                    polygon[j].y - polygon[i].y,
-                    point.x - polygon[i].x,
-                    point.y - polygon[i].y,
-                );
-                if val > 0.0 {
-                    winding += 1;
-                }
-            }
-        } else if yj <= point.y {
-            // Downward crossing
-            let val = cross_2d(
-                polygon[j].x - polygon[i].x,
-                polygon[j].y - polygon[i].y,
-                point.x - polygon[i].x,
-                point.y - polygon[i].y,
-            );
-            if val < 0.0 {
-                winding -= 1;
-            }
-        }
-    }
-
-    winding != 0
+    let tol = polygon_tolerance(polygon);
+    point_in_polygon_with_tolerance(point, polygon, tol)
 }
 
 /// 2D cross product: (ax, ay) × (bx, by) = ax*by - ay*bx
 fn cross_2d(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     ax * by - ay * bx
+}
+
+fn point_in_polygon_with_tolerance(point: &Point2, polygon: &[Point2], tolerance: f64) -> bool {
+    let n = polygon.len();
+    if n < 3 {
+        return false;
+    }
+
+    let mut winding = 0.0f64;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let a = polygon[i];
+        let b = polygon[j];
+        if point_segment_distance(point, &a, &b) <= tolerance {
+            return true;
+        }
+        let va = Point2::new(a.x - point.x, a.y - point.y);
+        let vb = Point2::new(b.x - point.x, b.y - point.y);
+        let cross = cross_2d(va.x, va.y, vb.x, vb.y);
+        let dot = va.x * vb.x + va.y * vb.y;
+        winding += cross.atan2(dot);
+    }
+
+    winding.abs() > std::f64::consts::PI
+}
+
+fn polygon_tolerance(polygon: &[Point2]) -> f64 {
+    if polygon.len() < 2 {
+        return 1e-9;
+    }
+    let mut min = Point2::new(f64::INFINITY, f64::INFINITY);
+    let mut max = Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in polygon {
+        min.x = min.x.min(p.x);
+        min.y = min.y.min(p.y);
+        max.x = max.x.max(p.x);
+        max.y = max.y.max(p.y);
+    }
+    let diag = ((max.x - min.x).powi(2) + (max.y - min.y).powi(2)).sqrt();
+    (diag * 1e-8).max(1e-9)
+}
+
+fn point_segment_distance(point: &Point2, a: &Point2, b: &Point2) -> f64 {
+    let ab = Point2::new(b.x - a.x, b.y - a.y);
+    let ap = Point2::new(point.x - a.x, point.y - a.y);
+    let len2 = ab.x * ab.x + ab.y * ab.y;
+    if len2 < 1e-16 {
+        return ((point.x - a.x).powi(2) + (point.y - a.y).powi(2)).sqrt();
+    }
+    let t = (ap.x * ab.x + ap.y * ab.y) / len2;
+    let t = t.clamp(0.0, 1.0);
+    let proj = Point2::new(a.x + t * ab.x, a.y + t * ab.y);
+    ((point.x - proj.x).powi(2) + (point.y - proj.y).powi(2)).sqrt()
 }
 
 /// Test if a 3D point on a surface lies inside a face's boundary.
@@ -646,6 +662,7 @@ mod tests {
         ];
 
         assert!(point_in_polygon(&Point2::new(5.0, 5.0), &square));
+        assert!(point_in_polygon(&Point2::new(10.0, 5.0), &square));
         assert!(!point_in_polygon(&Point2::new(15.0, 5.0), &square));
         assert!(!point_in_polygon(&Point2::new(-1.0, 5.0), &square));
     }
