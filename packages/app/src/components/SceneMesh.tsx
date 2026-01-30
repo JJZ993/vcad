@@ -1,5 +1,6 @@
-import { useEffect, useRef, useMemo, useCallback } from "react";
+import { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Edges, Html } from "@react-three/drei";
 import type { TriangleMesh, PartInfo, FaceInfo } from "@vcad/core";
 import { useUiStore, useDocumentStore, useSketchStore } from "@vcad/core";
@@ -17,6 +18,8 @@ interface SceneMeshProps {
   materialKey: string;
   selected: boolean;
   transform?: Transform3D;
+  /** Override ID used for selection (e.g., instance ID instead of part ID) */
+  selectionId?: string;
 }
 
 /** Compute face info from a raycast hit */
@@ -60,7 +63,7 @@ function computeFaceInfo(
   };
 }
 
-export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: SceneMeshProps) {
+export function SceneMesh({ partInfo, mesh, materialKey, selected, transform, selectionId }: SceneMeshProps) {
   const geoRef = useRef<THREE.BufferGeometry>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const select = useUiStore((s) => s.select);
@@ -69,6 +72,7 @@ export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: 
   const hoveredPartId = useUiStore((s) => s.hoveredPartId);
   const setHoveredPartId = useUiStore((s) => s.setHoveredPartId);
   const document = useDocumentStore((s) => s.document);
+  const renamePart = useDocumentStore((s) => s.renamePart);
 
   // Face selection state
   const faceSelectionMode = useSketchStore((s) => s.faceSelectionMode);
@@ -76,8 +80,13 @@ export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: 
   const setHoveredFace = useSketchStore((s) => s.setHoveredFace);
   const selectFace = useSketchStore((s) => s.selectFace);
 
-  const isHovered = hoveredPartId === partInfo.id;
+  // Use selectionId if provided, otherwise fall back to partInfo.id
+  const effectiveSelectionId = selectionId ?? partInfo.id;
+  const isHovered = hoveredPartId === effectiveSelectionId;
   const isHoveredFace = faceSelectionMode && hoveredFace?.partId === partInfo.id;
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(partInfo.name);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Resolve material color from document using the materialKey passed from evaluation
   const materialColor = useMemo(() => {
@@ -99,6 +108,16 @@ export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: 
   const emissiveIntensity = isHoveredFace ? 0.15 : selected ? 0.2 : isHovered ? 0.08 : 0;
 
   useEffect(() => {
+    setDraftName(partInfo.name);
+  }, [partInfo.name, selected]);
+
+  useEffect(() => {
+    if (isRenaming) {
+      nameInputRef.current?.select();
+    }
+  }, [isRenaming]);
+
+  useEffect(() => {
     const geo = geoRef.current;
     if (!geo) return;
 
@@ -106,14 +125,27 @@ export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: 
     const positions = new Float32Array(mesh.positions);
     const indices = new Uint32Array(mesh.indices);
 
-    geo.setAttribute(
-      "position",
-      new THREE.BufferAttribute(positions, 3),
-    );
-    geo.setIndex(new THREE.BufferAttribute(indices, 1));
-    geo.computeVertexNormals();
+    // Create temp geometry to merge vertices for smooth normals
+    const tempGeo = new THREE.BufferGeometry();
+    tempGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    tempGeo.setIndex(new THREE.BufferAttribute(indices, 1));
+
+    // Merge coincident vertices so normals can interpolate smoothly
+    const mergedGeo = mergeVertices(tempGeo, 0.0001);
+    mergedGeo.computeVertexNormals();
+
+    // Copy merged data to our geometry
+    geo.setAttribute("position", mergedGeo.getAttribute("position"));
+    geo.setAttribute("normal", mergedGeo.getAttribute("normal"));
+    if (mergedGeo.index) {
+      geo.setIndex(mergedGeo.index);
+    }
     geo.computeBoundingSphere();
     geo.computeBoundingBox();
+
+    // Cleanup temp geometry
+    tempGeo.dispose();
+    mergedGeo.dispose();
 
     return () => {
       geo.dispose();
@@ -147,8 +179,8 @@ export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: 
     }
   }, [transform]);
 
-  // Compute center for tooltip positioning
-  const center = useMemo(() => {
+  // Compute name tag position above the part
+  const labelPosition = useMemo(() => {
     if (!mesh.positions.length) return new THREE.Vector3();
     const box = new THREE.Box3();
     const pos = new THREE.Vector3();
@@ -156,12 +188,24 @@ export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: 
       pos.set(mesh.positions[i]!, mesh.positions[i + 1]!, mesh.positions[i + 2]!);
       box.expandByPoint(pos);
     }
-    const c = new THREE.Vector3();
-    box.getCenter(c);
-    // Offset above the center
-    c.y = box.max.y + 3;
-    return c;
+    const topCenter = new THREE.Vector3();
+    box.getCenter(topCenter);
+    topCenter.y = box.max.y + 4;
+    return topCenter;
   }, [mesh.positions]);
+
+  const commitRename = useCallback(() => {
+    const trimmed = draftName.trim();
+    if (trimmed && trimmed !== partInfo.name) {
+      renamePart(partInfo.id, trimmed);
+    }
+    setIsRenaming(false);
+  }, [draftName, partInfo.id, partInfo.name, renamePart]);
+
+  const cancelRename = useCallback(() => {
+    setDraftName(partInfo.name);
+    setIsRenaming(false);
+  }, [partInfo.name]);
 
   const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -226,10 +270,37 @@ export function SceneMesh({ partInfo, mesh, materialKey, selected, transform }: 
         side={THREE.DoubleSide}
       />
       {showWireframe && <Edges threshold={15} color="#666" />}
-      {isHovered && !selected && !faceSelectionMode && (
-        <Html position={center} center style={{ pointerEvents: "none" }}>
-          <div className=" bg-surface border border-border px-2 py-1 text-xs text-text shadow-lg whitespace-nowrap">
-            {partInfo.name}
+      {selected && !faceSelectionMode && (
+        <Html position={labelPosition} center style={{ pointerEvents: "auto" }}>
+          <div className="px-2 py-1 text-xs font-medium text-text whitespace-nowrap">
+            {isRenaming ? (
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={draftName}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => setDraftName(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitRename();
+                  if (e.key === "Escape") cancelRename();
+                }}
+                className="min-w-[80px] bg-transparent text-text outline-none"
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsRenaming(true);
+                }}
+                className="text-text"
+              >
+                {partInfo.name}
+              </button>
+            )}
           </div>
         </Html>
       )}

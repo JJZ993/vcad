@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo } from "react";
 import { MOUSE, Spherical, Vector3, Box3 } from "three";
 import { useThree, useFrame } from "@react-three/fiber";
-import { OrbitControls, GizmoHelper, GizmoViewport, Environment, ContactShadows } from "@react-three/drei";
+import { OrbitControls, GizmoHelper, GizmoViewcube, Environment, ContactShadows } from "@react-three/drei";
 import { EffectComposer, N8AO, Vignette } from "@react-three/postprocessing";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { GridPlane } from "./GridPlane";
@@ -12,18 +12,27 @@ import { SketchPlane3D } from "./SketchPlane3D";
 import { TransformGizmo } from "./TransformGizmo";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { DimensionOverlay } from "./DimensionOverlay";
-import { InlineProperties } from "./InlineProperties";
 import { useEngineStore, useDocumentStore, useUiStore, useSketchStore } from "@vcad/core";
 import type { PartInfo } from "@vcad/core";
 import { useCameraControls } from "@/hooks/useCameraControls";
 import { useTheme } from "@/hooks/useTheme";
 import type { EvaluatedInstance } from "@vcad/engine";
 
+function getInstanceSelectionId(inst: EvaluatedInstance): string {
+  const instance = inst as {
+    id?: string;
+    instanceId?: string;
+    partDefId?: string;
+  };
+  return instance.id ?? instance.instanceId ?? instance.partDefId ?? "";
+}
+
 export function ViewportContent() {
   useCameraControls();
   const scene = useEngineStore((s) => s.scene);
   const previewMesh = useEngineStore((s) => s.previewMesh);
   const parts = useDocumentStore((s) => s.parts);
+  const document = useDocumentStore((s) => s.document);
   const selectedPartIds = useUiStore((s) => s.selectedPartIds);
   const sketchActive = useSketchStore((s) => s.active);
   const orbitRef = useRef<OrbitControlsImpl>(null);
@@ -49,6 +58,39 @@ export function ViewportContent() {
   const INITIAL_TARGET = new Vector3(0, 0, 0);
   const INITIAL_DISTANCE = INITIAL_POSITION.distanceTo(INITIAL_TARGET);
 
+  // Build mapping from root index to instance ID (for assembly mode rendering with legacy parts)
+  const rootIndexToInstanceId = useMemo(() => {
+    const mapping = new Map<number, string>();
+    if (!document.instances || !document.partDefs) return mapping;
+
+    // Build root NodeId -> root index lookup
+    const rootToIndex = new Map<number, number>();
+    document.roots.forEach((entry, idx) => {
+      rootToIndex.set(entry.root, idx);
+    });
+
+    // Map each instance to its corresponding root index
+    for (const instance of document.instances) {
+      const partDef = document.partDefs[instance.partDefId];
+      if (!partDef) continue;
+      const rootIdx = rootToIndex.get(partDef.root);
+      if (rootIdx !== undefined) {
+        mapping.set(rootIdx, instance.id);
+      }
+    }
+    return mapping;
+  }, [document.instances, document.partDefs, document.roots]);
+
+  // Check if a part at given index is selected (handles both part IDs and instance IDs)
+  const isPartSelected = (partId: string, partIndex: number): boolean => {
+    // Direct part ID match
+    if (selectedPartIds.has(partId)) return true;
+    // Instance ID match (for assembly mode)
+    const instanceId = rootIndexToInstanceId.get(partIndex);
+    if (instanceId && selectedPartIds.has(instanceId)) return true;
+    return false;
+  };
+
   // Calculate center and size of selected parts/instances
   const selectionInfo = useMemo(() => {
     if (selectedPartIds.size === 0 || !scene) return null;
@@ -60,7 +102,8 @@ export function ViewportContent() {
     // Assembly mode: check instances
     if (scene.instances && scene.instances.length > 0) {
       for (const inst of scene.instances) {
-        if (!selectedPartIds.has(inst.instanceId)) continue;
+        const instanceSelectionId = getInstanceSelectionId(inst);
+        if (!instanceSelectionId || !selectedPartIds.has(instanceSelectionId)) continue;
 
         const positions = inst.mesh.positions;
         const t = inst.transform;
@@ -76,9 +119,9 @@ export function ViewportContent() {
         }
       }
     } else {
-      // Legacy mode: check parts
+      // Legacy mode: check parts (also handles instance IDs via isPartSelected)
       parts.forEach((part, index) => {
-        if (!selectedPartIds.has(part.id)) return;
+        if (!isPartSelected(part.id, index)) return;
         const evalPart = scene.parts[index];
         if (!evalPart) return;
 
@@ -98,7 +141,7 @@ export function ViewportContent() {
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z);
     return { center, maxDim };
-  }, [selectedPartIds, scene, parts]);
+  }, [selectedPartIds, scene, parts, rootIndexToInstanceId]);
 
   // Animate orbit target to selection center and zoom to fit
   useEffect(() => {
@@ -318,6 +361,35 @@ export function ViewportContent() {
     return () => window.removeEventListener("vcad:face-selected", handleFaceSelected as EventListener);
   }, []);
 
+  // Snap view: animate camera to predefined positions
+  useEffect(() => {
+    const CAMERA_DISTANCE = 80;
+    const SNAP_VIEWS: Record<string, [number, number, number]> = {
+      front: [0, 0, CAMERA_DISTANCE],
+      back: [0, 0, -CAMERA_DISTANCE],
+      right: [CAMERA_DISTANCE, 0, 0],
+      left: [-CAMERA_DISTANCE, 0, 0],
+      top: [0, CAMERA_DISTANCE, 0],
+      bottom: [0, -CAMERA_DISTANCE, 0],
+      iso: [50, 50, 50],
+    };
+
+    const handleSnapView = (e: CustomEvent<string>) => {
+      const view = e.detail;
+      const pos = SNAP_VIEWS[view];
+      if (!pos) return;
+
+      // Animate to the new position
+      targetGoalRef.current.set(0, 0, 0);
+      cameraPositionGoalRef.current = new Vector3(pos[0], pos[1], pos[2]);
+      distanceGoalRef.current = null; // Don't override distance when we have explicit position
+      isAnimatingTargetRef.current = true;
+    };
+
+    window.addEventListener("vcad:snap-view", handleSnapView as EventListener);
+    return () => window.removeEventListener("vcad:snap-view", handleSnapView as EventListener);
+  }, []);
+
   return (
     <>
       {/* Environment lighting - subtle studio setup */}
@@ -358,9 +430,10 @@ export function ViewportContent() {
 
       {/* Scene meshes - Assembly mode (instances) */}
       {scene?.instances?.map((inst: EvaluatedInstance) => {
+        const instanceSelectionId = getInstanceSelectionId(inst);
         // Create a minimal PartInfo-like object for instance rendering
         const instancePartInfo: PartInfo = {
-          id: inst.instanceId,
+          id: instanceSelectionId,
           name: inst.name ?? inst.partDefId,
           kind: "cube", // Placeholder kind for instances
           primitiveNodeId: 0,
@@ -374,7 +447,7 @@ export function ViewportContent() {
             partInfo={instancePartInfo}
             mesh={inst.mesh}
             materialKey={inst.material}
-            selected={selectedPartIds.has(inst.instanceId)}
+            selected={selectedPartIds.has(instanceSelectionId)}
             transform={inst.transform}
           />
         );
@@ -390,7 +463,7 @@ export function ViewportContent() {
             partInfo={partInfo}
             mesh={evalPart.mesh}
             materialKey={evalPart.material}
-            selected={selectedPartIds.has(partInfo.id)}
+            selected={isPartSelected(partInfo.id, idx)}
           />
         );
       })}
@@ -412,9 +485,6 @@ export function ViewportContent() {
       {/* Dimension annotations for primitives */}
       <DimensionOverlay />
 
-      {/* Inline properties card near selection */}
-      <InlineProperties />
-
       {/* Transform gizmo for selected part */}
       <TransformGizmo orbitControls={orbitRef} />
 
@@ -432,11 +502,15 @@ export function ViewportContent() {
         }}
       />
 
-      {/* Orientation gizmo - RGB convention */}
+      {/* View cube - clickable orientation gizmo */}
       <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-        <GizmoViewport
-          axisColors={["#e06c75", "#98c379", "#61afef"]}
-          labelColor="#abb2bf"
+        <GizmoViewcube
+          color="#3a3a3a"
+          hoverColor="#4a9eff"
+          textColor="#aaa"
+          strokeColor="#666"
+          opacity={0.9}
+          faces={["Right", "Left", "Top", "Bottom", "Front", "Back"]}
         />
       </GizmoHelper>
 
