@@ -24,6 +24,7 @@ import {
   useDocumentStore,
   useUiStore,
   parseVcadFile,
+  type VcadFile,
 } from "@vcad/core";
 import { useEngine } from "@/hooks/useEngine";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -145,6 +146,29 @@ export function App() {
       window.removeEventListener("vcad:open", onOpen);
     };
   }, [handleSave, handleOpen]);
+
+  // Listen for load-example events from the menu
+  useEffect(() => {
+    const onLoadExample = (e: CustomEvent<{ file: VcadFile }>) => {
+      try {
+        useDocumentStore.getState().loadDocument(e.detail.file);
+        useUiStore.getState().clearSelection();
+      } catch (err) {
+        console.error("Failed to load example:", err);
+        useToastStore.getState().addToast("Failed to load example", "error");
+      }
+    };
+    window.addEventListener(
+      "vcad:load-example",
+      onLoadExample as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        "vcad:load-example",
+        onLoadExample as EventListener,
+      );
+    };
+  }, []);
 
   // Warn before closing with unsaved changes
   useEffect(() => {

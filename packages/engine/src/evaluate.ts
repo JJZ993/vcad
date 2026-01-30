@@ -7,9 +7,16 @@ import type {
   SketchSegment2D,
   SweepOp,
   LoftOp,
+  Transform3D,
 } from "@vcad/ir";
-import type { EvaluatedScene, TriangleMesh } from "./mesh.js";
+import type {
+  EvaluatedScene,
+  EvaluatedPartDef,
+  EvaluatedInstance,
+  TriangleMesh,
+} from "./mesh.js";
 import type { Solid } from "@vcad/kernel-wasm";
+import { solveForwardKinematics } from "./kinematics.js";
 
 /** Convert IR sketch segment to WASM format */
 function convertSegment(seg: SketchSegment2D) {
@@ -45,11 +52,25 @@ interface KernelModule {
   Solid: typeof Solid;
 }
 
+/** Extract a TriangleMesh from a Solid. */
+function solidToMesh(solid: Solid): TriangleMesh {
+  const meshData = solid.getMesh();
+  return {
+    positions: new Float32Array(meshData.positions),
+    indices: new Uint32Array(meshData.indices),
+    normals: meshData.normals ? new Float32Array(meshData.normals) : undefined,
+  };
+}
+
 /**
  * Evaluate a vcad IR Document into an EvaluatedScene using vcad-kernel-wasm.
  *
- * Walks the DAG for each scene root, memoizes intermediate Solid objects
- * by NodeId, then extracts triangle meshes.
+ * Supports two modes:
+ * - Traditional mode: evaluates `doc.roots` as independent parts
+ * - Assembly mode: evaluates `doc.partDefs`, applies kinematics to `doc.instances`
+ *
+ * If both are present, assembly mode takes precedence but traditional parts
+ * are also included.
  */
 export function evaluateDocument(
   doc: Document,
@@ -58,43 +79,124 @@ export function evaluateDocument(
   const { Solid } = kernel;
   const cache = new Map<NodeId, Solid>();
 
-  // Evaluate all parts
+  // Traditional mode: evaluate roots
   const solids: Solid[] = [];
   const parts = doc.roots.map((entry) => {
     const solid = evaluateNode(entry.root, doc.nodes, Solid, cache);
     solids.push(solid);
-    const meshData = solid.getMesh();
-    const mesh: TriangleMesh = {
-      positions: new Float32Array(meshData.positions),
-      indices: new Uint32Array(meshData.indices),
-      normals: meshData.normals ? new Float32Array(meshData.normals) : undefined,
-    };
     return {
-      mesh,
+      mesh: solidToMesh(solid),
       material: entry.material,
     };
   });
 
+  // Assembly mode: evaluate partDefs and instances
+  let evaluatedPartDefs: EvaluatedPartDef[] | undefined;
+  let evaluatedInstances: EvaluatedInstance[] | undefined;
+  const instanceSolids: { instanceId: string; solid: Solid; transform: Transform3D }[] = [];
+
+  if (doc.partDefs && Object.keys(doc.partDefs).length > 0 && doc.instances && doc.instances.length > 0) {
+    // Solve forward kinematics to get world transforms
+    const worldTransforms = solveForwardKinematics(doc);
+
+    // Evaluate each part definition once
+    const partDefSolids = new Map<string, Solid>();
+    const partDefMeshes = new Map<string, TriangleMesh>();
+
+    evaluatedPartDefs = [];
+    for (const [id, partDef] of Object.entries(doc.partDefs)) {
+      const solid = evaluateNode(partDef.root, doc.nodes, Solid, cache);
+      partDefSolids.set(id, solid);
+      const mesh = solidToMesh(solid);
+      partDefMeshes.set(id, mesh);
+      evaluatedPartDefs.push({ id, mesh });
+    }
+
+    // Create evaluated instances with world transforms
+    evaluatedInstances = [];
+    for (const instance of doc.instances) {
+      const mesh = partDefMeshes.get(instance.partDefId);
+      if (!mesh) {
+        console.warn(`Instance ${instance.id} references unknown partDef ${instance.partDefId}`);
+        continue;
+      }
+
+      // Get world transform (from kinematics or instance's own transform)
+      const worldTransform = worldTransforms.get(instance.id) ?? instance.transform;
+
+      // Determine material: instance override > partDef default > "default"
+      const partDef = doc.partDefs[instance.partDefId];
+      const material = instance.material ?? partDef?.defaultMaterial ?? "default";
+
+      evaluatedInstances.push({
+        instanceId: instance.id,
+        partDefId: instance.partDefId,
+        name: instance.name,
+        mesh,
+        material,
+        transform: worldTransform,
+      });
+
+      // Store transformed solid for clash detection
+      const baseSolid = partDefSolids.get(instance.partDefId);
+      if (baseSolid && worldTransform) {
+        // Transform the solid for clash detection
+        let transformedSolid = baseSolid
+          .scale(worldTransform.scale.x, worldTransform.scale.y, worldTransform.scale.z)
+          .rotate(worldTransform.rotation.x, worldTransform.rotation.y, worldTransform.rotation.z)
+          .translate(worldTransform.translation.x, worldTransform.translation.y, worldTransform.translation.z);
+        instanceSolids.push({ instanceId: instance.id, solid: transformedSolid, transform: worldTransform });
+      }
+    }
+  }
+
   // Compute pairwise intersections for clash detection
   const clashes: TriangleMesh[] = [];
+
+  // Clashes between traditional parts
   for (let i = 0; i < solids.length; i++) {
     for (let j = i + 1; j < solids.length; j++) {
       const intersection = solids[i].intersection(solids[j]);
-      // Only include non-empty intersections
       if (!intersection.isEmpty()) {
         const meshData = intersection.getMesh();
         if (meshData.positions.length > 0) {
           clashes.push({
             positions: new Float32Array(meshData.positions),
             indices: new Uint32Array(meshData.indices),
-            normals: meshData.normals ? new Float32Array(meshData.normals) : undefined,
+            normals: meshData.normals
+              ? new Float32Array(meshData.normals)
+              : undefined,
           });
         }
       }
     }
   }
 
-  return { parts, clashes };
+  // Clashes between assembly instances
+  for (let i = 0; i < instanceSolids.length; i++) {
+    for (let j = i + 1; j < instanceSolids.length; j++) {
+      const intersection = instanceSolids[i].solid.intersection(instanceSolids[j].solid);
+      if (!intersection.isEmpty()) {
+        const meshData = intersection.getMesh();
+        if (meshData.positions.length > 0) {
+          clashes.push({
+            positions: new Float32Array(meshData.positions),
+            indices: new Uint32Array(meshData.indices),
+            normals: meshData.normals
+              ? new Float32Array(meshData.normals)
+              : undefined,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    parts,
+    partDefs: evaluatedPartDefs,
+    instances: evaluatedInstances,
+    clashes,
+  };
 }
 
 function evaluateNode(
@@ -281,6 +383,8 @@ function evaluateOp(
           op.twist_angle,
           op.scale_start,
           op.scale_end,
+          op.path_segments,
+          op.arc_segments,
         );
       }
     }

@@ -356,17 +356,21 @@ export interface SceneEntry {
   material: string;
 }
 
+/** Joint limits as [min, max] tuple for constrained joints. */
+export type JointLimits = [number, number];
+
 /** Joint kind variants for assembly joints. */
 export type JointKind =
   | { type: "Fixed" }
-  | { type: "Revolute"; axis: Vec3 }
-  | { type: "Slider"; axis: Vec3 }
+  | { type: "Revolute"; axis: Vec3; limits?: JointLimits }
+  | { type: "Slider"; axis: Vec3; limits?: JointLimits }
   | { type: "Cylindrical"; axis: Vec3 }
   | { type: "Ball" };
 
 /** A joint connecting two instances in an assembly. */
 export interface Joint {
   id: string;
+  name?: string;
   parentInstanceId: string | null;
   childInstanceId: string;
   parentAnchor: Vec3;
@@ -381,6 +385,18 @@ export interface Instance {
   partDefId: string;
   name?: string;
   transform?: Transform3D;
+  material?: string;
+}
+
+/** Alias for Instance (used in some components). */
+export type PartInstance = Instance;
+
+/** A reusable part definition in an assembly. */
+export interface PartDef {
+  id: string;
+  name?: string;
+  root: NodeId;
+  defaultMaterial?: string;
 }
 
 /** A vcad document — the `.vcad` file format. */
@@ -390,8 +406,14 @@ export interface Document {
   materials: Record<string, MaterialDef>;
   part_materials: Record<string, string>;
   roots: SceneEntry[];
+  /** Part definitions for assembly mode. */
+  partDefs?: Record<string, PartDef>;
+  /** Instances of part definitions. */
   instances?: Instance[];
+  /** Joints connecting instances. */
   joints?: Joint[];
+  /** The instance that is fixed in world space (ground). */
+  groundInstanceId?: string;
 }
 
 /** Create a new empty document. */

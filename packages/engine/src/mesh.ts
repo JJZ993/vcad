@@ -20,7 +20,7 @@ export interface EvaluatedPartDef {
 
 /** An instance of a part definition with transform and material. */
 export interface EvaluatedInstance {
-  id: string;
+  instanceId: string;
   partDefId: string;
   name?: string;
   mesh: TriangleMesh;

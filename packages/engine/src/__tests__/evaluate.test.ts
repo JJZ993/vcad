@@ -519,3 +519,173 @@ describe("Sketch operations", () => {
     expect(scene.parts[0].mesh.indices.length).toBeGreaterThan(0);
   });
 });
+
+describe("Assembly evaluation", () => {
+  it("evaluates partDefs and instances", () => {
+    const doc: Document = {
+      version: "0.1",
+      nodes: {
+        "1": { id: 1, name: "cube", op: { type: "Cube", size: { x: 10, y: 10, z: 10 } } },
+        "2": { id: 2, name: "cylinder", op: { type: "Cylinder", radius: 5, height: 20, segments: 16 } },
+      },
+      materials: {},
+      part_materials: {},
+      roots: [],
+      partDefs: {
+        box: { id: "box", name: "Box", root: 1, defaultMaterial: "metal" },
+        rod: { id: "rod", name: "Rod", root: 2, defaultMaterial: "plastic" },
+      },
+      instances: [
+        {
+          id: "box-1",
+          partDefId: "box",
+          name: "Box Instance",
+          transform: {
+            translation: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+          },
+        },
+        {
+          id: "rod-1",
+          partDefId: "rod",
+          name: "Rod Instance",
+          transform: {
+            translation: { x: 20, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+          },
+        },
+      ],
+      groundInstanceId: "box-1",
+    };
+
+    const scene = engine.evaluate(doc);
+
+    // Should have partDefs
+    expect(scene.partDefs).toBeDefined();
+    expect(scene.partDefs).toHaveLength(2);
+
+    // Should have instances
+    expect(scene.instances).toBeDefined();
+    expect(scene.instances).toHaveLength(2);
+
+    // Check first instance
+    const boxInstance = scene.instances!.find((i) => i.instanceId === "box-1");
+    expect(boxInstance).toBeDefined();
+    expect(boxInstance!.partDefId).toBe("box");
+    expect(boxInstance!.material).toBe("metal");
+    expect(boxInstance!.mesh.positions.length).toBeGreaterThan(0);
+
+    // Check second instance
+    const rodInstance = scene.instances!.find((i) => i.instanceId === "rod-1");
+    expect(rodInstance).toBeDefined();
+    expect(rodInstance!.partDefId).toBe("rod");
+    expect(rodInstance!.material).toBe("plastic");
+    expect(rodInstance!.transform?.translation.x).toBe(20);
+
+    // No clashes (they're separated)
+    expect(scene.clashes).toHaveLength(0);
+  });
+
+  it("applies kinematics for joints", () => {
+    const doc: Document = {
+      version: "0.1",
+      nodes: {
+        "1": { id: 1, name: "cube", op: { type: "Cube", size: { x: 10, y: 10, z: 10 } } },
+      },
+      materials: {},
+      part_materials: {},
+      roots: [],
+      partDefs: {
+        box: { id: "box", root: 1 },
+      },
+      instances: [
+        {
+          id: "ground",
+          partDefId: "box",
+          transform: {
+            translation: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+          },
+        },
+        {
+          id: "arm",
+          partDefId: "box",
+          transform: {
+            translation: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+          },
+        },
+      ],
+      joints: [
+        {
+          id: "hinge",
+          name: "Hinge Joint",
+          parentInstanceId: "ground",
+          childInstanceId: "arm",
+          parentAnchor: { x: 10, y: 5, z: 5 },
+          childAnchor: { x: 0, y: 5, z: 5 },
+          kind: { type: "Revolute", axis: { x: 0, y: 1, z: 0 } },
+          state: 0,
+        },
+      ],
+      groundInstanceId: "ground",
+    };
+
+    const scene = engine.evaluate(doc);
+
+    expect(scene.instances).toBeDefined();
+    expect(scene.instances).toHaveLength(2);
+
+    // Arm should be positioned relative to ground via joint
+    const armInstance = scene.instances!.find((i) => i.instanceId === "arm");
+    expect(armInstance).toBeDefined();
+    expect(armInstance!.transform).toBeDefined();
+    // With state=0 (no rotation), arm should be translated by parent-child anchor difference
+    expect(armInstance!.transform!.translation.x).toBe(10); // parentAnchor.x - childAnchor.x
+  });
+
+  it("detects clashes between overlapping instances", () => {
+    const doc: Document = {
+      version: "0.1",
+      nodes: {
+        "1": { id: 1, name: "cube", op: { type: "Cube", size: { x: 10, y: 10, z: 10 } } },
+      },
+      materials: {},
+      part_materials: {},
+      roots: [],
+      partDefs: {
+        box: { id: "box", root: 1 },
+      },
+      instances: [
+        {
+          id: "box-1",
+          partDefId: "box",
+          transform: {
+            translation: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+          },
+        },
+        {
+          id: "box-2",
+          partDefId: "box",
+          transform: {
+            translation: { x: 5, y: 0, z: 0 }, // Overlaps with box-1
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+          },
+        },
+      ],
+    };
+
+    const scene = engine.evaluate(doc);
+
+    // Should detect clash between overlapping cubes
+    expect(scene.clashes.length).toBeGreaterThan(0);
+    expect(scene.clashes[0].positions.length).toBeGreaterThan(0);
+  });
+});
