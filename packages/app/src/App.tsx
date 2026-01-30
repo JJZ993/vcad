@@ -13,7 +13,7 @@ import { BottomToolbar } from "@/components/BottomToolbar";
 import { Viewport } from "@/components/Viewport";
 import { FeatureTree } from "@/components/FeatureTree";
 import { PropertyPanel } from "@/components/PropertyPanel";
-import { WelcomeModal } from "@/components/WelcomeModal";
+import { InlineOnboarding } from "@/components/InlineOnboarding";
 import { AboutModal } from "@/components/AboutModal";
 import { CommandPalette } from "@/components/CommandPalette";
 import { SketchToolbar } from "@/components/SketchToolbar";
@@ -84,7 +84,6 @@ export function App() {
   useThemeSync();
 
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [welcomeOpen, setWelcomeOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const engineReady = useEngineStore((s) => s.engineReady);
@@ -98,13 +97,6 @@ export function App() {
   const welcomeModalDismissed = useOnboardingStore(
     (s) => s.welcomeModalDismissed,
   );
-
-  // Close welcome modal when parts are added
-  useEffect(() => {
-    if (hasParts && welcomeOpen) {
-      setWelcomeOpen(false);
-    }
-  }, [hasParts, welcomeOpen]);
 
   const handleSave = useCallback(() => {
     const state = useDocumentStore.getState();
@@ -171,9 +163,8 @@ export function App() {
   if (error && !engineReady) return <ErrorScreen message={error} />;
   if (loading || !engineReady) return <LoadingScreen />;
 
-  // Determine if welcome modal should show
-  const showWelcomeModal =
-    !hasParts && !welcomeModalDismissed && welcomeOpen && !sketchActive;
+  // Determine if inline onboarding should show
+  const showOnboarding = !hasParts && !welcomeModalDismissed && !sketchActive;
 
   return (
     <TooltipProvider>
@@ -182,6 +173,9 @@ export function App() {
         <Viewport />
         <SketchToolbar />
         <FaceSelectionOverlay />
+
+        {/* Inline onboarding (centered over viewport) */}
+        <InlineOnboarding visible={showOnboarding} />
 
         {/* Floating UI elements */}
         <CornerIcons
@@ -195,7 +189,6 @@ export function App() {
       </AppShell>
 
       {/* Modals */}
-      <WelcomeModal open={showWelcomeModal} onOpenChange={setWelcomeOpen} />
       <AboutModal open={aboutOpen} onOpenChange={setAboutOpen} />
       <CommandPalette
         open={commandPaletteOpen}
