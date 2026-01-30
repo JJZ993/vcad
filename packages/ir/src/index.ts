@@ -300,6 +300,8 @@ export interface SweepOp {
   twist_angle?: number;        // Total twist in radians (default 0)
   scale_start?: number;        // Scale at start (default 1.0)
   scale_end?: number;          // Scale at end (default 1.0)
+  path_segments?: number;      // Segments along path (0 = auto)
+  arc_segments?: number;       // Segments per arc in profile (default 8)
 }
 
 /** Loft operation — interpolate between multiple profiles. */
@@ -354,6 +356,33 @@ export interface SceneEntry {
   material: string;
 }
 
+/** Joint kind variants for assembly joints. */
+export type JointKind =
+  | { type: "Fixed" }
+  | { type: "Revolute"; axis: Vec3 }
+  | { type: "Slider"; axis: Vec3 }
+  | { type: "Cylindrical"; axis: Vec3 }
+  | { type: "Ball" };
+
+/** A joint connecting two instances in an assembly. */
+export interface Joint {
+  id: string;
+  parentInstanceId: string | null;
+  childInstanceId: string;
+  parentAnchor: Vec3;
+  childAnchor: Vec3;
+  kind: JointKind;
+  state: number;
+}
+
+/** An instance of a part definition in an assembly. */
+export interface Instance {
+  id: string;
+  partDefId: string;
+  name?: string;
+  transform?: Transform3D;
+}
+
 /** A vcad document — the `.vcad` file format. */
 export interface Document {
   version: string;
@@ -361,6 +390,8 @@ export interface Document {
   materials: Record<string, MaterialDef>;
   part_materials: Record<string, string>;
   roots: SceneEntry[];
+  instances?: Instance[];
+  joints?: Joint[];
 }
 
 /** Create a new empty document. */
