@@ -27,8 +27,8 @@ export function GridPlane() {
   const xAxisPoints = useMemo(
     () =>
       [
-        [-500, 0.01, 0],
-        [500, 0.01, 0],
+        [-500, 0, 0],
+        [500, 0, 0],
       ] as [number, number, number][],
     [],
   );
@@ -45,8 +45,8 @@ export function GridPlane() {
   const zAxisPoints = useMemo(
     () =>
       [
-        [0, 0.01, -500],
-        [0, 0.01, 500],
+        [0, 0, -500],
+        [0, 0, 500],
       ] as [number, number, number][],
     [],
   );
@@ -74,6 +74,8 @@ export function GridPlane() {
         transparent
         opacity={0.7}
         depthWrite={false}
+        depthTest={false}
+        renderOrder={1}
       />
       {/* Y axis - green */}
       <Line
@@ -83,6 +85,8 @@ export function GridPlane() {
         transparent
         opacity={0.7}
         depthWrite={false}
+        depthTest={false}
+        renderOrder={1}
       />
       {/* Z axis - blue */}
       <Line
@@ -92,6 +96,8 @@ export function GridPlane() {
         transparent
         opacity={0.7}
         depthWrite={false}
+        depthTest={false}
+        renderOrder={1}
       />
     </>
   );
