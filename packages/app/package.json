@@ -24,6 +24,7 @@
     "@vcad/ir": "^0.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "posthog-js": "^1.336.4",
     "postprocessing": "^6.38.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
