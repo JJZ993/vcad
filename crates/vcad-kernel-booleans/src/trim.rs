@@ -45,6 +45,7 @@ use vcad_kernel_primitives::BRepSolid;
 use vcad_kernel_topo::FaceId;
 
 use crate::ssi::IntersectionCurve;
+use crate::bbox;
 
 /// A trimmed segment of an intersection curve, expressed as a parameter range.
 #[derive(Debug, Clone)]
@@ -121,11 +122,44 @@ pub fn point_in_face(brep: &BRepSolid, face_id: FaceId, point_3d: &Point3) -> bo
         .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
         .collect();
 
-    // Project vertices to UV space using surface inverse mapping
-    let outer_uv = project_points_to_uv(surface.as_ref(), &outer_verts_3d);
-
     // Project the test point to UV
     let test_uv = project_point_to_uv(surface.as_ref(), point_3d);
+
+    let (outer_uv, inner_uv, test_uv) = match surface.surface_type() {
+        vcad_kernel_geom::SurfaceKind::Cylinder => {
+            let outer_uv = project_points_to_uv(surface.as_ref(), &outer_verts_3d);
+            let (outer_uv, seam_cut) = unwrap_cylindrical_loop(&outer_uv);
+            let inner_uv: Vec<Vec<Point2>> = face
+                .inner_loops
+                .iter()
+                .map(|&inner_loop_id| {
+                    let inner_verts: Vec<Point3> = topo
+                        .loop_half_edges(inner_loop_id)
+                        .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
+                        .collect();
+                    let inner_uv = project_points_to_uv(surface.as_ref(), &inner_verts);
+                    unwrap_cylindrical_loop_with_cut(&inner_uv, seam_cut)
+                })
+                .collect();
+            let test_uv = unwrap_cylindrical_uv(&test_uv, seam_cut);
+            (outer_uv, inner_uv, test_uv)
+        }
+        _ => {
+            let outer_uv = project_points_to_uv(surface.as_ref(), &outer_verts_3d);
+            let inner_uv: Vec<Vec<Point2>> = face
+                .inner_loops
+                .iter()
+                .map(|&inner_loop_id| {
+                    let inner_verts: Vec<Point3> = topo
+                        .loop_half_edges(inner_loop_id)
+                        .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
+                        .collect();
+                    project_points_to_uv(surface.as_ref(), &inner_verts)
+                })
+                .collect();
+            (outer_uv, inner_uv, test_uv)
+        }
+    };
 
     // Test if inside outer loop
     if !point_in_polygon(&test_uv, &outer_uv) {
@@ -133,13 +167,8 @@ pub fn point_in_face(brep: &BRepSolid, face_id: FaceId, point_3d: &Point3) -> bo
     }
 
     // Test if outside all inner loops (holes)
-    for &inner_loop_id in &face.inner_loops {
-        let inner_verts: Vec<Point3> = topo
-            .loop_half_edges(inner_loop_id)
-            .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
-            .collect();
-        let inner_uv = project_points_to_uv(surface.as_ref(), &inner_verts);
-        if point_in_polygon(&test_uv, &inner_uv) {
+    for inner_uv in &inner_uv {
+        if point_in_polygon(&test_uv, inner_uv) {
             return false; // inside a hole
         }
     }
@@ -265,6 +294,9 @@ pub fn trim_curve_to_face(
     brep: &BRepSolid,
     n_samples: usize,
 ) -> Vec<TrimmedSegment> {
+    let aabb = bbox::face_aabb(brep, face_id);
+    let diag = (aabb.max - aabb.min).norm();
+    let merge_tol = (diag * 1e-6).max(1e-6);
     match curve {
         IntersectionCurve::Empty => Vec::new(),
         IntersectionCurve::Point(p) => {
@@ -291,7 +323,6 @@ pub fn trim_curve_to_face(
             //   But we need t = -34 to -46 to reach the face!
             //
             // See module-level docs for full explanation.
-            let aabb = crate::bbox::face_aabb(brep, face_id);
             let dir_len = line.direction.norm();
             if dir_len < 1e-15 {
                 return Vec::new();
@@ -344,18 +375,19 @@ pub fn trim_curve_to_face(
             t_min -= padding;
             t_max += padding;
 
-            sample_and_trim(
+            let segments = sample_and_trim(
                 |t| line.origin + t * line.direction,
                 t_min,
                 t_max,
                 n_samples,
                 face_id,
                 brep,
-            )
+            );
+            merge_segments(|t| line.origin + t * line.direction, &segments, merge_tol)
         }
         IntersectionCurve::Circle(circle) => {
             use std::f64::consts::PI;
-            sample_and_trim(
+            let segments = sample_and_trim(
                 |t| {
                     let (sin_t, cos_t) = t.sin_cos();
                     circle.center
@@ -368,6 +400,17 @@ pub fn trim_curve_to_face(
                 n_samples,
                 face_id,
                 brep,
+            );
+            merge_segments(
+                |t| {
+                    let (sin_t, cos_t) = t.sin_cos();
+                    circle.center
+                        + circle.radius
+                            * (cos_t * circle.x_dir.into_inner()
+                                + sin_t * circle.y_dir.into_inner())
+                },
+                &segments,
+                merge_tol,
             )
         }
         IntersectionCurve::Sampled(points) => {
@@ -404,7 +447,7 @@ pub fn trim_curve_to_face(
                 });
             }
 
-            segments
+            merge_segments(|t| sample_curve(points, t), &segments, merge_tol)
         }
     }
 }
@@ -509,6 +552,86 @@ fn sample_and_trim(
     segments
 }
 
+fn merge_segments(
+    eval: impl Fn(f64) -> Point3,
+    segments: &[TrimmedSegment],
+    tolerance: f64,
+) -> Vec<TrimmedSegment> {
+    if segments.len() < 2 {
+        return segments.to_vec();
+    }
+    let mut sorted = segments.to_vec();
+    sorted.sort_by(|a, b| a.t_start.partial_cmp(&b.t_start).unwrap());
+    let mut merged = Vec::new();
+    let mut current = sorted[0].clone();
+    for next in sorted.into_iter().skip(1) {
+        let end = eval(current.t_end);
+        let start = eval(next.t_start);
+        if (start - end).norm() <= tolerance {
+            current.t_end = next.t_end.max(current.t_end);
+        } else {
+            merged.push(current);
+            current = next;
+        }
+    }
+    merged.push(current);
+    merged
+}
+
+fn sample_curve(points: &[Point3], t: f64) -> Point3 {
+    if points.is_empty() {
+        return Point3::origin();
+    }
+    if points.len() == 1 {
+        return points[0];
+    }
+    let t = t.clamp(0.0, 1.0);
+    let idx = (t * (points.len() - 1) as f64).round() as usize;
+    points[idx.min(points.len() - 1)]
+}
+
+fn unwrap_cylindrical_loop(loop_uv: &[Point2]) -> (Vec<Point2>, f64) {
+    let seam_cut = find_seam_cut(loop_uv);
+    (unwrap_cylindrical_loop_with_cut(loop_uv, seam_cut), seam_cut)
+}
+
+fn unwrap_cylindrical_loop_with_cut(loop_uv: &[Point2], seam_cut: f64) -> Vec<Point2> {
+    loop_uv
+        .iter()
+        .map(|p| unwrap_cylindrical_uv(p, seam_cut))
+        .collect()
+}
+
+fn unwrap_cylindrical_uv(uv: &Point2, seam_cut: f64) -> Point2 {
+    let mut u = uv.x;
+    if u < seam_cut {
+        u += 2.0 * std::f64::consts::PI;
+    }
+    Point2::new(u, uv.y)
+}
+
+fn find_seam_cut(loop_uv: &[Point2]) -> f64 {
+    if loop_uv.is_empty() {
+        return 0.0;
+    }
+    let mut u_values: Vec<f64> = loop_uv.iter().map(|p| p.x).collect();
+    u_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mut best_gap = -1.0;
+    let mut cut = u_values[0];
+    for w in u_values.windows(2) {
+        let gap = w[1] - w[0];
+        if gap > best_gap {
+            best_gap = gap;
+            cut = w[1];
+        }
+    }
+    let wrap_gap = u_values[0] + 2.0 * std::f64::consts::PI - u_values[u_values.len() - 1];
+    if wrap_gap > best_gap {
+        cut = u_values[0];
+    }
+    cut
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -564,6 +687,20 @@ mod tests {
             let outside = point_in_face(&brep, fid, &Point3::new(15.0, 5.0, 0.0));
             assert!(!outside);
         }
+    }
+
+    #[test]
+    fn test_unwrap_cylindrical_loop() {
+        let loop_uv = vec![
+            Point2::new(6.2, 0.0),
+            Point2::new(0.1, 0.0),
+            Point2::new(0.2, 0.0),
+        ];
+        let (unwrapped, seam_cut) = unwrap_cylindrical_loop(&loop_uv);
+        assert!(unwrapped.iter().all(|p| p.x >= seam_cut));
+        let min_u = unwrapped.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let max_u = unwrapped.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        assert!(max_u - min_u < 2.0 * std::f64::consts::PI);
     }
 
     #[test]
