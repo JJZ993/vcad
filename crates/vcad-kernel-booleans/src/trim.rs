@@ -44,8 +44,8 @@ use vcad_kernel_math::{Point2, Point3};
 use vcad_kernel_primitives::BRepSolid;
 use vcad_kernel_topo::FaceId;
 
-use crate::ssi::IntersectionCurve;
 use crate::bbox;
+use crate::ssi::IntersectionCurve;
 
 /// A trimmed segment of an intersection curve, expressed as a parameter range.
 #[derive(Debug, Clone)]
@@ -608,7 +608,10 @@ fn sample_curve(points: &[Point3], t: f64) -> Point3 {
 
 fn unwrap_cylindrical_loop(loop_uv: &[Point2]) -> (Vec<Point2>, f64) {
     let seam_cut = find_seam_cut(loop_uv);
-    (unwrap_cylindrical_loop_with_cut(loop_uv, seam_cut), seam_cut)
+    (
+        unwrap_cylindrical_loop_with_cut(loop_uv, seam_cut),
+        seam_cut,
+    )
 }
 
 fn unwrap_cylindrical_loop_with_cut(loop_uv: &[Point2], seam_cut: f64) -> Vec<Point2> {
@@ -716,7 +719,10 @@ mod tests {
         let (unwrapped, seam_cut) = unwrap_cylindrical_loop(&loop_uv);
         assert!(unwrapped.iter().all(|p| p.x >= seam_cut));
         let min_u = unwrapped.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
-        let max_u = unwrapped.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let max_u = unwrapped
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::NEG_INFINITY, f64::max);
         assert!(max_u - min_u < 2.0 * std::f64::consts::PI);
     }
 

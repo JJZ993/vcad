@@ -155,7 +155,11 @@ pub fn sweep(
             let center1 = frames[path_idx + 1].position;
             let radial_normal = |pt: Point3, c: Point3| -> Dir3 {
                 let d = pt - c;
-                if d.norm() < 1e-12 { Dir3::new_normalize(Vec3::z()) } else { Dir3::new_normalize(d) }
+                if d.norm() < 1e-12 {
+                    Dir3::new_normalize(Vec3::z())
+                } else {
+                    Dir3::new_normalize(d)
+                }
             };
             let n0 = radial_normal(p0, center0);
             let n1 = radial_normal(p1, center0);
@@ -193,14 +197,26 @@ pub fn sweep(
 
     // Build start cap (first ring, reversed winding for outward normal)
     let start_ring = &vertex_grid[0];
-    let start_face_id =
-        build_cap_face(&mut topo, &mut geom, start_ring, true, &mut he_map, quantize_pt);
+    let start_face_id = build_cap_face(
+        &mut topo,
+        &mut geom,
+        start_ring,
+        true,
+        &mut he_map,
+        quantize_pt,
+    );
     all_faces.push(start_face_id);
 
     // Build end cap (last ring, forward winding)
     let end_ring = &vertex_grid[n_path_samples - 1];
-    let end_face_id =
-        build_cap_face(&mut topo, &mut geom, end_ring, false, &mut he_map, quantize_pt);
+    let end_face_id = build_cap_face(
+        &mut topo,
+        &mut geom,
+        end_ring,
+        false,
+        &mut he_map,
+        quantize_pt,
+    );
     all_faces.push(end_face_id);
 
     // Pair twin half-edges
@@ -549,10 +565,7 @@ mod tests {
 
         let vol = compute_mesh_volume(&mesh);
         // Expected: 4 * 2 * 10 = 80
-        assert!(
-            (vol - 80.0).abs() < 2.0,
-            "expected volume ~80, got {vol}"
-        );
+        assert!((vol - 80.0).abs() < 2.0, "expected volume ~80, got {vol}");
     }
 
     fn compute_mesh_volume(mesh: &vcad_kernel_tessellate::TriangleMesh) -> f64 {

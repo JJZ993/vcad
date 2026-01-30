@@ -181,14 +181,26 @@ fn loft_ruled(profiles: &[SketchProfile], closed: bool) -> Result<BRepSolid, Lof
     if !closed {
         // Start cap (first profile, reversed winding)
         let start_ring = &vertex_grid[0];
-        let start_face_id =
-            build_cap_face(&mut topo, &mut geom, start_ring, true, &mut he_map, quantize_pt);
+        let start_face_id = build_cap_face(
+            &mut topo,
+            &mut geom,
+            start_ring,
+            true,
+            &mut he_map,
+            quantize_pt,
+        );
         all_faces.push(start_face_id);
 
         // End cap (last profile, forward winding)
         let end_ring = &vertex_grid[n_profiles - 1];
-        let end_face_id =
-            build_cap_face(&mut topo, &mut geom, end_ring, false, &mut he_map, quantize_pt);
+        let end_face_id = build_cap_face(
+            &mut topo,
+            &mut geom,
+            end_ring,
+            false,
+            &mut he_map,
+            quantize_pt,
+        );
         all_faces.push(end_face_id);
     }
 

@@ -274,14 +274,7 @@ mod tests {
         assert!((frame.tangent.as_ref().z - 1.0).abs() < 1e-6);
         // Normal and binormal should be perpendicular to tangent
         assert!(frame.tangent.as_ref().dot(frame.normal.as_ref()).abs() < 1e-6);
-        assert!(
-            frame
-                .tangent
-                .as_ref()
-                .dot(frame.binormal.as_ref())
-                .abs()
-                < 1e-6
-        );
+        assert!(frame.tangent.as_ref().dot(frame.binormal.as_ref()).abs() < 1e-6);
     }
 
     #[test]

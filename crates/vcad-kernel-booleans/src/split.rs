@@ -310,7 +310,8 @@ pub fn split_planar_face_by_circle(
             let theta = 2.0 * std::f64::consts::PI * (i as f64) / (segments as f64);
             let (sin_t, cos_t) = theta.sin_cos();
             circle.center
-                + circle.radius * (cos_t * circle.x_dir.into_inner() + sin_t * circle.y_dir.into_inner())
+                + circle.radius
+                    * (cos_t * circle.x_dir.into_inner() + sin_t * circle.y_dir.into_inner())
         })
         .collect();
 
@@ -328,7 +329,9 @@ pub fn split_planar_face_by_circle(
         .collect();
 
     let inner_loop = brep.topology.add_loop(&inner_hes);
-    let inner_face = brep.topology.add_face(inner_loop, surface_index, orientation);
+    let inner_face = brep
+        .topology
+        .add_face(inner_loop, surface_index, orientation);
 
     // Create outer face (polygon with hole)
     // The outer loop stays the same; we add the circle as an inner loop
@@ -390,7 +393,9 @@ pub fn split_planar_face_by_circle(
         .collect();
 
     let new_outer_loop = brep.topology.add_loop(&outer_hes);
-    let outer_face = brep.topology.add_face(new_outer_loop, surface_index, orientation);
+    let outer_face = brep
+        .topology
+        .add_face(new_outer_loop, surface_index, orientation);
 
     // Add the inner loop (hole) to the outer face
     let hole_hes: Vec<_> = outer_inner_verts
@@ -577,7 +582,10 @@ pub fn split_cylindrical_face_by_circle(
     let surface = &brep.geometry.surfaces[surface_index];
 
     // Verify surface is a cylinder
-    let cyl = match surface.as_any().downcast_ref::<vcad_kernel_geom::CylinderSurface>() {
+    let cyl = match surface
+        .as_any()
+        .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
+    {
         Some(c) => c.clone(),
         None => {
             return SplitResult {
@@ -623,9 +631,8 @@ pub fn split_cylindrical_face_by_circle(
 
     // Create new vertex at the seam point at height v_split
     // At u=0, the point is: center + radius * ref_dir + v_split * axis
-    let seam_point_at_split = cyl.center
-        + cyl.radius * cyl.ref_dir.as_ref()
-        + v_split * cyl.axis.as_ref();
+    let seam_point_at_split =
+        cyl.center + cyl.radius * cyl.ref_dir.as_ref() + v_split * cyl.axis.as_ref();
     let v_split_seam = brep.topology.add_vertex(seam_point_at_split);
 
     // Get the existing top and bottom seam vertices
@@ -682,7 +689,9 @@ pub fn split_cylindrical_face_by_circle(
         he_lower_split,
         he_lower_seam_down,
     ]);
-    let lower_face = brep.topology.add_face(lower_loop, surface_index, orientation);
+    let lower_face = brep
+        .topology
+        .add_face(lower_loop, surface_index, orientation);
 
     // Upper face: v_split to v_max
     // Boundary: split_circle (v_split_seam → v_split_seam) → seam_up (v_split_seam → v_top)
@@ -698,7 +707,9 @@ pub fn split_cylindrical_face_by_circle(
         he_upper_top,
         he_upper_seam_down,
     ]);
-    let upper_face = brep.topology.add_face(upper_loop, surface_index, orientation);
+    let upper_face = brep
+        .topology
+        .add_face(upper_loop, surface_index, orientation);
 
     // Add twin edges
     // Lower seam edges
@@ -722,7 +733,9 @@ pub fn split_cylindrical_face_by_circle(
         brep.topology.faces[upper_face].shell = Some(shell_id);
 
         // Remove original face from shell
-        brep.topology.shells[shell_id].faces.retain(|&f| f != face_id);
+        brep.topology.shells[shell_id]
+            .faces
+            .retain(|&f| f != face_id);
     }
 
     // Remove the original face
@@ -764,11 +777,9 @@ pub fn split_cylindrical_face(
                 sub_faces: vec![face_id],
             }
         }
-        IntersectionCurve::Empty | IntersectionCurve::Point(_) => {
-            SplitResult {
-                sub_faces: vec![face_id],
-            }
-        }
+        IntersectionCurve::Empty | IntersectionCurve::Point(_) => SplitResult {
+            sub_faces: vec![face_id],
+        },
     }
 }
 
