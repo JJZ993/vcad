@@ -238,7 +238,8 @@ fn tessellate_bilinear_face(
 }
 
 /// Tessellate a planar face with inner loops (holes).
-/// Uses a simple bridge-based approach: connects outer boundary to inner loops.
+/// Uses a ring-based approach for better triangle quality: adds intermediate
+/// Steiner points around each hole to prevent long thin triangles.
 fn tessellate_planar_face_with_holes(topo: &Topology, face_id: FaceId, reversed: bool) -> TriangleMesh {
     let face = &topo.faces[face_id];
 
@@ -273,19 +274,24 @@ fn tessellate_planar_face_with_holes(topo: &Topology, face_id: FaceId, reversed:
     // Compute the face plane from first 3 vertices
     let e1 = outer_verts[1] - outer_verts[0];
     let e2 = outer_verts[2] - outer_verts[0];
-    let normal = e1.cross(&e2);
-    if normal.norm() < 1e-12 {
+    let face_normal = e1.cross(&e2);
+    if face_normal.norm() < 1e-12 {
         return TriangleMesh::new();
     }
 
     let u_axis = e1.normalize();
-    let v_axis = normal.cross(&e1).normalize();
+    let v_axis = face_normal.cross(&e1).normalize();
     let origin = outer_verts[0];
 
     // Project 3D points to 2D
     let project = |p: &Point3| -> (f64, f64) {
         let d = *p - origin;
         (d.dot(&u_axis), d.dot(&v_axis))
+    };
+
+    // Unproject 2D points back to 3D
+    let unproject = |uv: (f64, f64)| -> Point3 {
+        origin + uv.0 * u_axis + uv.1 * v_axis
     };
 
     // Project outer loop
@@ -297,8 +303,335 @@ fn tessellate_planar_face_with_holes(topo: &Topology, face_id: FaceId, reversed:
         .map(|loop_verts| loop_verts.iter().map(&project).collect())
         .collect();
 
-    // Use ear-clipping with hole bridging
+    // Check if we need the ring-based approach (large face with small hole)
+    let outer_area = polygon_area_2d(&outer_2d);
+    let total_hole_area: f64 = inner_2d.iter().map(|h| polygon_area_2d(h).abs()).sum();
+
+    // Use ring-based approach if holes are small relative to the face
+    if total_hole_area < outer_area.abs() * 0.3 {
+        return triangulate_with_rings(
+            &outer_2d,
+            &inner_2d,
+            &outer_verts,
+            &inner_loops,
+            unproject,
+            reversed,
+        );
+    }
+
+    // Use ear-clipping with hole bridging for larger holes
     triangulate_polygon_with_holes(&outer_2d, &inner_2d, &outer_verts, &inner_loops, reversed)
+}
+
+/// Compute signed area of a 2D polygon.
+fn polygon_area_2d(pts: &[(f64, f64)]) -> f64 {
+    let mut area = 0.0;
+    let n = pts.len();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += pts[i].0 * pts[j].1 - pts[j].0 * pts[i].1;
+    }
+    area / 2.0
+}
+
+/// Triangulate a face with holes using rings around each hole.
+/// This creates better quality triangles by adding intermediate Steiner points.
+fn triangulate_with_rings<F>(
+    outer_2d: &[(f64, f64)],
+    inner_2d: &[Vec<(f64, f64)>],
+    outer_3d: &[Point3],
+    inner_3d: &[Vec<Point3>],
+    unproject: F,
+    reversed: bool,
+) -> TriangleMesh
+where
+    F: Fn((f64, f64)) -> Point3,
+{
+    let mut mesh = TriangleMesh::new();
+
+    // For each hole, create a ring of points and triangulate hole-to-ring
+    let mut ring_loops_2d: Vec<Vec<(f64, f64)>> = Vec::new();
+    let mut ring_loops_3d: Vec<Vec<Point3>> = Vec::new();
+
+    for (hole_2d, hole_3d) in inner_2d.iter().zip(inner_3d.iter()) {
+        // Compute hole centroid
+        let centroid: (f64, f64) = hole_2d.iter().fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
+        let n = hole_2d.len() as f64;
+        let centroid = (centroid.0 / n, centroid.1 / n);
+
+        // Compute approximate hole radius
+        let hole_radius: f64 = hole_2d
+            .iter()
+            .map(|p| ((p.0 - centroid.0).powi(2) + (p.1 - centroid.1).powi(2)).sqrt())
+            .sum::<f64>()
+            / n;
+
+        // Compute the maximum safe ring radius (must stay inside outer polygon)
+        // Find the minimum distance from hole centroid to any outer edge
+        let max_ring_radius = {
+            let mut min_dist = f64::INFINITY;
+            let n_outer = outer_2d.len();
+            for i in 0..n_outer {
+                let j = (i + 1) % n_outer;
+                let a = outer_2d[i];
+                let b = outer_2d[j];
+                // Distance from centroid to edge a-b
+                let ab = (b.0 - a.0, b.1 - a.1);
+                let len2 = ab.0 * ab.0 + ab.1 * ab.1;
+                let dist = if len2 < 1e-12 {
+                    // Degenerate edge
+                    ((centroid.0 - a.0).powi(2) + (centroid.1 - a.1).powi(2)).sqrt()
+                } else {
+                    let ap = (centroid.0 - a.0, centroid.1 - a.1);
+                    let t = (ap.0 * ab.0 + ap.1 * ab.1) / len2;
+                    let t = t.clamp(0.0, 1.0);
+                    let proj = (a.0 + t * ab.0, a.1 + t * ab.1);
+                    ((centroid.0 - proj.0).powi(2) + (centroid.1 - proj.1).powi(2)).sqrt()
+                };
+                min_dist = min_dist.min(dist);
+            }
+            // Use 80% of the distance to the nearest edge as max ring radius
+            min_dist * 0.8
+        };
+
+        // Create ring at 2x the hole radius, but capped at the max safe radius
+        let desired_ring_radius = hole_radius * 2.5;
+        let ring_radius = desired_ring_radius.min(max_ring_radius).max(hole_radius * 1.2);
+
+        // Create ring vertices aligned with hole vertices (same angle, larger radius)
+        // This ensures proper 1-to-1 correspondence for triangle creation
+        let ring_2d: Vec<(f64, f64)> = hole_2d
+            .iter()
+            .map(|h| {
+                // Compute angle from centroid to this hole vertex
+                let dx = h.0 - centroid.0;
+                let dy = h.1 - centroid.1;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < 1e-12 {
+                    // Degenerate case: hole vertex at centroid
+                    (centroid.0 + ring_radius, centroid.1)
+                } else {
+                    // Scale to ring radius while preserving angle
+                    let scale = ring_radius / dist;
+                    (centroid.0 + dx * scale, centroid.1 + dy * scale)
+                }
+            })
+            .collect();
+
+        let ring_3d: Vec<Point3> = ring_2d.iter().map(|&uv| unproject(uv)).collect();
+
+        // Triangulate from hole to ring
+        let hole_start = mesh.num_vertices();
+        for v in hole_3d {
+            mesh.vertices.push(v.x as f32);
+            mesh.vertices.push(v.y as f32);
+            mesh.vertices.push(v.z as f32);
+        }
+        let ring_start = mesh.num_vertices();
+        for v in &ring_3d {
+            mesh.vertices.push(v.x as f32);
+            mesh.vertices.push(v.y as f32);
+            mesh.vertices.push(v.z as f32);
+        }
+
+        // Create triangles between hole and ring (quad strips)
+        let count = hole_2d.len();
+        for i in 0..count {
+            let h0 = (hole_start + i) as u32;
+            let h1 = (hole_start + (i + 1) % count) as u32;
+            let r0 = (ring_start + i) as u32;
+            let r1 = (ring_start + (i + 1) % count) as u32;
+
+            // Two triangles per quad
+            if reversed {
+                mesh.indices.extend_from_slice(&[h0, r0, h1]);
+                mesh.indices.extend_from_slice(&[h1, r0, r1]);
+            } else {
+                mesh.indices.extend_from_slice(&[h0, h1, r0]);
+                mesh.indices.extend_from_slice(&[h1, r1, r0]);
+            }
+        }
+
+        ring_loops_2d.push(ring_2d);
+        ring_loops_3d.push(ring_3d);
+    }
+
+    // Now triangulate from rings to outer boundary
+    // Treat rings as new inner loops and use ear-clipping
+    let ring_outer_mesh = triangulate_polygon_with_holes(
+        outer_2d,
+        &ring_loops_2d,
+        outer_3d,
+        &ring_loops_3d,
+        reversed,
+    );
+
+    // Merge ring-to-outer mesh into our mesh (with vertex offset)
+    let offset = mesh.num_vertices() as u32;
+    mesh.vertices.extend_from_slice(&ring_outer_mesh.vertices);
+    mesh.indices
+        .extend(ring_outer_mesh.indices.iter().map(|&i| i + offset));
+
+    mesh
+}
+
+/// Add Steiner points to the outer polygon to improve triangulation quality.
+///
+/// This function:
+/// 1. Subdivides long outer edges into smaller segments (max ~20 units)
+/// 2. Adds additional points near each hole centroid
+///
+/// This prevents very long bridges that cause thin, degenerate triangles.
+fn refine_outer_polygon_for_holes(
+    outer_2d: &[(f64, f64)],
+    outer_3d: &[Point3],
+    inner_2d: &[Vec<(f64, f64)>],
+) -> (Vec<(f64, f64)>, Vec<Point3>) {
+    if outer_2d.len() < 3 {
+        return (outer_2d.to_vec(), outer_3d.to_vec());
+    }
+
+    // Maximum edge length before subdivision.
+    // Using a small value to ensure good quality triangles near holes.
+    const MAX_EDGE_LENGTH: f64 = 8.0;
+
+    // First pass: subdivide long edges
+    let mut result_2d: Vec<(f64, f64)> = Vec::new();
+    let mut result_3d: Vec<Point3> = Vec::new();
+
+    for i in 0..outer_2d.len() {
+        let j = (i + 1) % outer_2d.len();
+        let a_2d = outer_2d[i];
+        let b_2d = outer_2d[j];
+        let a_3d = outer_3d[i];
+        let b_3d = outer_3d[j];
+
+        // Add the start vertex
+        result_2d.push(a_2d);
+        result_3d.push(a_3d);
+
+        // Calculate edge length
+        let edge_len = ((b_2d.0 - a_2d.0).powi(2) + (b_2d.1 - a_2d.1).powi(2)).sqrt();
+
+        // If edge is long, subdivide it
+        if edge_len > MAX_EDGE_LENGTH {
+            let num_segments = (edge_len / MAX_EDGE_LENGTH).ceil() as usize;
+            for k in 1..num_segments {
+                let t = k as f64 / num_segments as f64;
+                let new_2d = (
+                    a_2d.0 + t * (b_2d.0 - a_2d.0),
+                    a_2d.1 + t * (b_2d.1 - a_2d.1),
+                );
+                let new_3d = Point3::new(
+                    a_3d.x + t * (b_3d.x - a_3d.x),
+                    a_3d.y + t * (b_3d.y - a_3d.y),
+                    a_3d.z + t * (b_3d.z - a_3d.z),
+                );
+                result_2d.push(new_2d);
+                result_3d.push(new_3d);
+            }
+        }
+    }
+
+    // If no holes, we're done with just edge subdivision
+    if inner_2d.is_empty() {
+        return (result_2d, result_3d);
+    }
+
+    // Second pass: add points near each hole centroid
+    // Collect insertion points: (edge_index, t_param, 2d_point, 3d_point)
+    let mut insertions: Vec<(usize, f64, (f64, f64), Point3)> = Vec::new();
+
+    for hole in inner_2d {
+        if hole.is_empty() {
+            continue;
+        }
+
+        // Find centroid of hole
+        let centroid: (f64, f64) = hole.iter().fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
+        let n = hole.len() as f64;
+        let centroid = (centroid.0 / n, centroid.1 / n);
+
+        // Find closest point on outer polygon edges to the hole centroid
+        let mut best_edge = 0;
+        let mut best_t = 0.5;
+        let mut best_dist = f64::INFINITY;
+
+        for i in 0..result_2d.len() {
+            let j = (i + 1) % result_2d.len();
+            let a = result_2d[i];
+            let b = result_2d[j];
+
+            // Project centroid onto edge a-b
+            let ab = (b.0 - a.0, b.1 - a.1);
+            let len2 = ab.0 * ab.0 + ab.1 * ab.1;
+            if len2 < 1e-12 {
+                continue;
+            }
+
+            let ap = (centroid.0 - a.0, centroid.1 - a.1);
+            let t = (ap.0 * ab.0 + ap.1 * ab.1) / len2;
+
+            // Only consider points on the edge interior (not at endpoints)
+            if t <= 0.1 || t >= 0.9 {
+                continue;
+            }
+
+            let proj = (a.0 + t * ab.0, a.1 + t * ab.1);
+            let dist = ((centroid.0 - proj.0).powi(2) + (centroid.1 - proj.1).powi(2)).sqrt();
+
+            if dist < best_dist {
+                best_dist = dist;
+                best_edge = i;
+                best_t = t;
+            }
+        }
+
+        // Check if the best point is significantly closer than existing vertices
+        let mut min_vertex_dist = f64::INFINITY;
+        for &v in &result_2d {
+            let d = ((centroid.0 - v.0).powi(2) + (centroid.1 - v.1).powi(2)).sqrt();
+            min_vertex_dist = min_vertex_dist.min(d);
+        }
+
+        // Only add if the edge point is at least 30% closer than any existing vertex
+        if best_dist < min_vertex_dist * 0.7 && best_dist < f64::INFINITY {
+            let j = (best_edge + 1) % result_2d.len();
+            let a_2d = result_2d[best_edge];
+            let b_2d = result_2d[j];
+            let new_2d = (a_2d.0 + best_t * (b_2d.0 - a_2d.0), a_2d.1 + best_t * (b_2d.1 - a_2d.1));
+
+            let a_3d = result_3d[best_edge];
+            let b_3d = result_3d[j];
+            let new_3d = Point3::new(
+                a_3d.x + best_t * (b_3d.x - a_3d.x),
+                a_3d.y + best_t * (b_3d.y - a_3d.y),
+                a_3d.z + best_t * (b_3d.z - a_3d.z),
+            );
+
+            insertions.push((best_edge, best_t, new_2d, new_3d));
+        }
+    }
+
+    if insertions.is_empty() {
+        return (result_2d, result_3d);
+    }
+
+    // Sort insertions by edge index (descending) then by t (descending within same edge)
+    insertions.sort_by(|a, b| {
+        if a.0 != b.0 {
+            b.0.cmp(&a.0)
+        } else {
+            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+        }
+    });
+
+    for (edge_idx, _, pt_2d, pt_3d) in insertions {
+        result_2d.insert(edge_idx + 1, pt_2d);
+        result_3d.insert(edge_idx + 1, pt_3d);
+    }
+
+    (result_2d, result_3d)
 }
 
 /// Triangulate a polygon with holes using ear-clipping with bridge construction.
@@ -311,9 +644,14 @@ fn triangulate_polygon_with_holes(
 ) -> TriangleMesh {
     let mut mesh = TriangleMesh::new();
 
+    // First, refine the outer polygon by adding Steiner points near each hole.
+    // This prevents very long bridges that cause thin triangles.
+    let (refined_outer_2d, refined_outer_3d) =
+        refine_outer_polygon_for_holes(outer_2d, outer_3d, inner_2d);
+
     // Collect all vertices
-    let mut all_verts_3d: Vec<Point3> = outer_3d.to_vec();
-    let mut all_verts_2d: Vec<(f64, f64)> = outer_2d.to_vec();
+    let mut all_verts_3d: Vec<Point3> = refined_outer_3d.clone();
+    let mut all_verts_2d: Vec<(f64, f64)> = refined_outer_2d.clone();
 
     // Track where each inner loop starts
     let mut inner_starts: Vec<usize> = Vec::new();
@@ -331,7 +669,7 @@ fn triangulate_polygon_with_holes(
     }
 
     // Build a merged polygon by bridging outer to each inner loop
-    let mut poly_indices: Vec<usize> = (0..outer_2d.len()).collect();
+    let mut poly_indices: Vec<usize> = (0..refined_outer_2d.len()).collect();
 
     // Track which vertices have been used as bridge endpoints
     let mut used_bridge_vertices: std::collections::HashSet<usize> = std::collections::HashSet::new();
@@ -546,8 +884,8 @@ fn tessellate_cylindrical_face(
 ) -> TriangleMesh {
     let face = &topo.faces[face_id];
     let surface = &geom.surfaces[face.surface_index];
-    let n_circ = params.circle_segments as usize;
-    let n_height = params.height_segments as usize;
+    let n_circ = params.circle_segments.max(3) as usize;
+    let mut n_height = params.height_segments.max(1) as usize;
 
     // Determine the v (height) parameter range by projecting seam vertices
     // onto the cylinder axis. This works correctly after any transform.
@@ -556,10 +894,12 @@ fn tessellate_cylindrical_face(
         .map(|he| topo.vertices[topo.half_edges[he].origin].point)
         .collect();
 
+    let mut radius = None;
     let (v_min, v_max) = if let Some(cyl) = surface
         .as_any()
         .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
     {
+        radius = Some(cyl.radius.abs().max(1e-6));
         // Project vertices onto axis to get v parameter
         let mut vmin = f64::MAX;
         let mut vmax = f64::MIN;
@@ -578,6 +918,13 @@ fn tessellate_cylindrical_face(
     };
 
     let height = v_max - v_min;
+    if let Some(radius) = radius {
+        let circumference = 2.0 * PI * radius;
+        if circumference > 1e-9 {
+            let target = (height.abs() / circumference) * n_circ as f64;
+            n_height = n_height.max(target.ceil() as usize).max(1);
+        }
+    }
     let mut mesh = TriangleMesh::new();
 
     // Generate grid of vertices using surface.evaluate
@@ -728,7 +1075,7 @@ fn tessellate_spherical_cap(
 ) -> TriangleMesh {
     use vcad_kernel_geom::{SphereSurface, SurfaceKind};
 
-    let mut mesh = TriangleMesh::new();
+    let mesh = TriangleMesh::new();
 
     if loop_verts.len() < 3 {
         return mesh;
