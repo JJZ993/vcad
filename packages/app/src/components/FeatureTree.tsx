@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import * as RadixContextMenu from "@radix-ui/react-context-menu";
 import {
   Cube,
@@ -533,6 +534,7 @@ export function FeatureTree() {
   const setFeatureTreeOpen = useUiStore((s) => s.setFeatureTreeOpen);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const isMobile = useIsMobile();
 
   // Check if this is an assembly document
   const hasInstances = document.instances && document.instances.length > 0;
@@ -573,70 +575,90 @@ export function FeatureTree() {
     }
   }, [hasContent, setFeatureTreeOpen]);
 
+  const handleBackdropClick = useCallback(() => {
+    setFeatureTreeOpen(false);
+  }, [setFeatureTreeOpen]);
+
   if (!featureTreeOpen) return null;
 
   return (
-    <div
-      className={cn(
-        "absolute top-14 left-3 z-20 w-56",
-        "border border-border",
-        "bg-surface",
-        "shadow-lg shadow-black/30",
-        "max-h-[calc(100vh-120px)] flex flex-col",
+    <>
+      {/* Mobile backdrop */}
+      {isMobile && (
+        <div
+          className="fixed inset-0 z-10 bg-black/50 sm:hidden"
+          onClick={handleBackdropClick}
+        />
       )}
-    >
-      {/* Header */}
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
-          Features
-        </span>
-        <button
-          onClick={() => setFeatureTreeOpen(false)}
-          className="flex h-6 w-6 items-center justify-center text-text-muted hover:text-text hover:bg-hover"
-        >
-          <X size={14} />
-        </button>
-      </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
-        {!hasContent ? (
-          <div className="px-2 py-4 text-center text-xs text-text-muted">
-            No features yet.
-            <br />
-            Use the command bar to create a part.
-          </div>
-        ) : (
-          <ContextMenu>
-            <div>
-              {/* Assembly mode: show instances and joints */}
-              {hasInstances ? (
-                <AssemblyTree
-                  instances={document.instances!}
-                  joints={document.joints ?? []}
-                  groundInstanceId={document.groundInstanceId}
-                />
-              ) : (
-                <>
-                  {/* Legacy mode: show parts */}
-                  {parts.map((part) => (
-                    <TreeNode
-                      key={part.id}
-                      part={part}
-                      depth={0}
-                      expandedIds={expandedIds}
-                      toggleExpanded={toggleExpanded}
-                      consumedParts={consumedParts}
-                      renamingId={renamingId}
-                      setRenamingId={setRenamingId}
-                    />
-                  ))}
-                </>
-              )}
-            </div>
-          </ContextMenu>
+      <div
+        className={cn(
+          // Mobile: full-height drawer from left
+          "fixed inset-y-0 left-0 z-20 w-72",
+          "pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)]",
+          // Desktop: floating panel
+          "sm:absolute sm:top-14 sm:left-3 sm:inset-y-auto sm:w-56",
+          "sm:pt-0 sm:pb-0 sm:pl-0",
+          "border-r sm:border border-border",
+          "bg-surface",
+          "shadow-lg shadow-black/30",
+          isMobile ? "h-full" : "max-h-[calc(100vh-120px)]",
+          "flex flex-col",
         )}
+      >
+        {/* Header */}
+        <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+          <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
+            Features
+          </span>
+          <button
+            onClick={() => setFeatureTreeOpen(false)}
+            className="flex h-8 w-8 sm:h-6 sm:w-6 items-center justify-center text-text-muted hover:text-text hover:bg-hover"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
+          {!hasContent ? (
+            <div className="px-2 py-4 text-center text-xs text-text-muted">
+              No features yet.
+              <br />
+              Use the command bar to create a part.
+            </div>
+          ) : (
+            <ContextMenu>
+              <div>
+                {/* Assembly mode: show instances and joints */}
+                {hasInstances ? (
+                  <AssemblyTree
+                    instances={document.instances!}
+                    joints={document.joints ?? []}
+                    groundInstanceId={document.groundInstanceId}
+                  />
+                ) : (
+                  <>
+                    {/* Legacy mode: show parts */}
+                    {parts.map((part) => (
+                      <TreeNode
+                        key={part.id}
+                        part={part}
+                        depth={0}
+                        expandedIds={expandedIds}
+                        toggleExpanded={toggleExpanded}
+                        consumedParts={consumedParts}
+                        renamingId={renamingId}
+                        setRenamingId={setRenamingId}
+                      />
+                    ))}
+                  </>
+                )}
+              </div>
+            </ContextMenu>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

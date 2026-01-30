@@ -43,19 +43,23 @@ function IconButton({
   onClick,
   tooltip,
   active,
+  className,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   tooltip: string;
   active?: boolean;
+  className?: string;
 }) {
   return (
     <Tooltip content={tooltip}>
       <button
         className={cn(
-          "flex h-8 w-8 items-center justify-center",
+          // Mobile: 44px touch targets; Desktop: 32px
+          "flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center",
           "text-text-muted/70 hover:text-text hover:bg-hover",
           active && "text-accent",
+          className,
         )}
         onClick={onClick}
       >
@@ -364,8 +368,8 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
 
   return (
     <>
-      {/* Top-left: hamburger + logo */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+      {/* Top-left: hamburger + logo - with safe area padding */}
+      <div className="absolute z-20 flex items-center gap-2 top-[max(0.75rem,var(--safe-top))] left-[max(0.75rem,var(--safe-left))]">
         <IconButton
           tooltip="Toggle sidebar (`)"
           onClick={toggleFeatureTree}
@@ -381,9 +385,9 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
         </div>
       </div>
 
-      {/* Top-right: file actions, utilities, settings */}
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-1">
-        {/* File actions */}
+      {/* Top-right: file actions, utilities, settings - with safe area padding */}
+      <div className="absolute z-20 flex items-center gap-1 top-[max(0.75rem,var(--safe-top))] right-[max(0.75rem,var(--safe-right))]">
+        {/* File actions - always visible */}
         <IconButton tooltip="Save (Cmd+S)" onClick={onSave}>
           <FloppyDisk size={18} />
         </IconButton>
@@ -391,58 +395,61 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
           <FolderOpen size={18} />
         </IconButton>
 
-        <IconButton
-          tooltip="Command palette (Cmd+K)"
-          onClick={toggleCommandPalette}
-        >
-          <Command size={18} />
-        </IconButton>
-        <IconButton
-          tooltip={
-            theme === "system"
-              ? "Theme: System (click for Light)"
-              : theme === "light"
-              ? "Theme: Light (click for Dark)"
-              : "Theme: Dark (click for System)"
-          }
-          onClick={toggleTheme}
-        >
-          {theme === "system" ? (
-            <Desktop size={18} />
-          ) : theme === "light" ? (
-            <Sun size={18} />
-          ) : (
-            <Moon size={18} />
-          )}
-        </IconButton>
+        {/* Desktop-only icons */}
+        <div className="hidden sm:flex items-center gap-1">
+          <IconButton
+            tooltip="Command palette (Cmd+K)"
+            onClick={toggleCommandPalette}
+          >
+            <Command size={18} />
+          </IconButton>
+          <IconButton
+            tooltip={
+              theme === "system"
+                ? "Theme: System (click for Light)"
+                : theme === "light"
+                ? "Theme: Light (click for Dark)"
+                : "Theme: Dark (click for System)"
+            }
+            onClick={toggleTheme}
+          >
+            {theme === "system" ? (
+              <Desktop size={18} />
+            ) : theme === "light" ? (
+              <Sun size={18} />
+            ) : (
+              <Moon size={18} />
+            )}
+          </IconButton>
 
-        {/* External links */}
-        <Tooltip content="GitHub">
-          <a
-            href="https://github.com/ecto/vcad"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              "flex h-8 w-8 items-center justify-center",
-              "text-text-muted/70 hover:text-text hover:bg-hover",
-            )}
-          >
-            <GithubLogo size={18} />
-          </a>
-        </Tooltip>
-        <Tooltip content="Discord">
-          <a
-            href="https://discord.gg/ZU8QHnFAc2"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              "flex h-8 w-8 items-center justify-center",
-              "text-text-muted/70 hover:text-text hover:bg-hover",
-            )}
-          >
-            <DiscordLogo size={18} />
-          </a>
-        </Tooltip>
+          {/* External links */}
+          <Tooltip content="GitHub">
+            <a
+              href="https://github.com/ecto/vcad"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "flex h-8 w-8 items-center justify-center",
+                "text-text-muted/70 hover:text-text hover:bg-hover",
+              )}
+            >
+              <GithubLogo size={18} />
+            </a>
+          </Tooltip>
+          <Tooltip content="Discord">
+            <a
+              href="https://discord.gg/ZU8QHnFAc2"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "flex h-8 w-8 items-center justify-center",
+                "text-text-muted/70 hover:text-text hover:bg-hover",
+              )}
+            >
+              <DiscordLogo size={18} />
+            </a>
+          </Tooltip>
+        </div>
 
         <SettingsMenu onAboutOpen={onAboutOpen} />
       </div>

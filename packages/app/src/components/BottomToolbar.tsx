@@ -89,7 +89,10 @@ function ToolbarButton({
     <Tooltip content={tooltip}>
       <button
         className={cn(
-          "flex h-10 w-10 items-center justify-center relative",
+          // Mobile: 44px touch targets (iOS minimum)
+          "flex h-11 w-11 min-w-[44px] items-center justify-center relative",
+          // Desktop: 40px
+          "sm:h-10 sm:w-10 sm:min-w-0",
           "disabled:opacity-40 disabled:cursor-not-allowed",
           active
             ? "bg-accent text-white"
@@ -238,13 +241,17 @@ export function BottomToolbar() {
         open={jointDialogOpen}
         onOpenChange={setJointDialogOpen}
       />
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
+    {/* Mobile: full-width fixed at bottom; Desktop: centered floating */}
+    <div className="fixed bottom-0 inset-x-0 sm:absolute sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:inset-auto z-20 pb-[var(--safe-bottom)]">
       <div
         className={cn(
           "flex items-center gap-1 px-2 py-1.5",
           "bg-surface",
-          "border border-border",
+          // Mobile: border only on top, full width; Desktop: full border
+          "border-t sm:border border-border",
           "shadow-lg shadow-black/30",
+          // Mobile: horizontal scroll
+          "overflow-x-auto scrollbar-thin",
         )}
       >
         {/* Primitives */}
