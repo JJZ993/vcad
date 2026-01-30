@@ -60,7 +60,11 @@ fn main() -> Result<()> {
         Some(Commands::Export { input, output }) => {
             export_file(&input, &output)?;
         }
-        Some(Commands::Import { input, output, name }) => {
+        Some(Commands::Import {
+            input,
+            output,
+            name,
+        }) => {
             import_step(&input, &output, name)?;
         }
         Some(Commands::Info { file }) => {
@@ -190,7 +194,11 @@ fn export_step(doc: &vcad_ir::Document, output: &PathBuf) -> Result<()> {
             radius,
             height,
             segments,
-        } => Solid::cylinder(*radius, *height, if *segments == 0 { 32 } else { *segments }),
+        } => Solid::cylinder(
+            *radius,
+            *height,
+            if *segments == 0 { 32 } else { *segments },
+        ),
         vcad_ir::CsgOp::Sphere { radius, segments } => {
             Solid::sphere(*radius, if *segments == 0 { 32 } else { *segments })
         }
