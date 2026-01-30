@@ -1020,6 +1020,35 @@ pub fn split_cylindrical_face_by_circle(
     }
 }
 
+/// Compute the U parameter for a point on a cylinder surface.
+fn compute_cylinder_u(point: &Point3, cyl: &vcad_kernel_geom::CylinderSurface) -> f64 {
+    let d = *point - cyl.center;
+    let ref_dir = cyl.ref_dir.as_ref();
+    let y_dir = cyl.axis.as_ref().cross(ref_dir);
+    let u = d.dot(&y_dir).atan2(d.dot(ref_dir));
+    if u < 0.0 { u + 2.0 * std::f64::consts::PI } else { u }
+}
+
+/// Check if angle `u` is within the range from `u_start` to `u_end` (CCW direction).
+/// Handles wrap-around at 2π. For wrap-around cases, u_end may be > 2π.
+fn angle_in_range(u: f64, u_start: f64, u_end: f64) -> bool {
+    let tol = 0.01;
+    let two_pi = 2.0 * std::f64::consts::PI;
+
+    // If u_end > 2π, the face wraps around. Check if u is in [u_start, 2π) or [0, u_end - 2π)
+    if u_end > two_pi {
+        let end_wrapped = u_end - two_pi;
+        // u is in range if it's in [u_start, 2π) or [0, end_wrapped)
+        (u > u_start + tol && u < two_pi - tol) || (u > tol && u < end_wrapped - tol)
+    } else if u_end >= u_start {
+        // Simple case: range doesn't wrap around
+        u > u_start + tol && u < u_end - tol
+    } else {
+        // Range wraps around 2π (e.g., from 5.5 to 0.5)
+        u > u_start + tol || u < u_end - tol
+    }
+}
+
 /// Split a cylindrical face along a line intersection curve.
 ///
 /// When a plane parallel to the cylinder axis intersects the cylinder,
@@ -1031,8 +1060,9 @@ pub fn split_cylindrical_face_by_circle(
 /// - One part: `[u_min, u_split] × [v_min, v_max]`
 /// - Other part: `[u_split, u_max] × [v_min, v_max]`
 ///
-/// For a full lateral face (u spans 0 to 2π), the split creates two partial
-/// cylindrical faces that share the split edge.
+/// Works for both:
+/// - Full lateral faces (single seam vertex, u spans 0 to 2π)
+/// - Partial lateral faces (4 corner vertices from previous splits)
 pub fn split_cylindrical_face_by_line(
     brep: &mut BRepSolid,
     face_id: FaceId,
@@ -1056,16 +1086,11 @@ pub fn split_cylindrical_face_by_line(
         }
     };
 
-    // The line must be on the cylinder surface. Find the U parameter where
-    // the line intersects the cylinder.
-    // A point on the line: line.origin + t * line.direction
-    // For this to be on the cylinder: distance from axis = radius
-    //
-    // Use line.origin projected onto the cylinder to find U:
-    // u = atan2(dot(p - center, y_dir), dot(p - center, ref_dir))
-    let d = line.origin - cyl.center;
     let ref_dir = cyl.ref_dir.as_ref();
     let y_dir = cyl.axis.as_ref().cross(ref_dir);
+
+    // Find the U parameter of the split line
+    let d = line.origin - cyl.center;
     let u_split = d.dot(&y_dir).atan2(d.dot(ref_dir));
     let u_split = if u_split < 0.0 {
         u_split + 2.0 * std::f64::consts::PI
@@ -1081,23 +1106,134 @@ pub fn split_cylindrical_face_by_line(
         };
     }
 
-    // Get the v bounds (height along axis)
+    // Collect all unique vertices with their (v, u) coordinates
     let mut v_min = f64::INFINITY;
     let mut v_max = f64::NEG_INFINITY;
+    let mut all_verts: Vec<(vcad_kernel_topo::VertexId, f64, f64)> = Vec::new(); // (vid, v, u)
+
     for &he_id in &loop_hes {
-        let v_id = brep.topology.half_edges[he_id].origin;
-        let point = brep.topology.vertices[v_id].point;
+        let vid = brep.topology.half_edges[he_id].origin;
+        let point = brep.topology.vertices[vid].point;
         let v = (point - cyl.center).dot(cyl.axis.as_ref());
         v_min = v_min.min(v);
         v_max = v_max.max(v);
+
+        // Only add if not duplicate
+        if !all_verts.iter().any(|(id, _, _)| *id == vid) {
+            let u = compute_cylinder_u(&point, &cyl);
+            all_verts.push((vid, v, u));
+        }
     }
 
-    // Check that the split line is actually on/near the face
-    // (the line's u coordinate should be in the face's u range)
-    // For a full lateral face, u ranges from 0 to 2π
-    // We'll assume a full lateral face for now
-    let _face_u_min = 0.0;
-    let _face_u_max = 2.0 * std::f64::consts::PI;
+    // Separate into top and bottom vertices
+    let bottom_verts: Vec<_> = all_verts.iter()
+        .filter(|(_, v, _)| (*v - v_min).abs() < 1e-6)
+        .cloned()
+        .collect();
+    let top_verts: Vec<_> = all_verts.iter()
+        .filter(|(_, v, _)| (*v - v_max).abs() < 1e-6)
+        .cloned()
+        .collect();
+
+
+    // Determine face type and get corner vertices
+    let (u_start, u_end, v_start_bot, v_end_bot, v_start_top, v_end_top, is_full_face) =
+        if bottom_verts.len() == 1 && top_verts.len() == 1 {
+            // Full cylindrical face with single seam vertex at each end
+            // U spans from 0 (seam) around to 2π (back to seam)
+            let seam_u = bottom_verts[0].2;
+            (seam_u, seam_u + 2.0 * std::f64::consts::PI,
+             bottom_verts[0].0, bottom_verts[0].0,
+             top_verts[0].0, top_verts[0].0,
+             true)
+        } else if bottom_verts.len() == 2 && top_verts.len() == 2 {
+            // Partial cylindrical face with 4 corner vertices
+            // Use the loop order to determine the U direction (CCW in UV space)
+            //
+            // For a face with loop: u0 -> u1 -> u1 -> u0, going CCW:
+            // - If u1 > u0, the face spans [u0, u1]
+            // - If u1 < u0, the face spans [u0, 2π] ∪ [0, u1] (wrap-around)
+
+            // Find the first two distinct U values in the loop
+            let mut first_u: Option<f64> = None;
+            let mut second_u: Option<f64> = None;
+            for &he_id in &loop_hes {
+                let vid = brep.topology.half_edges[he_id].origin;
+                let point = brep.topology.vertices[vid].point;
+                let u = compute_cylinder_u(&point, &cyl);
+
+                match first_u {
+                    None => first_u = Some(u),
+                    Some(fu) if (u - fu).abs() > 0.01 => {
+                        second_u = Some(u);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            let (u0, u1) = match (first_u, second_u) {
+                (Some(a), Some(b)) => (a, b),
+                _ => {
+                    return SplitResult {
+                        sub_faces: vec![face_id],
+                    };
+                }
+            };
+
+            // Determine if the face wraps around based on the direction of travel
+            // If we go from u0 to u1 CCW and u1 < u0, we're wrapping around 2π
+            let wraps_around = u1 < u0 - 0.01;
+
+            // Find start/end vertices based on the U values
+            let (b1, b2) = (bottom_verts[0], bottom_verts[1]);
+            let (t1, t2) = (top_verts[0], top_verts[1]);
+
+            let (start_bot, end_bot) = if (b1.2 - u0).abs() < 0.01 {
+                (b1, b2)
+            } else {
+                (b2, b1)
+            };
+
+            let (start_top, end_top) = if (t1.2 - u0).abs() < 0.01 {
+                (t1, t2)
+            } else {
+                (t2, t1)
+            };
+
+            // For wrap-around faces, adjust end_u to be > 2π for proper range checking
+            let end_u = if wraps_around {
+                end_bot.2 + 2.0 * std::f64::consts::PI
+            } else {
+                end_bot.2
+            };
+
+            (start_bot.2, end_u,
+             start_bot.0, end_bot.0,
+             start_top.0, end_top.0,
+             false)
+        } else {
+            // Unexpected face structure
+            return SplitResult {
+                sub_faces: vec![face_id],
+            };
+        };
+
+    // Check if split line is within the face's U range
+    let in_range = if is_full_face {
+        // For full face, any u_split is valid (except exactly at the seam)
+        let seam_u = u_start;
+        (u_split - seam_u).abs() > 0.01 &&
+        (u_split - seam_u - 2.0 * std::f64::consts::PI).abs() > 0.01
+    } else {
+        angle_in_range(u_split, u_start, u_end)
+    };
+
+    if !in_range {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
 
     // Compute 3D points at the split line's top and bottom
     let sin_u = u_split.sin();
@@ -1106,55 +1242,20 @@ pub fn split_cylindrical_face_by_line(
     let point_bottom = cyl.center + radial + v_min * cyl.axis.as_ref();
     let point_top = cyl.center + radial + v_max * cyl.axis.as_ref();
 
-    // Create vertices at the split points
-    let v_split_bottom = brep.topology.add_vertex(point_bottom);
-    let v_split_top = brep.topology.add_vertex(point_top);
-
-    // Get the existing corner vertices
-    // For a standard full cylinder lateral face:
-    // The face has vertices at u=0 at top and bottom (the seam)
-    let seam_bottom =
-        cyl.center + cyl.radius * cyl.ref_dir.as_ref() + v_min * cyl.axis.as_ref();
-    let seam_top = cyl.center + cyl.radius * cyl.ref_dir.as_ref() + v_max * cyl.axis.as_ref();
-
-    // Find existing seam vertices by position
-    let mut v_seam_bottom = None;
-    let mut v_seam_top = None;
-    for &he_id in &loop_hes {
-        let vid = brep.topology.half_edges[he_id].origin;
-        let point = brep.topology.vertices[vid].point;
-        if (point - seam_bottom).norm() < 1e-6 {
-            v_seam_bottom = Some(vid);
-        }
-        if (point - seam_top).norm() < 1e-6 {
-            v_seam_top = Some(vid);
-        }
-    }
-
-    let (v_seam_bottom, v_seam_top) = match (v_seam_bottom, v_seam_top) {
-        (Some(b), Some(t)) => (b, t),
-        _ => {
-            // Can't find seam vertices - might be a partial face
-            // For now, skip this case
-            return SplitResult {
-                sub_faces: vec![face_id],
-            };
-        }
-    };
+    // Create or reuse vertices at the split points
+    let tolerance = 1e-6;
+    let v_split_bottom = find_or_create_vertex(brep, &point_bottom, tolerance);
+    let v_split_top = find_or_create_vertex(brep, &point_top, tolerance);
 
     // Create two new faces by splitting at the u_split line:
-    // Face 1: u from 0 to u_split (seam to split line)
-    // Face 2: u from u_split to 2π (split line back to seam)
-    //
-    // Each face has 4 vertices forming a quad on the cylinder surface:
-    // Face 1: seam_bottom → split_bottom → split_top → seam_top → back to seam_bottom
-    // Face 2: split_bottom → seam_bottom (going around) → seam_top → split_top → back
+    // Face 1: from start to split (smaller U arc)
+    // Face 2: from split to end (larger U arc, or to seam for full face)
 
-    // Face 1: smaller arc from seam to split
-    let he1_bot = brep.topology.add_half_edge(v_seam_bottom);
+    // Face 1: arc from start to split
+    let he1_bot = brep.topology.add_half_edge(v_start_bot);
     let he1_left = brep.topology.add_half_edge(v_split_bottom);
     let he1_top = brep.topology.add_half_edge(v_split_top);
-    let he1_right = brep.topology.add_half_edge(v_seam_top);
+    let he1_right = brep.topology.add_half_edge(v_start_top);
 
     let loop1 = brep
         .topology
@@ -1163,10 +1264,10 @@ pub fn split_cylindrical_face_by_line(
         .topology
         .add_face(loop1, surface_index, orientation);
 
-    // Face 2: larger arc from split back to seam
+    // Face 2: arc from split to end
     let he2_bot = brep.topology.add_half_edge(v_split_bottom);
-    let he2_left = brep.topology.add_half_edge(v_seam_bottom);
-    let he2_top = brep.topology.add_half_edge(v_seam_top);
+    let he2_left = brep.topology.add_half_edge(v_end_bot);
+    let he2_top = brep.topology.add_half_edge(v_end_top);
     let he2_right = brep.topology.add_half_edge(v_split_top);
 
     let loop2 = brep
@@ -1176,8 +1277,7 @@ pub fn split_cylindrical_face_by_line(
         .topology
         .add_face(loop2, surface_index, orientation);
 
-    // Add twin edges
-    // The split line edges between face1 and face2
+    // Add twin edges for the shared split line
     brep.topology.add_edge(he1_left, he2_right);
     brep.topology.add_edge(he1_top, he2_bot);
 
@@ -1237,6 +1337,312 @@ pub fn split_cylindrical_face(
             // TwoLines should be expanded before calling this function.
             // If we get here, just process the first line.
             split_cylindrical_face(brep, face_id, &IntersectionCurve::Line(line1.clone()))
+        }
+    }
+}
+
+// =============================================================================
+// Circular Face (Disk) Splitting by Line
+// =============================================================================
+
+/// Check if a face is a circular disk (a planar face bounded by a single circle).
+///
+/// A circular disk has:
+/// - A planar underlying surface
+/// - A single vertex in its outer loop (the seam point on the circle)
+/// - No inner loops
+pub fn is_circular_disk_face(brep: &BRepSolid, face_id: FaceId) -> bool {
+    let face = &brep.topology.faces[face_id];
+    let surface = &brep.geometry.surfaces[face.surface_index];
+
+    // Must be a plane
+    if surface.surface_type() != vcad_kernel_geom::SurfaceKind::Plane {
+        return false;
+    }
+
+    // Check if it has a single vertex (circular boundary)
+    let loop_hes: Vec<_> = brep.topology.loop_half_edges(face.outer_loop).collect();
+    if loop_hes.len() != 1 {
+        return false;
+    }
+
+    // No inner loops
+    face.inner_loops.is_empty()
+}
+
+/// Get the circle parameters of a circular disk face.
+///
+/// Returns (center, radius, normal) if the face is a valid circular disk.
+pub fn get_disk_circle_params(brep: &BRepSolid, face_id: FaceId) -> Option<(Point3, f64, vcad_kernel_math::Vec3)> {
+    let face = &brep.topology.faces[face_id];
+    let surface = &brep.geometry.surfaces[face.surface_index];
+
+    let plane = surface.as_any().downcast_ref::<vcad_kernel_geom::Plane>()?;
+
+    // Get the seam vertex - this is on the circle at angle 0
+    let loop_hes: Vec<_> = brep.topology.loop_half_edges(face.outer_loop).collect();
+    if loop_hes.len() != 1 {
+        return None;
+    }
+
+    let seam_vertex_id = brep.topology.half_edges[loop_hes[0]].origin;
+    let seam_point = brep.topology.vertices[seam_vertex_id].point;
+
+    // Circle center is the plane origin
+    let center = plane.origin;
+    let radius = (seam_point - center).norm();
+    let normal = *plane.normal_dir.as_ref();
+
+    Some((center, radius, normal))
+}
+
+/// Split a circular disk face along a line intersection curve.
+///
+/// When a plane intersects another plane that contains a circular disk,
+/// the result is a line that may cross the disk. This function splits
+/// the disk into two parts along the line:
+///
+/// - If the line passes through the center: two half-disks (semicircles)
+/// - If the line is a chord: a smaller chord segment + larger segment
+///
+/// The line must actually cross the disk boundary at two points for
+/// splitting to occur.
+///
+/// Each resulting face has:
+/// - A straight edge along the split line
+/// - An arc edge along the original circle
+pub fn split_circular_face_by_line(
+    brep: &mut BRepSolid,
+    face_id: FaceId,
+    line: &vcad_kernel_geom::Line3d,
+    segments: u32,
+) -> SplitResult {
+    // Get disk parameters
+    let (center, radius, normal) = match get_disk_circle_params(brep, face_id) {
+        Some(params) => params,
+        None => return SplitResult { sub_faces: vec![face_id] },
+    };
+
+    let face = &brep.topology.faces[face_id];
+    let surface_index = face.surface_index;
+    let orientation = face.orientation;
+
+    // Project the line onto the disk's plane to find intersection points with the circle
+    // The line-circle intersection in 2D:
+    // Circle: |p - center| = radius
+    // Line: p = origin + t * direction
+
+    // Find direction perpendicular to line in the plane
+    let line_dir = line.direction.normalize();
+
+    // Check if line is parallel to the plane normal (no intersection)
+    if line_dir.dot(&normal).abs() > 0.999 {
+        return SplitResult { sub_faces: vec![face_id] };
+    }
+
+    // Project line onto the plane
+    // Find the closest point on the line to the circle center
+    let to_center = center - line.origin;
+    let t_closest = to_center.dot(&line_dir);
+    let closest_point = line.origin + t_closest * line_dir;
+
+    // Distance from line to center
+    let dist_to_center = (closest_point - center).norm();
+
+    // If line doesn't intersect the circle, no split needed
+    if dist_to_center > radius - 1e-9 {
+        return SplitResult { sub_faces: vec![face_id] };
+    }
+
+    // Compute intersection points with circle
+    // Half-chord length: sqrt(r² - d²)
+    let half_chord = (radius * radius - dist_to_center * dist_to_center).sqrt();
+
+    // Intersection points
+    let p1 = closest_point - half_chord * line_dir;
+    let p2 = closest_point + half_chord * line_dir;
+
+    // Verify both points are on the plane (within tolerance)
+    let surface = &brep.geometry.surfaces[surface_index];
+    let plane = match surface.as_any().downcast_ref::<vcad_kernel_geom::Plane>() {
+        Some(p) => p,
+        None => return SplitResult { sub_faces: vec![face_id] },
+    };
+
+    if plane.signed_distance(&p1).abs() > 0.1 || plane.signed_distance(&p2).abs() > 0.1 {
+        return SplitResult { sub_faces: vec![face_id] };
+    }
+
+    // Compute angles of intersection points relative to center
+    // Use the plane's local coordinate system
+    let x_axis = plane.x_dir.normalize();
+    let y_axis = plane.y_dir.normalize();
+
+    let to_p1 = p1 - center;
+    let to_p2 = p2 - center;
+
+    let angle1 = to_p1.dot(&y_axis).atan2(to_p1.dot(&x_axis));
+    let angle2 = to_p2.dot(&y_axis).atan2(to_p2.dot(&x_axis));
+
+    // Normalize angles to [0, 2π)
+    let angle1 = if angle1 < 0.0 { angle1 + 2.0 * std::f64::consts::PI } else { angle1 };
+    let angle2 = if angle2 < 0.0 { angle2 + 2.0 * std::f64::consts::PI } else { angle2 };
+
+    // Order angles so we know which arc is which
+    let (start_angle, end_angle, start_pt, end_pt) = if angle1 < angle2 {
+        (angle1, angle2, p1, p2)
+    } else {
+        (angle2, angle1, p2, p1)
+    };
+
+    // Create vertices for the intersection points
+    let tolerance = 1e-6;
+    let v_start = find_or_create_vertex(brep, &start_pt, tolerance);
+    let v_end = find_or_create_vertex(brep, &end_pt, tolerance);
+
+    // Generate arc vertices for both faces
+    // Face 1: arc from start_angle to end_angle (shorter arc if < π, longer otherwise)
+    // Face 2: arc from end_angle to start_angle (wrapping around 2π)
+
+    let arc1_span = end_angle - start_angle;
+    let arc2_span = 2.0 * std::f64::consts::PI - arc1_span;
+
+    // Number of segments for each arc (proportional to arc length)
+    let n1 = ((segments as f64) * arc1_span / (2.0 * std::f64::consts::PI)).max(2.0) as u32;
+    let n2 = ((segments as f64) * arc2_span / (2.0 * std::f64::consts::PI)).max(2.0) as u32;
+
+    // Generate arc 1 vertices (from start to end, counterclockwise)
+    let mut arc1_points: Vec<Point3> = Vec::with_capacity((n1 + 1) as usize);
+    arc1_points.push(start_pt);
+    for i in 1..n1 {
+        let t = i as f64 / n1 as f64;
+        let angle = start_angle + t * arc1_span;
+        let (sin_a, cos_a) = angle.sin_cos();
+        let pt = center + radius * (cos_a * x_axis + sin_a * y_axis);
+        arc1_points.push(pt);
+    }
+    arc1_points.push(end_pt);
+
+    // Generate arc 2 vertices (from end to start, counterclockwise, wrapping around)
+    let mut arc2_points: Vec<Point3> = Vec::with_capacity((n2 + 1) as usize);
+    arc2_points.push(end_pt);
+    for i in 1..n2 {
+        let t = i as f64 / n2 as f64;
+        let angle = end_angle + t * arc2_span;
+        let (sin_a, cos_a) = angle.sin_cos();
+        let pt = center + radius * (cos_a * x_axis + sin_a * y_axis);
+        arc2_points.push(pt);
+    }
+    arc2_points.push(start_pt);
+
+    // Create Face 1: arc from start to end + chord from end to start
+    // Loop: start → arc points → end → chord → back to start
+    let mut face1_verts: Vec<vcad_kernel_topo::VertexId> = Vec::new();
+    face1_verts.push(v_start);
+    for pt in arc1_points.iter().skip(1).take(arc1_points.len() - 2) {
+        face1_verts.push(find_or_create_vertex(brep, pt, tolerance));
+    }
+    face1_verts.push(v_end);
+
+    // Create half-edges and loop for face 1
+    let hes1: Vec<_> = face1_verts.iter().map(|&v| brep.topology.add_half_edge(v)).collect();
+    let loop1 = brep.topology.add_loop(&hes1);
+    let face1 = brep.topology.add_face(loop1, surface_index, orientation);
+
+    // Create Face 2: arc from end to start + chord from start to end
+    let mut face2_verts: Vec<vcad_kernel_topo::VertexId> = Vec::new();
+    face2_verts.push(v_end);
+    for pt in arc2_points.iter().skip(1).take(arc2_points.len() - 2) {
+        face2_verts.push(find_or_create_vertex(brep, pt, tolerance));
+    }
+    face2_verts.push(v_start);
+
+    // Create half-edges and loop for face 2
+    let hes2: Vec<_> = face2_verts.iter().map(|&v| brep.topology.add_half_edge(v)).collect();
+    let loop2 = brep.topology.add_loop(&hes2);
+    let face2 = brep.topology.add_face(loop2, surface_index, orientation);
+
+    // Add twin edges for the chord (shared edge between face1 and face2)
+    // In face1, the chord goes from v_end to v_start (last edge)
+    // In face2, the chord goes from v_start to v_end (last edge)
+    // These are twins
+    let chord_he1 = hes1[hes1.len() - 1]; // v_end → v_start in face1
+    let chord_he2 = hes2[hes2.len() - 1]; // v_start → v_end in face2
+    brep.topology.add_edge(chord_he1, chord_he2);
+
+    // Add faces to shell
+    if let Some(shell_id) = brep.topology.faces[face_id].shell {
+        brep.topology.shells[shell_id].faces.push(face1);
+        brep.topology.shells[shell_id].faces.push(face2);
+
+        brep.topology.faces[face1].shell = Some(shell_id);
+        brep.topology.faces[face2].shell = Some(shell_id);
+
+        // Remove original face from shell
+        brep.topology.shells[shell_id].faces.retain(|&f| f != face_id);
+    }
+
+    // Remove the original face
+    brep.topology.faces.remove(face_id);
+
+    // Add 3D curve for the split line (chord)
+    brep.geometry.add_curve_3d(Box::new(vcad_kernel_geom::Line3d::from_points(start_pt, end_pt)));
+
+    SplitResult {
+        sub_faces: vec![face1, face2],
+    }
+}
+
+/// Split a circular disk face along an intersection curve.
+///
+/// Dispatches to the appropriate method based on curve type:
+/// - Line: splits disk into two arc-bounded segments
+/// - Circle: not applicable (circle on circle is degenerate)
+/// - Other: no split
+pub fn split_circular_disk_face(
+    brep: &mut BRepSolid,
+    face_id: FaceId,
+    curve: &IntersectionCurve,
+    segments: u32,
+) -> SplitResult {
+    match curve {
+        IntersectionCurve::Line(line) => {
+            split_circular_face_by_line(brep, face_id, line, segments)
+        }
+        IntersectionCurve::TwoLines(line1, line2) => {
+            // Split by the first line, then by the second
+            let result1 = split_circular_face_by_line(brep, face_id, line1, segments);
+            if result1.sub_faces.len() < 2 {
+                return result1;
+            }
+            // Now split each resulting face by the second line
+            let mut all_faces = Vec::new();
+            for &fid in &result1.sub_faces {
+                // Check if this face is still a circular disk (it won't be after the first split)
+                // For non-disk faces after first split, we'd need polygon splitting
+                // For now, just add them as-is
+                if is_circular_disk_face(brep, fid) {
+                    let result2 = split_circular_face_by_line(brep, fid, line2, segments);
+                    all_faces.extend(result2.sub_faces);
+                } else {
+                    // The face is now a chord-segment, not a full disk
+                    // Try to split it as a planar face by the line
+                    let result2 = split_planar_face(
+                        brep,
+                        fid,
+                        &IntersectionCurve::Line(line2.clone()),
+                        &Point3::origin(),
+                        &Point3::origin(),
+                        segments,
+                    );
+                    all_faces.extend(result2.sub_faces);
+                }
+            }
+            SplitResult { sub_faces: all_faces }
+        }
+        _ => {
+            // No split for other curve types on circular faces
+            SplitResult { sub_faces: vec![face_id] }
         }
     }
 }

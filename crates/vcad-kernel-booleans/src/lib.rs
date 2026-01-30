@@ -284,6 +284,24 @@ fn brep_boolean(
                         continue;
                     }
 
+                    // Check if this is a circular disk face (cylinder cap) with a line curve
+                    if split::is_circular_disk_face(&a, fid) {
+                        if let ssi::IntersectionCurve::Line(_) = &curve {
+                            let result = split::split_circular_disk_face(
+                                &mut a,
+                                fid,
+                                &curve,
+                                segments,
+                            );
+                            if result.sub_faces.len() >= 2 {
+                                new_faces.extend(result.sub_faces);
+                            } else {
+                                new_faces.push(fid);
+                            }
+                            continue;
+                        }
+                    }
+
                     // Check if this is a planar face with a circle curve - use specialized split
                     if split::is_planar_face(&a, fid) {
                         if let ssi::IntersectionCurve::Circle(_) = &curve {
@@ -350,6 +368,24 @@ fn brep_boolean(
                             new_faces.push(fid);
                         }
                         continue;
+                    }
+
+                    // Check if this is a circular disk face (cylinder cap) with a line curve
+                    if split::is_circular_disk_face(&b, fid) {
+                        if let ssi::IntersectionCurve::Line(_) = &curve {
+                            let result = split::split_circular_disk_face(
+                                &mut b,
+                                fid,
+                                &curve,
+                                segments,
+                            );
+                            if result.sub_faces.len() >= 2 {
+                                new_faces.extend(result.sub_faces);
+                            } else {
+                                new_faces.push(fid);
+                            }
+                            continue;
+                        }
                     }
 
                     // Check if this is a planar face with a circle curve - use specialized split

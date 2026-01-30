@@ -436,7 +436,7 @@ pub fn trim_curve_to_face(
                 let (t_enter, t_exit) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
                 t_min = t_min.max(t_enter);
                 t_max = t_max.min(t_exit);
-            } else if line.origin.x < aabb.min.x || line.origin.x > aabb.max.x {
+            } else if line.origin.x < aabb.min.x - 1e-9 || line.origin.x > aabb.max.x + 1e-9 {
                 return Vec::new(); // Line parallel to X but outside X range
             }
 
