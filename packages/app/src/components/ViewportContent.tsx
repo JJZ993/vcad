@@ -120,7 +120,11 @@ export function ViewportContent() {
           continue;
 
         const positions = inst.mesh.positions;
-        const t = inst.transform;
+        const t = inst.transform ?? {
+          translation: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0 },
+          scale: { x: 1, y: 1, z: 1 },
+        };
         for (let i = 0; i < positions.length; i += 3) {
           // Apply instance transform to positions for accurate bounding box
           tempVec.set(

@@ -2,7 +2,11 @@ import { useRef, useMemo, useCallback } from "react";
 import * as THREE from "three";
 import { useThree, ThreeEvent } from "@react-three/fiber";
 import { Line, Html } from "@react-three/drei";
-import { useSketchStore, useUiStore, getSketchPlaneDirections } from "@vcad/core";
+import {
+  useSketchStore,
+  useUiStore,
+  getSketchPlaneDirections,
+} from "@vcad/core";
 import type { SketchPlane } from "@vcad/core";
 import type { Vec2, Vec3, SketchSegment2D, SketchConstraint } from "@vcad/ir";
 import { useTheme } from "@/hooks/useTheme";
@@ -17,7 +21,12 @@ function toVec3(v: Vec3): THREE.Vector3 {
 }
 
 /** Convert 3D world point to 2D sketch coordinates */
-function worldToSketch(worldPt: THREE.Vector3, origin: Vec3, xDir: Vec3, yDir: Vec3): Vec2 {
+function worldToSketch(
+  worldPt: THREE.Vector3,
+  origin: Vec3,
+  xDir: Vec3,
+  yDir: Vec3,
+): Vec2 {
   const rel = worldPt.clone().sub(toVec3(origin));
   return {
     x: rel.dot(toVec3(xDir)),
@@ -26,7 +35,12 @@ function worldToSketch(worldPt: THREE.Vector3, origin: Vec3, xDir: Vec3, yDir: V
 }
 
 /** Convert 2D sketch coordinates to 3D world point */
-function sketchToWorld(pt: Vec2, origin: Vec3, xDir: Vec3, yDir: Vec3): THREE.Vector3 {
+function sketchToWorld(
+  pt: Vec2,
+  origin: Vec3,
+  xDir: Vec3,
+  yDir: Vec3,
+): THREE.Vector3 {
   const o = toVec3(origin);
   const x = toVec3(xDir).multiplyScalar(pt.x);
   const y = toVec3(yDir).multiplyScalar(pt.y);
@@ -34,7 +48,10 @@ function sketchToWorld(pt: Vec2, origin: Vec3, xDir: Vec3, yDir: Vec3): THREE.Ve
 }
 
 /** Get plane directions from SketchPlane type */
-function getPlaneVectors(plane: SketchPlane, origin: Vec3): { origin: Vec3; xDir: Vec3; yDir: Vec3; normal: Vec3 } {
+function getPlaneVectors(
+  plane: SketchPlane,
+  origin: Vec3,
+): { origin: Vec3; xDir: Vec3; yDir: Vec3; normal: Vec3 } {
   const dirs = getSketchPlaneDirections(plane);
   return {
     origin,
@@ -62,7 +79,9 @@ function findClosestSegment(
       }
     } else {
       // Arc: distance to arc path
-      const d = Math.sqrt((pt.x - seg.center.x) ** 2 + (pt.y - seg.center.y) ** 2);
+      const d = Math.sqrt(
+        (pt.x - seg.center.x) ** 2 + (pt.y - seg.center.y) ** 2,
+      );
       const radius = Math.sqrt(
         (seg.start.x - seg.center.x) ** 2 + (seg.start.y - seg.center.y) ** 2,
       );
@@ -102,7 +121,11 @@ function SketchGrid3D({ origin, xDir, yDir }: SketchGrid3DProps) {
 
   // Build grid lines in sketch plane coordinate system
   const gridLines = useMemo(() => {
-    const lines: { points: [number, number, number][]; color: string; width: number }[] = [];
+    const lines: {
+      points: [number, number, number][];
+      color: string;
+      width: number;
+    }[] = [];
     const o = toVec3(origin);
     const x = toVec3(xDir);
     const y = toVec3(yDir);
@@ -112,19 +135,37 @@ function SketchGrid3D({ origin, xDir, yDir }: SketchGrid3DProps) {
       if (i === 0) continue; // Skip origin lines, we'll draw axes separately
 
       // Lines parallel to X axis
-      const startX = o.clone().add(x.clone().multiplyScalar(-GRID_EXTENT)).add(y.clone().multiplyScalar(i));
-      const endX = o.clone().add(x.clone().multiplyScalar(GRID_EXTENT)).add(y.clone().multiplyScalar(i));
+      const startX = o
+        .clone()
+        .add(x.clone().multiplyScalar(-GRID_EXTENT))
+        .add(y.clone().multiplyScalar(i));
+      const endX = o
+        .clone()
+        .add(x.clone().multiplyScalar(GRID_EXTENT))
+        .add(y.clone().multiplyScalar(i));
       lines.push({
-        points: [[startX.x, startX.y, startX.z], [endX.x, endX.y, endX.z]],
+        points: [
+          [startX.x, startX.y, startX.z],
+          [endX.x, endX.y, endX.z],
+        ],
         color: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
         width: 1,
       });
 
       // Lines parallel to Y axis
-      const startY = o.clone().add(y.clone().multiplyScalar(-GRID_EXTENT)).add(x.clone().multiplyScalar(i));
-      const endY = o.clone().add(y.clone().multiplyScalar(GRID_EXTENT)).add(x.clone().multiplyScalar(i));
+      const startY = o
+        .clone()
+        .add(y.clone().multiplyScalar(-GRID_EXTENT))
+        .add(x.clone().multiplyScalar(i));
+      const endY = o
+        .clone()
+        .add(y.clone().multiplyScalar(GRID_EXTENT))
+        .add(x.clone().multiplyScalar(i));
       lines.push({
-        points: [[startY.x, startY.y, startY.z], [endY.x, endY.y, endY.z]],
+        points: [
+          [startY.x, startY.y, startY.z],
+          [endY.x, endY.y, endY.z],
+        ],
         color: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
         width: 1,
       });
@@ -139,7 +180,10 @@ function SketchGrid3D({ origin, xDir, yDir }: SketchGrid3DProps) {
     const x = toVec3(xDir);
     const start = o.clone().add(x.clone().multiplyScalar(-GRID_EXTENT));
     const end = o.clone().add(x.clone().multiplyScalar(GRID_EXTENT));
-    return [[start.x, start.y, start.z], [end.x, end.y, end.z]] as [number, number, number][];
+    return [
+      [start.x, start.y, start.z],
+      [end.x, end.y, end.z],
+    ] as [number, number, number][];
   }, [origin, xDir]);
 
   const yAxisPoints = useMemo(() => {
@@ -147,7 +191,10 @@ function SketchGrid3D({ origin, xDir, yDir }: SketchGrid3DProps) {
     const y = toVec3(yDir);
     const start = o.clone().add(y.clone().multiplyScalar(-GRID_EXTENT));
     const end = o.clone().add(y.clone().multiplyScalar(GRID_EXTENT));
-    return [[start.x, start.y, start.z], [end.x, end.y, end.z]] as [number, number, number][];
+    return [
+      [start.x, start.y, start.z],
+      [end.x, end.y, end.z],
+    ] as [number, number, number][];
   }, [origin, yDir]);
 
   // Origin marker position
@@ -208,7 +255,15 @@ interface SketchGeometry3DProps {
 }
 
 /** Render sketch segments as 3D lines */
-function SketchGeometry3D({ segments, selectedSegments, constraints, pendingPoints, origin, xDir, yDir }: SketchGeometry3DProps) {
+function SketchGeometry3D({
+  segments,
+  selectedSegments,
+  constraints,
+  pendingPoints,
+  origin,
+  xDir,
+  yDir,
+}: SketchGeometry3DProps) {
   const { isDark } = useTheme();
 
   // Convert 2D segment endpoints to 3D
@@ -221,7 +276,10 @@ function SketchGeometry3D({ segments, selectedSegments, constraints, pendingPoin
       if (seg.type === "Line") {
         return {
           type: "line" as const,
-          points: [[start.x, start.y, start.z], [end.x, end.y, end.z]] as [number, number, number][],
+          points: [
+            [start.x, start.y, start.z],
+            [end.x, end.y, end.z],
+          ] as [number, number, number][],
           color: isSelected ? "#f59e0b" : "#3b82f6",
           width: isSelected ? 3 : 2,
           start,
@@ -233,11 +291,11 @@ function SketchGeometry3D({ segments, selectedSegments, constraints, pendingPoin
         const radius = start.distanceTo(center);
         const startAngle = Math.atan2(
           seg.start.y - seg.center.y,
-          seg.start.x - seg.center.x
+          seg.start.x - seg.center.x,
         );
         const endAngle = Math.atan2(
           seg.end.y - seg.center.y,
-          seg.end.x - seg.center.x
+          seg.end.x - seg.center.x,
         );
 
         const points: [number, number, number][] = [];
@@ -276,8 +334,12 @@ function SketchGeometry3D({ segments, selectedSegments, constraints, pendingPoin
     for (const seg of segments) {
       const start = sketchToWorld(seg.start, origin, xDir, yDir);
       const end = sketchToWorld(seg.end, origin, xDir, yDir);
-      const startKey = `${start.x.toFixed(2)},${start.y.toFixed(2)},${start.z.toFixed(2)}`;
-      const endKey = `${end.x.toFixed(2)},${end.y.toFixed(2)},${end.z.toFixed(2)}`;
+      const startKey = `${start.x.toFixed(2)},${start.y.toFixed(
+        2,
+      )},${start.z.toFixed(2)}`;
+      const endKey = `${end.x.toFixed(2)},${end.y.toFixed(2)},${end.z.toFixed(
+        2,
+      )}`;
       if (!seen.has(startKey)) {
         seen.add(startKey);
         pts.push(start);
@@ -292,12 +354,13 @@ function SketchGeometry3D({ segments, selectedSegments, constraints, pendingPoin
 
   // Pending points (orange)
   const pendingPoints3D = useMemo(() => {
-    return pendingPoints.map(pt => sketchToWorld(pt, origin, xDir, yDir));
+    return pendingPoints.map((pt) => sketchToWorld(pt, origin, xDir, yDir));
   }, [pendingPoints, origin, xDir, yDir]);
 
   // Constraint labels
   const constraintLabels = useMemo(() => {
-    const labels: { position: THREE.Vector3; text: string; color: string }[] = [];
+    const labels: { position: THREE.Vector3; text: string; color: string }[] =
+      [];
 
     for (const constraint of constraints) {
       if (constraint.type === "Horizontal") {
@@ -480,16 +543,26 @@ function SketchCursor3D({
   // Crosshair lines
   const xCross = useMemo(() => {
     const x = toVec3(xDir);
-    const start = cursorPos.clone().sub(x.clone().multiplyScalar(crosshairSize));
+    const start = cursorPos
+      .clone()
+      .sub(x.clone().multiplyScalar(crosshairSize));
     const end = cursorPos.clone().add(x.clone().multiplyScalar(crosshairSize));
-    return [[start.x, start.y, start.z], [end.x, end.y, end.z]] as [number, number, number][];
+    return [
+      [start.x, start.y, start.z],
+      [end.x, end.y, end.z],
+    ] as [number, number, number][];
   }, [cursorPos, xDir]);
 
   const yCross = useMemo(() => {
     const y = toVec3(yDir);
-    const start = cursorPos.clone().sub(y.clone().multiplyScalar(crosshairSize));
+    const start = cursorPos
+      .clone()
+      .sub(y.clone().multiplyScalar(crosshairSize));
     const end = cursorPos.clone().add(y.clone().multiplyScalar(crosshairSize));
-    return [[start.x, start.y, start.z], [end.x, end.y, end.z]] as [number, number, number][];
+    return [
+      [start.x, start.y, start.z],
+      [end.x, end.y, end.z],
+    ] as [number, number, number][];
   }, [cursorPos, yDir]);
 
   // Preview line
@@ -497,7 +570,10 @@ function SketchCursor3D({
     if (!previewLine) return null;
     const start = sketchToWorld(previewLine.start, origin, xDir, yDir);
     const end = sketchToWorld(previewLine.end, origin, xDir, yDir);
-    return [[start.x, start.y, start.z], [end.x, end.y, end.z]] as [number, number, number][];
+    return [
+      [start.x, start.y, start.z],
+      [end.x, end.y, end.z],
+    ] as [number, number, number][];
   }, [previewLine, origin, xDir, yDir]);
 
   // Preview rectangle
@@ -517,7 +593,7 @@ function SketchCursor3D({
       { x: minX, y: minY },
     ];
 
-    return corners.map(c => {
+    return corners.map((c) => {
       const pt = sketchToWorld(c, origin, xDir, yDir);
       return [pt.x, pt.y, pt.z] as [number, number, number];
     });
@@ -620,9 +696,7 @@ function SketchCursor3D({
 
       {/* Coordinate label */}
       <Html position={cursorPos} style={{ pointerEvents: "none" }}>
-        <div
-          className="ml-4 -mt-2 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-xs text-white"
-        >
+        <div className="ml-4 -mt-2 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-xs text-white">
           {cursorSketchPos.x.toFixed(1)}, {cursorSketchPos.y.toFixed(1)}
         </div>
       </Html>
@@ -650,7 +724,9 @@ export function SketchPlane3D() {
   const snapTarget = useSketchStore((s) => s.snapTarget);
   const addPoint = useSketchStore((s) => s.addPoint);
   const finishShape = useSketchStore((s) => s.finishShape);
-  const toggleSegmentSelection = useSketchStore((s) => s.toggleSegmentSelection);
+  const toggleSegmentSelection = useSketchStore(
+    (s) => s.toggleSegmentSelection,
+  );
   const setCursorPos = useSketchStore((s) => s.setCursorPos);
 
   const gridSnap = useUiStore((s) => s.gridSnap);
@@ -659,7 +735,10 @@ export function SketchPlane3D() {
   const isConstraintMode = constraintTool !== "none";
 
   // Get plane vectors
-  const planeVectors = useMemo(() => getPlaneVectors(plane, origin), [plane, origin]);
+  const planeVectors = useMemo(
+    () => getPlaneVectors(plane, origin),
+    [plane, origin],
+  );
 
   // Collect all unique vertices from segments for point snapping
   const vertices = useMemo(() => {
@@ -671,7 +750,7 @@ export function SketchPlane3D() {
     const unique: Vec2[] = [];
     for (const pt of pts) {
       const exists = unique.some(
-        (u) => Math.abs(u.x - pt.x) < 0.1 && Math.abs(u.y - pt.y) < 0.1
+        (u) => Math.abs(u.x - pt.x) < 0.1 && Math.abs(u.y - pt.y) < 0.1,
       );
       if (!exists) {
         unique.push(pt);
@@ -722,7 +801,11 @@ export function SketchPlane3D() {
     const quaternion = new THREE.Quaternion().setFromUnitVectors(up, n);
 
     geo.applyQuaternion(quaternion);
-    geo.translate(planeVectors.origin.x, planeVectors.origin.y, planeVectors.origin.z);
+    geo.translate(
+      planeVectors.origin.x,
+      planeVectors.origin.y,
+      planeVectors.origin.z,
+    );
 
     return geo;
   }, [planeVectors]);
@@ -740,16 +823,26 @@ export function SketchPlane3D() {
       }
 
       const worldPt = intersects[0]!.point;
-      const sketchPt = worldToSketch(worldPt, planeVectors.origin, planeVectors.xDir, planeVectors.yDir);
+      const sketchPt = worldToSketch(
+        worldPt,
+        planeVectors.origin,
+        planeVectors.xDir,
+        planeVectors.yDir,
+      );
       const { snapped, target } = snap(sketchPt);
 
       // Convert snapped point back to world coords
-      const snappedWorld = sketchToWorld(snapped, planeVectors.origin, planeVectors.xDir, planeVectors.yDir);
+      const snappedWorld = sketchToWorld(
+        snapped,
+        planeVectors.origin,
+        planeVectors.xDir,
+        planeVectors.yDir,
+      );
 
       setCursorPos(
         { x: snappedWorld.x, y: snappedWorld.y, z: snappedWorld.z },
         snapped,
-        target
+        target,
       );
     },
     [planeVectors, raycaster, snap, setCursorPos],
@@ -774,7 +867,13 @@ export function SketchPlane3D() {
         addPoint(cursorSketchPos);
       }
     },
-    [cursorSketchPos, isConstraintMode, segments, addPoint, toggleSegmentSelection],
+    [
+      cursorSketchPos,
+      isConstraintMode,
+      segments,
+      addPoint,
+      toggleSegmentSelection,
+    ],
   );
 
   // Handle double click to finish shape
@@ -812,7 +911,8 @@ export function SketchPlane3D() {
     if (tool === "circle" && points.length === 1 && cursorSketchPos) {
       const center = points[0]!;
       const radius = Math.sqrt(
-        (cursorSketchPos.x - center.x) ** 2 + (cursorSketchPos.y - center.y) ** 2
+        (cursorSketchPos.x - center.x) ** 2 +
+          (cursorSketchPos.y - center.y) ** 2,
       );
       return { center, radius };
     }
@@ -843,6 +943,9 @@ export function SketchPlane3D() {
           opacity={0.3}
           side={THREE.DoubleSide}
           depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-1}
+          polygonOffsetUnits={-1}
         />
       </mesh>
 
