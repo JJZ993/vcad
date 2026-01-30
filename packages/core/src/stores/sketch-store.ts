@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Vec2, Vec3, SketchSegment2D, SketchConstraint } from "@vcad/ir";
 import type { SketchPlane, SketchState, ConstraintTool, ConstraintStatus, FaceInfo } from "../types.js";
-import { computePlaneFromFace } from "../types.js";
+import { computePlaneFromFace, getSketchPlaneDirections } from "../types.js";
 
 /** A saved profile snapshot for loft operations */
 export interface ProfileSnapshot {
@@ -222,6 +222,16 @@ export const useSketchStore = create<SketchStore>((set, get) => ({
       hoveredFace: null,
       selectedFace: null,
     });
+
+    // Dispatch event to trigger camera swing to face the plane
+    if (typeof window !== "undefined") {
+      const { normal } = getSketchPlaneDirections(plane);
+      window.dispatchEvent(
+        new CustomEvent("vcad:face-selected", {
+          detail: { normal, centroid: planeOrigin },
+        })
+      );
+    }
   },
 
   exitSketchMode: (): SketchExitStatus => {
