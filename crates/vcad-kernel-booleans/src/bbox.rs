@@ -87,22 +87,82 @@ pub fn face_aabb(brep: &BRepSolid, face_id: FaceId) -> Aabb3 {
     }
 
     // For curved surfaces, the surface may bulge beyond vertices.
-    // Add a conservative tolerance based on surface type.
+    // Expand the AABB based on the actual surface geometry.
     let surface = &brep.geometry.surfaces[face.surface_index];
     match surface.surface_type() {
         vcad_kernel_geom::SurfaceKind::Plane => {
-            // Planar faces: vertices are exact bounds
-        }
-        vcad_kernel_geom::SurfaceKind::Cylinder
-        | vcad_kernel_geom::SurfaceKind::Cone
-        | vcad_kernel_geom::SurfaceKind::Sphere
-        | vcad_kernel_geom::SurfaceKind::Bilinear => {
-            // Conservative expansion for curved surfaces
+            // Planar faces usually have exact bounds from vertices.
+            // Exception: circular boundaries (cylinder/sphere caps) may have only 1-2 vertices
+            // at the seam, so the AABB is degenerate. Expand based on vertex distance from
+            // the plane's origin (which gives the circle radius).
             let diag = ((aabb.max.x - aabb.min.x).powi(2)
                 + (aabb.max.y - aabb.min.y).powi(2)
                 + (aabb.max.z - aabb.min.z).powi(2))
             .sqrt();
-            aabb.expand(diag * 0.05);
+
+            // If AABB is nearly degenerate (diagonal < 1), this is likely a circular boundary
+            if diag < 1.0 {
+                if let Some(plane) = surface
+                    .as_any()
+                    .downcast_ref::<vcad_kernel_geom::Plane>()
+                {
+                    // The vertex is on the circular boundary. The radius is its distance
+                    // from the plane's origin (circle center) projected onto the plane.
+                    // Use the first vertex position to estimate the radius.
+                    let first_he = topo.loop_half_edges(face.outer_loop).next();
+                    if let Some(he_id) = first_he {
+                        let v_pos = topo.vertices[topo.half_edges[he_id].origin].point;
+                        let to_vertex = v_pos - plane.origin;
+                        // Project onto plane (remove normal component)
+                        let normal = plane.normal_dir.into_inner();
+                        let on_plane = to_vertex - to_vertex.dot(&normal) * normal;
+                        let radius = on_plane.norm();
+
+                        if radius > 1e-6 {
+                            // Expand the AABB to cover the full circle
+                            // The circle is centered at plane.origin
+                            aabb = Aabb3::empty();
+                            // Include corners of a bounding square around the circle
+                            let x_dir = *plane.x_dir.as_ref();
+                            let y_dir = *plane.y_dir.as_ref();
+                            let center = plane.origin;
+                            aabb.include_point(&(center + radius * x_dir + radius * y_dir));
+                            aabb.include_point(&(center + radius * x_dir - radius * y_dir));
+                            aabb.include_point(&(center - radius * x_dir + radius * y_dir));
+                            aabb.include_point(&(center - radius * x_dir - radius * y_dir));
+                        }
+                    }
+                }
+            }
+        }
+        vcad_kernel_geom::SurfaceKind::Cylinder => {
+            // For cylinders, expand by the radius in the perpendicular directions
+            if let Some(cyl) = surface
+                .as_any()
+                .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
+            {
+                aabb.expand(cyl.radius);
+            }
+        }
+        vcad_kernel_geom::SurfaceKind::Sphere => {
+            // For spheres, expand by the radius in all directions
+            if let Some(sph) = surface
+                .as_any()
+                .downcast_ref::<vcad_kernel_geom::SphereSurface>()
+            {
+                aabb.expand(sph.radius);
+            }
+        }
+        vcad_kernel_geom::SurfaceKind::Cone => {
+            // For cones, use a conservative estimate based on the vertex positions
+            let diag = ((aabb.max.x - aabb.min.x).powi(2)
+                + (aabb.max.y - aabb.min.y).powi(2)
+                + (aabb.max.z - aabb.min.z).powi(2))
+            .sqrt();
+            aabb.expand(diag * 0.5);
+        }
+        vcad_kernel_geom::SurfaceKind::Bilinear => {
+            // Bilinear surfaces: vertices are exact bounds (surface is defined by corners)
         }
     }
 
@@ -110,10 +170,15 @@ pub fn face_aabb(brep: &BRepSolid, face_id: FaceId) -> Aabb3 {
 }
 
 /// Compute the AABB for the entire solid.
+///
+/// Uses the union of all face AABBs, which properly accounts for curved surfaces
+/// (cylinders, cones, spheres) that may extend beyond their boundary vertices.
 pub fn solid_aabb(brep: &BRepSolid) -> Aabb3 {
     let mut aabb = Aabb3::empty();
-    for (_, v) in &brep.topology.vertices {
-        aabb.include_point(&v.point);
+    for (face_id, _) in &brep.topology.faces {
+        let face_box = face_aabb(brep, face_id);
+        aabb.include_point(&face_box.min);
+        aabb.include_point(&face_box.max);
     }
     aabb
 }

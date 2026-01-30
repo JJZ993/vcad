@@ -199,6 +199,109 @@ fn point_to_segment_dist(p: &Point3, a: &Point3, b: &Point3) -> f64 {
     (p - proj).norm()
 }
 
+/// Find where an infinite line crosses the edges of a 3D polygon.
+///
+/// The polygon vertices must be coplanar. Returns the crossing points
+/// in order along the line direction.
+fn find_line_polygon_crossings(
+    polygon: &[Point3],
+    line: &vcad_kernel_geom::Line3d,
+) -> Vec<Point3> {
+    let n = polygon.len();
+    if n < 3 {
+        return Vec::new();
+    }
+
+    // Compute the polygon's plane normal from the first 3 vertices
+    let e1 = polygon[1] - polygon[0];
+    let e2 = polygon[2] - polygon[0];
+    let plane_normal = e1.cross(&e2);
+    let plane_normal_len = plane_normal.norm();
+    if plane_normal_len < 1e-12 {
+        return Vec::new(); // Degenerate polygon
+    }
+    let plane_normal = plane_normal / plane_normal_len;
+
+    // Build a 2D coordinate system on the plane
+    let x_axis = e1.normalize();
+    let y_axis = plane_normal.cross(&x_axis);
+
+    // Project polygon vertices and line to 2D
+    let project_to_2d = |p: &Point3| -> (f64, f64) {
+        let d = *p - polygon[0];
+        (d.dot(&x_axis), d.dot(&y_axis))
+    };
+
+    let poly_2d: Vec<(f64, f64)> = polygon.iter().map(&project_to_2d).collect();
+
+    // Project line origin and direction
+    let (ox, oy) = project_to_2d(&line.origin);
+    let dx = line.direction.dot(&x_axis);
+    let dy = line.direction.dot(&y_axis);
+    let dir_2d_len = (dx * dx + dy * dy).sqrt();
+
+    if dir_2d_len < 1e-12 {
+        // Line is perpendicular to the polygon plane - no crossing
+        return Vec::new();
+    }
+
+    let mut crossings = Vec::new();
+    let tol = 1e-9;
+
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (ax, ay) = poly_2d[i];
+        let (bx, by) = poly_2d[j];
+
+        // Segment direction in 2D
+        let sx = bx - ax;
+        let sy = by - ay;
+        let seg_len = (sx * sx + sy * sy).sqrt();
+        if seg_len < tol {
+            continue;
+        }
+
+        // Solve: (ox + t * dx, oy + t * dy) = (ax + s * sx, ay + s * sy)
+        // Matrix form: det = sx * dy - dx * sy
+        let det = sx * dy - dx * sy;
+        if det.abs() < tol {
+            // Lines are parallel
+            continue;
+        }
+
+        let rhs_x = ax - ox;
+        let rhs_y = ay - oy;
+
+        // Cramer's rule
+        let t = (sx * rhs_y - sy * rhs_x) / det;
+        let s = (dx * rhs_y - dy * rhs_x) / det;
+
+        // s is the parameter along the segment [0, 1]
+        if s < -tol || s > 1.0 + tol {
+            continue;
+        }
+
+        // Compute the 3D intersection point
+        let intersection = line.origin + t * line.direction;
+
+        // Avoid duplicate crossings at vertices
+        let is_duplicate = crossings.iter().any(|c: &Point3| (*c - intersection).norm() < 0.01);
+        if !is_duplicate {
+            crossings.push(intersection);
+        }
+    }
+
+    // Sort crossings by their parameter along the line
+    let line_dir = line.direction.normalize();
+    crossings.sort_by(|a, b| {
+        let ta = (*a - line.origin).dot(&line_dir);
+        let tb = (*b - line.origin).dot(&line_dir);
+        ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    crossings
+}
+
 /// Create a new face in the BRep from a set of 3D points.
 ///
 /// Reuses existing vertices within tolerance, creating new ones only when needed.
@@ -295,9 +398,10 @@ pub fn split_planar_face_by_circle(
         };
     }
 
-    // Check if circle center is inside the polygon (approximately)
-    // Project to 2D in the face's plane and do point-in-polygon test
-    if !circle_inside_polygon(&loop_verts, circle) {
+    // Check if the FULL circle is inside the polygon
+    // We need to verify not just that the circle overlaps, but that it's fully contained.
+    // If only partially inside, skip the split (classification will handle it).
+    if !circle_fully_inside_polygon(&loop_verts, circle) {
         return SplitResult {
             sub_faces: vec![face_id],
         };
@@ -465,7 +569,73 @@ pub fn split_planar_face_by_circle(
     }
 }
 
-/// Check if a circle is inside a polygon (in 3D, assumes coplanar).
+/// Check if a circle is FULLY inside a polygon (in 3D, assumes coplanar).
+///
+/// Returns true only if the entire circle is contained within the polygon.
+/// Used by split_planar_face_by_circle to decide whether to create a full disk.
+fn circle_fully_inside_polygon(polygon: &[Point3], circle: &vcad_kernel_geom::Circle3d) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+
+    // Compute plane basis from first 3 vertices
+    let v0 = polygon[0];
+    let v1 = polygon[1];
+    let v2 = polygon[2];
+
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let normal = e1.cross(&e2);
+    let normal_len = normal.norm();
+    if normal_len < 1e-12 {
+        return false;
+    }
+
+    // Project all points to 2D
+    let u_axis = e1.normalize();
+    let v_axis = normal.cross(&e1).normalize();
+
+    let project = |p: &Point3| -> (f64, f64) {
+        let d = p - v0;
+        (d.dot(&u_axis), d.dot(&v_axis))
+    };
+
+    // Project circle center
+    let (cx, cy) = project(&circle.center);
+
+    // Project polygon vertices
+    let poly_2d: Vec<(f64, f64)> = polygon.iter().map(project).collect();
+
+    // Check if circle center is inside the polygon
+    if !point_in_polygon_2d(cx, cy, &poly_2d) {
+        return false;
+    }
+
+    // Check that the circle doesn't cross any polygon edge
+    // i.e., distance from center to each edge must be > radius
+    let n = poly_2d.len();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (x1, y1) = poly_2d[i];
+        let (x2, y2) = poly_2d[j];
+
+        let dist = point_to_segment_dist_2d(cx, cy, x1, y1, x2, y2);
+        if dist < circle.radius - 1e-6 {
+            // Circle crosses this edge - not fully inside
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Check if a circle overlaps with a polygon (in 3D, assumes coplanar).
+///
+/// Returns true if any part of the circle is inside the polygon.
+/// This handles edge cases like:
+/// - Circle center on polygon boundary or corner
+/// - Circle partially overlapping the polygon
+#[allow(dead_code)]
 fn circle_inside_polygon(polygon: &[Point3], circle: &vcad_kernel_geom::Circle3d) -> bool {
     if polygon.len() < 3 {
         return false;
@@ -499,25 +669,90 @@ fn circle_inside_polygon(polygon: &[Point3], circle: &vcad_kernel_geom::Circle3d
     // Project polygon vertices
     let poly_2d: Vec<(f64, f64)> = polygon.iter().map(project).collect();
 
-    // Point-in-polygon test (ray casting)
-    let mut inside = false;
+    // Check if circle center is inside the polygon
+    let center_inside = point_in_polygon_2d(cx, cy, &poly_2d);
+
+    // If center is inside, circle definitely overlaps
+    if center_inside {
+        return true;
+    }
+
+    // Check if center is very close to polygon boundary (tolerance for numerical precision)
+    let tol = 1e-6;
     let n = poly_2d.len();
-    let mut j = n - 1;
     for i in 0..n {
+        let j = (i + 1) % n;
         let (xi, yi) = poly_2d[i];
         let (xj, yj) = poly_2d[j];
 
-        if ((yi > cy) != (yj > cy)) && (cx < (xj - xi) * (cy - yi) / (yj - yi) + xi) {
+        // Distance from center to this edge
+        let dist = point_to_segment_dist_2d(cx, cy, xi, yi, xj, yj);
+        if dist < tol {
+            // Center is on the boundary - check if any part of the circle is inside
+            // Sample points on the circle and check if any are inside
+            for k in 0..8 {
+                let theta = std::f64::consts::PI * 2.0 * (k as f64) / 8.0;
+                let px = cx + circle.radius * theta.cos();
+                let py = cy + circle.radius * theta.sin();
+                if point_in_polygon_2d(px, py, &poly_2d) {
+                    return true;
+                }
+            }
+            // Also check if circle intersects any polygon edge
+            return circle_intersects_polygon_edges(cx, cy, circle.radius, &poly_2d);
+        }
+    }
+
+    // Check if circle intersects any polygon edge
+    circle_intersects_polygon_edges(cx, cy, circle.radius, &poly_2d)
+}
+
+/// Point-in-polygon test using ray casting (2D version).
+fn point_in_polygon_2d(px: f64, py: f64, polygon: &[(f64, f64)]) -> bool {
+    let mut inside = false;
+    let n = polygon.len();
+    let mut j = n - 1;
+    for i in 0..n {
+        let (xi, yi) = polygon[i];
+        let (xj, yj) = polygon[j];
+
+        if ((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
             inside = !inside;
         }
         j = i;
     }
-
-    // For a full check, we should also verify the circle doesn't cross the polygon boundary
-    // For simplicity, we just check if center is inside with some margin
-    // TODO: Could add circle-edge distance checks for robustness
-
     inside
+}
+
+/// Distance from point to line segment (2D).
+fn point_to_segment_dist_2d(px: f64, py: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let len2 = dx * dx + dy * dy;
+    if len2 < 1e-15 {
+        return ((px - x1).powi(2) + (py - y1).powi(2)).sqrt();
+    }
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    let t = t.clamp(0.0, 1.0);
+    let proj_x = x1 + t * dx;
+    let proj_y = y1 + t * dy;
+    ((px - proj_x).powi(2) + (py - proj_y).powi(2)).sqrt()
+}
+
+/// Check if a circle intersects any edge of a polygon.
+fn circle_intersects_polygon_edges(cx: f64, cy: f64, radius: f64, polygon: &[(f64, f64)]) -> bool {
+    let n = polygon.len();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (x1, y1) = polygon[i];
+        let (x2, y2) = polygon[j];
+
+        let dist = point_to_segment_dist_2d(cx, cy, x1, y1, x2, y2);
+        if dist <= radius {
+            return true;
+        }
+    }
+    false
 }
 
 /// Split a planar face along an intersection curve.
@@ -536,6 +771,42 @@ pub fn split_planar_face(
     match curve {
         IntersectionCurve::Circle(circle) => {
             split_planar_face_by_circle(brep, face_id, circle, segments)
+        }
+        IntersectionCurve::Line(line) => {
+            // Get face boundary vertices
+            let face = &brep.topology.faces[face_id];
+            let loop_hes: Vec<_> = brep.topology.loop_half_edges(face.outer_loop).collect();
+            let loop_verts: Vec<Point3> = loop_hes
+                .iter()
+                .map(|&he| brep.topology.vertices[brep.topology.half_edges[he].origin].point)
+                .collect();
+
+            // Find where the line intersects the polygon edges
+            let crossings = find_line_polygon_crossings(&loop_verts, line);
+
+            if crossings.len() >= 2 {
+                // Use the first two crossings as entry/exit
+                let actual_entry = crossings[0];
+                let actual_exit = crossings[1];
+                split_face_by_curve(brep, face_id, curve, &actual_entry, &actual_exit)
+            } else {
+                // Line doesn't cross the polygon boundary at two points
+                SplitResult {
+                    sub_faces: vec![face_id],
+                }
+            }
+        }
+        IntersectionCurve::TwoLines(line1, _line2) => {
+            // TwoLines should be expanded before calling this function.
+            // If we get here, just process the first line.
+            split_planar_face(
+                brep,
+                face_id,
+                &IntersectionCurve::Line(line1.clone()),
+                entry,
+                exit,
+                segments,
+            )
         }
         _ => {
             // Use existing line-based split
@@ -749,11 +1020,197 @@ pub fn split_cylindrical_face_by_circle(
     }
 }
 
+/// Split a cylindrical face along a line intersection curve.
+///
+/// When a plane parallel to the cylinder axis intersects the cylinder,
+/// the result is a vertical line on the cylinder surface. In the cylinder's
+/// UV space `[0, 2π] × [v_min, v_max]`, this line becomes a vertical line
+/// at constant u = u_split.
+///
+/// This function splits the cylindrical face into two parts:
+/// - One part: `[u_min, u_split] × [v_min, v_max]`
+/// - Other part: `[u_split, u_max] × [v_min, v_max]`
+///
+/// For a full lateral face (u spans 0 to 2π), the split creates two partial
+/// cylindrical faces that share the split edge.
+pub fn split_cylindrical_face_by_line(
+    brep: &mut BRepSolid,
+    face_id: FaceId,
+    line: &vcad_kernel_geom::Line3d,
+) -> SplitResult {
+    let face = &brep.topology.faces[face_id];
+    let surface_index = face.surface_index;
+    let orientation = face.orientation;
+    let surface = &brep.geometry.surfaces[surface_index];
+
+    // Verify surface is a cylinder
+    let cyl = match surface
+        .as_any()
+        .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
+    {
+        Some(c) => c.clone(),
+        None => {
+            return SplitResult {
+                sub_faces: vec![face_id],
+            };
+        }
+    };
+
+    // The line must be on the cylinder surface. Find the U parameter where
+    // the line intersects the cylinder.
+    // A point on the line: line.origin + t * line.direction
+    // For this to be on the cylinder: distance from axis = radius
+    //
+    // Use line.origin projected onto the cylinder to find U:
+    // u = atan2(dot(p - center, y_dir), dot(p - center, ref_dir))
+    let d = line.origin - cyl.center;
+    let ref_dir = cyl.ref_dir.as_ref();
+    let y_dir = cyl.axis.as_ref().cross(ref_dir);
+    let u_split = d.dot(&y_dir).atan2(d.dot(ref_dir));
+    let u_split = if u_split < 0.0 {
+        u_split + 2.0 * std::f64::consts::PI
+    } else {
+        u_split
+    };
+
+    // Get the current face's vertex bounds
+    let loop_hes: Vec<_> = brep.topology.loop_half_edges(face.outer_loop).collect();
+    if loop_hes.is_empty() {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
+
+    // Get the v bounds (height along axis)
+    let mut v_min = f64::INFINITY;
+    let mut v_max = f64::NEG_INFINITY;
+    for &he_id in &loop_hes {
+        let v_id = brep.topology.half_edges[he_id].origin;
+        let point = brep.topology.vertices[v_id].point;
+        let v = (point - cyl.center).dot(cyl.axis.as_ref());
+        v_min = v_min.min(v);
+        v_max = v_max.max(v);
+    }
+
+    // Check that the split line is actually on/near the face
+    // (the line's u coordinate should be in the face's u range)
+    // For a full lateral face, u ranges from 0 to 2π
+    // We'll assume a full lateral face for now
+    let _face_u_min = 0.0;
+    let _face_u_max = 2.0 * std::f64::consts::PI;
+
+    // Compute 3D points at the split line's top and bottom
+    let sin_u = u_split.sin();
+    let cos_u = u_split.cos();
+    let radial = cyl.radius * (cos_u * ref_dir + sin_u * y_dir);
+    let point_bottom = cyl.center + radial + v_min * cyl.axis.as_ref();
+    let point_top = cyl.center + radial + v_max * cyl.axis.as_ref();
+
+    // Create vertices at the split points
+    let v_split_bottom = brep.topology.add_vertex(point_bottom);
+    let v_split_top = brep.topology.add_vertex(point_top);
+
+    // Get the existing corner vertices
+    // For a standard full cylinder lateral face:
+    // The face has vertices at u=0 at top and bottom (the seam)
+    let seam_bottom =
+        cyl.center + cyl.radius * cyl.ref_dir.as_ref() + v_min * cyl.axis.as_ref();
+    let seam_top = cyl.center + cyl.radius * cyl.ref_dir.as_ref() + v_max * cyl.axis.as_ref();
+
+    // Find existing seam vertices by position
+    let mut v_seam_bottom = None;
+    let mut v_seam_top = None;
+    for &he_id in &loop_hes {
+        let vid = brep.topology.half_edges[he_id].origin;
+        let point = brep.topology.vertices[vid].point;
+        if (point - seam_bottom).norm() < 1e-6 {
+            v_seam_bottom = Some(vid);
+        }
+        if (point - seam_top).norm() < 1e-6 {
+            v_seam_top = Some(vid);
+        }
+    }
+
+    let (v_seam_bottom, v_seam_top) = match (v_seam_bottom, v_seam_top) {
+        (Some(b), Some(t)) => (b, t),
+        _ => {
+            // Can't find seam vertices - might be a partial face
+            // For now, skip this case
+            return SplitResult {
+                sub_faces: vec![face_id],
+            };
+        }
+    };
+
+    // Create two new faces by splitting at the u_split line:
+    // Face 1: u from 0 to u_split (seam to split line)
+    // Face 2: u from u_split to 2π (split line back to seam)
+    //
+    // Each face has 4 vertices forming a quad on the cylinder surface:
+    // Face 1: seam_bottom → split_bottom → split_top → seam_top → back to seam_bottom
+    // Face 2: split_bottom → seam_bottom (going around) → seam_top → split_top → back
+
+    // Face 1: smaller arc from seam to split
+    let he1_bot = brep.topology.add_half_edge(v_seam_bottom);
+    let he1_left = brep.topology.add_half_edge(v_split_bottom);
+    let he1_top = brep.topology.add_half_edge(v_split_top);
+    let he1_right = brep.topology.add_half_edge(v_seam_top);
+
+    let loop1 = brep
+        .topology
+        .add_loop(&[he1_bot, he1_left, he1_top, he1_right]);
+    let face1 = brep
+        .topology
+        .add_face(loop1, surface_index, orientation);
+
+    // Face 2: larger arc from split back to seam
+    let he2_bot = brep.topology.add_half_edge(v_split_bottom);
+    let he2_left = brep.topology.add_half_edge(v_seam_bottom);
+    let he2_top = brep.topology.add_half_edge(v_seam_top);
+    let he2_right = brep.topology.add_half_edge(v_split_top);
+
+    let loop2 = brep
+        .topology
+        .add_loop(&[he2_bot, he2_left, he2_top, he2_right]);
+    let face2 = brep
+        .topology
+        .add_face(loop2, surface_index, orientation);
+
+    // Add twin edges
+    // The split line edges between face1 and face2
+    brep.topology.add_edge(he1_left, he2_right);
+    brep.topology.add_edge(he1_top, he2_bot);
+
+    // Add faces to shell
+    if let Some(shell_id) = brep.topology.faces[face_id].shell {
+        brep.topology.shells[shell_id].faces.push(face1);
+        brep.topology.shells[shell_id].faces.push(face2);
+
+        brep.topology.faces[face1].shell = Some(shell_id);
+        brep.topology.faces[face2].shell = Some(shell_id);
+
+        // Remove original face from shell
+        brep.topology.shells[shell_id]
+            .faces
+            .retain(|&f| f != face_id);
+    }
+
+    // Remove the original face
+    brep.topology.faces.remove(face_id);
+
+    // Add 3D curve for the split line
+    brep.geometry.add_curve_3d(Box::new(line.clone()));
+
+    SplitResult {
+        sub_faces: vec![face1, face2],
+    }
+}
+
 /// Split a cylindrical face along an intersection curve.
 ///
 /// This dispatches to the appropriate split method based on the curve type:
 /// - Circle: horizontal split (perpendicular plane intersection)
-/// - Line: vertical split (parallel plane intersection) - TODO
+/// - Line: vertical split (parallel plane intersection)
 /// - Sampled: general oblique split - TODO
 pub fn split_cylindrical_face(
     brep: &mut BRepSolid,
@@ -764,12 +1221,8 @@ pub fn split_cylindrical_face(
         IntersectionCurve::Circle(circle) => {
             split_cylindrical_face_by_circle(brep, face_id, circle)
         }
-        IntersectionCurve::Line(_line) => {
-            // TODO: Implement vertical line split for parallel plane intersection
-            // For now, skip this case
-            SplitResult {
-                sub_faces: vec![face_id],
-            }
+        IntersectionCurve::Line(line) => {
+            split_cylindrical_face_by_line(brep, face_id, line)
         }
         IntersectionCurve::Sampled(_points) => {
             // TODO: Implement general oblique split
@@ -780,6 +1233,11 @@ pub fn split_cylindrical_face(
         IntersectionCurve::Empty | IntersectionCurve::Point(_) => SplitResult {
             sub_faces: vec![face_id],
         },
+        IntersectionCurve::TwoLines(line1, _line2) => {
+            // TwoLines should be expanded before calling this function.
+            // If we get here, just process the first line.
+            split_cylindrical_face(brep, face_id, &IntersectionCurve::Line(line1.clone()))
+        }
     }
 }
 

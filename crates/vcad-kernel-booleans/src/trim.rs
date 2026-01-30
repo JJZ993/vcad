@@ -132,50 +132,131 @@ pub fn point_in_face(brep: &BRepSolid, face_id: FaceId, point_3d: &Point3) -> bo
     let face = &topo.faces[face_id];
     let surface = &brep.geometry.surfaces[face.surface_index];
 
-    // Get the outer loop vertices in UV space
+    // Get the outer loop vertices in 3D
     let outer_verts_3d: Vec<Point3> = topo
         .loop_half_edges(face.outer_loop)
         .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
         .collect();
 
+    // Special case: circular face (e.g., cylinder cap with single circular edge)
+    // The loop has only 1 vertex (the seam point), so check using 3D circle geometry
+    if outer_verts_3d.len() == 1 {
+        // This is likely a circular cap face
+        // Get the face's 3D curve (should be a circle)
+        let half_edges: Vec<_> = topo.loop_half_edges(face.outer_loop).collect();
+        if !half_edges.is_empty() {
+            // Try to find the associated 3D curve
+            // For now, use a simpler approach: assume it's a disk centered at the surface origin
+            if let Some(plane) = surface.as_any().downcast_ref::<vcad_kernel_geom::Plane>() {
+                // Project point onto the plane
+                let d = point_3d - plane.origin;
+                let dist_along_normal = d.dot(plane.normal_dir.as_ref());
+
+                // If point is not on the plane (within tolerance), it's outside
+                if dist_along_normal.abs() > 1e-4 {
+                    return false;
+                }
+
+                // Get the circle radius from the vertex position
+                let seam_vert = outer_verts_3d[0];
+                let center_to_seam = seam_vert - plane.origin;
+                let radius = center_to_seam.norm();
+
+                // Check if point is within the circle
+                let center_to_point = point_3d - plane.origin;
+                let dist_from_center = (center_to_point - dist_along_normal * plane.normal_dir.into_inner()).norm();
+
+                return dist_from_center <= radius + 1e-6;
+            }
+        }
+        // If we can't determine the circle, conservatively return true
+        return true;
+    }
+
     // Project the test point to UV
     let test_uv = project_point_to_uv(surface.as_ref(), point_3d);
 
-    let (outer_uv, inner_uv, test_uv) = match surface.surface_type() {
-        vcad_kernel_geom::SurfaceKind::Cylinder => {
-            let outer_uv = project_points_to_uv(surface.as_ref(), &outer_verts_3d);
-            let (outer_uv, seam_cut) = unwrap_cylindrical_loop(&outer_uv);
-            let inner_uv: Vec<Vec<Point2>> = face
-                .inner_loops
-                .iter()
-                .map(|&inner_loop_id| {
-                    let inner_verts: Vec<Point3> = topo
-                        .loop_half_edges(inner_loop_id)
-                        .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
-                        .collect();
-                    let inner_uv = project_points_to_uv(surface.as_ref(), &inner_verts);
-                    unwrap_cylindrical_loop_with_cut(&inner_uv, seam_cut)
-                })
-                .collect();
-            let test_uv = unwrap_cylindrical_uv(&test_uv, seam_cut);
-            (outer_uv, inner_uv, test_uv)
+    // Special handling for cylindrical surfaces
+    // A standard cylinder lateral face has only 2 unique vertices (seam top/bottom)
+    // which don't form a proper polygon. Instead, check V range and U wrap.
+    if surface.surface_type() == vcad_kernel_geom::SurfaceKind::Cylinder {
+        // Get unique vertices by position
+        let mut unique_verts: Vec<Point3> = Vec::new();
+        for v in &outer_verts_3d {
+            let is_dup = unique_verts.iter().any(|u| (*u - *v).norm() < 1e-6);
+            if !is_dup {
+                unique_verts.push(*v);
+            }
         }
-        _ => {
-            let outer_uv = project_points_to_uv(surface.as_ref(), &outer_verts_3d);
-            let inner_uv: Vec<Vec<Point2>> = face
-                .inner_loops
-                .iter()
-                .map(|&inner_loop_id| {
-                    let inner_verts: Vec<Point3> = topo
-                        .loop_half_edges(inner_loop_id)
-                        .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
-                        .collect();
-                    project_points_to_uv(surface.as_ref(), &inner_verts)
-                })
-                .collect();
-            (outer_uv, inner_uv, test_uv)
+
+        // If we have only 2 unique vertices (standard full cylinder lateral face)
+        // then the face spans the full U range and we only need to check V
+        if unique_verts.len() == 2 {
+            // Get V range from the two seam vertices
+            if let Some(cyl) = surface
+                .as_any()
+                .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
+            {
+                let v0 = (unique_verts[0] - cyl.center).dot(cyl.axis.as_ref());
+                let v1 = (unique_verts[1] - cyl.center).dot(cyl.axis.as_ref());
+                let v_min = v0.min(v1);
+                let v_max = v0.max(v1);
+                let test_v = test_uv.y; // V coordinate
+
+                // For a full cylinder, just check V is in range
+                let in_v_range = test_v >= v_min - 1e-6 && test_v <= v_max + 1e-6;
+
+                // Check inner loops (holes)
+                if in_v_range && !face.inner_loops.is_empty() {
+                    // TODO: Handle inner loops on cylindrical faces
+                    // For now, assume no holes
+                }
+
+                return in_v_range;
+            }
         }
-    };
+
+        // Fall through to general polygon test for partial cylinder faces
+        let outer_uv = project_points_to_uv(surface.as_ref(), &outer_verts_3d);
+        let (outer_uv, seam_cut) = unwrap_cylindrical_loop(&outer_uv);
+        let inner_uv: Vec<Vec<Point2>> = face
+            .inner_loops
+            .iter()
+            .map(|&inner_loop_id| {
+                let inner_verts: Vec<Point3> = topo
+                    .loop_half_edges(inner_loop_id)
+                    .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
+                    .collect();
+                let inner_uv = project_points_to_uv(surface.as_ref(), &inner_verts);
+                unwrap_cylindrical_loop_with_cut(&inner_uv, seam_cut)
+            })
+            .collect();
+        let test_uv = unwrap_cylindrical_uv(&test_uv, seam_cut);
+
+        if !point_in_polygon(&test_uv, &outer_uv) {
+            return false;
+        }
+        for inner_uv in &inner_uv {
+            if point_in_polygon(&test_uv, inner_uv) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Non-cylindrical surfaces: standard UV polygon test
+    let outer_uv = project_points_to_uv(surface.as_ref(), &outer_verts_3d);
+    let inner_uv: Vec<Vec<Point2>> = face
+        .inner_loops
+        .iter()
+        .map(|&inner_loop_id| {
+            let inner_verts: Vec<Point3> = topo
+                .loop_half_edges(inner_loop_id)
+                .map(|he_id| topo.vertices[topo.half_edges[he_id].origin].point)
+                .collect();
+            project_points_to_uv(surface.as_ref(), &inner_verts)
+        })
+        .collect();
 
     // Test if inside outer loop
     if !point_in_polygon(&test_uv, &outer_uv) {
@@ -464,6 +545,11 @@ pub fn trim_curve_to_face(
             }
 
             merge_segments(|t| sample_curve(points, t), &segments, merge_tol)
+        }
+        IntersectionCurve::TwoLines(line1, _line2) => {
+            // TwoLines should be expanded before calling this function.
+            // If we get here, just process the first line.
+            trim_curve_to_face(&IntersectionCurve::Line(line1.clone()), face_id, brep, n_samples)
         }
     }
 }

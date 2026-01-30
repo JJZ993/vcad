@@ -18,6 +18,8 @@ pub enum IntersectionCurve {
     Point(Point3),
     /// Line intersection (e.g. plane-plane).
     Line(Line3d),
+    /// Two parallel line intersections (e.g. plane parallel to cylinder axis).
+    TwoLines(Line3d, Line3d),
     /// Circle intersection (e.g. plane-sphere, sphere-sphere).
     Circle(Circle3d),
     /// Sampled polyline for complex intersections.
@@ -230,20 +232,43 @@ fn plane_cylinder(plane: &Plane, cyl: &CylinderSurface) -> IntersectionCurve {
         // Project axis onto plane, find the two points at distance=radius from axis
         let axis_on_plane =
             axis_point - plane.signed_distance(&axis_point) * plane.normal_dir.into_inner();
-        let offset_dir = (axis_on_plane - axis_point).normalize();
+
+        // Handle the case where axis lies in the plane (dist ≈ 0)
+        let offset = axis_on_plane - axis_point;
+        let offset_len = offset.norm();
+
+        // Find the direction perpendicular to both the plane normal and axis
+        // This is the direction along which the intersection lines are offset from the axis
+        let perp = if offset_len < 1e-12 {
+            // Axis lies in plane - the perpendicular direction is axis × normal
+            let perp = axis.as_ref().cross(plane.normal_dir.as_ref());
+            if perp.norm() < 1e-12 {
+                return IntersectionCurve::Empty;
+            }
+            perp.normalize()
+        } else {
+            // Normal case - perpendicular is the direction from axis to axis_on_plane
+            // crossed with axis to get the tangent direction
+            let offset_dir = offset / offset_len;
+            offset_dir.cross(axis.as_ref()).normalize()
+        };
+
         let lateral = (cyl.radius * cyl.radius - dist * dist).sqrt();
 
-        // Direction perpendicular to both the normal and the offset
-        let perp = offset_dir.cross(axis.as_ref()).normalize();
+        let p1 = Point3::from(axis_on_plane.coords + lateral * perp);
+        let p2 = Point3::from(axis_on_plane.coords - lateral * perp);
 
-        let p1 = axis_on_plane + lateral * perp;
-        let _p2 = axis_on_plane - lateral * perp;
-
-        // Return the first line (for now — TODO: return both lines)
-        IntersectionCurve::Line(Line3d {
-            origin: p1,
-            direction: *axis.as_ref(),
-        })
+        // Return both lines
+        IntersectionCurve::TwoLines(
+            Line3d {
+                origin: p1,
+                direction: *axis.as_ref(),
+            },
+            Line3d {
+                origin: p2,
+                direction: *axis.as_ref(),
+            },
+        )
     } else if (cos_angle - 1.0).abs() < 1e-12 {
         // Plane is perpendicular to cylinder axis → Circle
         let dist_along_axis =
