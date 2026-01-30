@@ -73,4 +73,6 @@ export type {
   RenderedText,
   RenderedArrow,
   RenderedArc,
+  DetailView,
+  DetailViewParams,
 } from "@vcad/engine";

@@ -14,3 +14,9 @@ export function saveDocument(state: {
   const blob = new Blob([json], { type: "application/json" });
   downloadBlob(blob, "model.vcad");
 }
+
+export function downloadDxf(data: Uint8Array, filename: string) {
+  const blob = new Blob([new Uint8Array(data)], { type: "application/dxf" });
+  const name = filename.endsWith(".dxf") ? filename : `${filename}.dxf`;
+  downloadBlob(blob, name);
+}

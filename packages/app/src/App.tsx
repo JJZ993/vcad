@@ -120,10 +120,61 @@ export function App() {
   }, []);
 
   const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
+      const ext = file.name.split(".").pop()?.toLowerCase();
+
+      // Handle STEP files
+      if (ext === "step" || ext === "stp") {
+        try {
+          const engine = useEngineStore.getState().engine;
+          if (!engine) {
+            useToastStore.getState().addToast("Engine not ready", "error");
+            return;
+          }
+
+          const buffer = await file.arrayBuffer();
+          const meshes = engine.importStep(buffer);
+
+          if (meshes.length === 0) {
+            useToastStore.getState().addToast("No geometry found in STEP file", "error");
+            return;
+          }
+
+          // Create an evaluated scene directly from the meshes
+          const scene = {
+            parts: meshes.map((mesh) => ({
+              mesh,
+              material: "default",
+            })),
+            clashes: [],
+          };
+
+          // Clear document and set imported scene
+          useDocumentStore.getState().loadDocument({
+            document: { version: "1", nodes: {}, roots: [], materials: {}, part_materials: {} },
+            parts: [],
+            nextNodeId: 1,
+            nextPartNum: 1,
+          });
+          useEngineStore.getState().setScene(scene);
+          useUiStore.getState().clearSelection();
+
+          useToastStore.getState().addToast(
+            `Imported ${meshes.length} solid${meshes.length > 1 ? "s" : ""} from STEP`,
+            "success"
+          );
+        } catch (err) {
+          console.error("Failed to import STEP:", err);
+          useToastStore.getState().addToast("Failed to import STEP file", "error");
+        }
+        e.target.value = "";
+        return;
+      }
+
+      // Handle .vcad/.json files
       const reader = new FileReader();
       reader.onload = () => {
         try {
@@ -296,7 +347,7 @@ export function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".vcad,.json"
+        accept=".vcad,.json,.step,.stp"
         className="hidden"
         onChange={handleFileChange}
       />

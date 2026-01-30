@@ -18,14 +18,20 @@ import {
   Eye,
   EyeSlash,
   Ruler,
+  Download,
+  MagnifyingGlassPlus,
+  X,
 } from "@phosphor-icons/react";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   useDocumentStore,
   useUiStore,
   useSketchStore,
+  useEngineStore,
 } from "@vcad/core";
 import type { PrimitiveKind, BooleanType } from "@vcad/core";
+import { downloadDxf } from "@/lib/save-load";
+import { useToastStore } from "@/stores/toast-store";
 import { cn } from "@/lib/utils";
 import { InsertInstanceDialog, AddJointDialog } from "@/components/dialogs";
 import { useOnboardingStore, type GuidedFlowStep } from "@/stores/onboarding-store";
@@ -134,6 +140,12 @@ export function BottomToolbar() {
   const toggleHiddenLines = useDrawingStore((s) => s.toggleHiddenLines);
   const showDimensions = useDrawingStore((s) => s.showDimensions);
   const toggleDimensions = useDrawingStore((s) => s.toggleDimensions);
+  const detailViews = useDrawingStore((s) => s.detailViews);
+  const clearDetailViews = useDrawingStore((s) => s.clearDetailViews);
+
+  // Engine for DXF export
+  const engine = useEngineStore((s) => s.engine);
+  const scene = useEngineStore((s) => s.scene);
 
   // Guided flow state
   const guidedFlowActive = useOnboardingStore((s) => s.guidedFlowActive);
@@ -391,6 +403,57 @@ export function BottomToolbar() {
               onClick={toggleDimensions}
             >
               <Ruler size={20} />
+            </ToolbarButton>
+
+            <Divider />
+
+            {/* Detail view tools */}
+            <ToolbarButton
+              tooltip="Add Detail View (drag to select region)"
+              disabled={!scene?.parts?.length}
+              onClick={() => {
+                // Dispatch event to DrawingView to start detail creation mode
+                window.dispatchEvent(new CustomEvent("vcad:start-detail-view"));
+              }}
+            >
+              <MagnifyingGlassPlus size={20} />
+            </ToolbarButton>
+
+            {detailViews.length > 0 && (
+              <ToolbarButton
+                tooltip="Clear Detail Views"
+                onClick={clearDetailViews}
+              >
+                <X size={20} />
+              </ToolbarButton>
+            )}
+
+            <Divider />
+
+            {/* DXF Export */}
+            <ToolbarButton
+              tooltip="Export DXF"
+              disabled={!scene?.parts?.length || !engine}
+              onClick={() => {
+                if (!scene?.parts?.length || !engine) return;
+                try {
+                  // Project the first part's mesh
+                  const mesh = scene.parts[0]!.mesh;
+                  const projectedView = engine.projectMesh(mesh, viewDirection);
+                  if (!projectedView) {
+                    useToastStore.getState().addToast("Failed to project view", "error");
+                    return;
+                  }
+                  const dxfData = engine.exportDrawingToDxf(projectedView);
+                  downloadDxf(dxfData, `drawing-${viewDirection}.dxf`);
+                  useToastStore.getState().addToast("DXF exported", "success");
+                } catch (err) {
+                  console.error("DXF export failed:", err);
+                  useToastStore.getState().addToast("DXF export failed", "error");
+                }
+              }}
+            >
+              <Download size={20} />
             </ToolbarButton>
           </>
         )}
