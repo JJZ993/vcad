@@ -59,6 +59,7 @@ export { exportGltfBuffer, exportGltfBlob } from "./utils/export-gltf.js";
 export { serializeDocument, parseVcadFile } from "./utils/save-load.js";
 export type { VcadFile as VcadFileFormat } from "./utils/save-load.js";
 export { computeVolume, computeMass, formatMass, formatVolume } from "./utils/geometry.js";
+export { parseStl } from "./utils/import-stl.js";
 
 // Re-export engine initialization
 export { Engine } from "@vcad/engine";

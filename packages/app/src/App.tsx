@@ -28,6 +28,7 @@ import {
   useDocumentStore,
   useUiStore,
   parseVcadFile,
+  parseStl,
   type VcadFile,
 } from "@vcad/core";
 import { useEngine } from "@/hooks/useEngine";
@@ -89,6 +90,7 @@ export function App() {
   useThemeSync();
 
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const engineReady = useEngineStore((s) => s.engineReady);
@@ -120,80 +122,131 @@ export function App() {
     fileInputRef.current?.click();
   }, []);
 
+  const processFile = useCallback(async (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+
+    // Handle STEP files
+    if (ext === "step" || ext === "stp") {
+      try {
+        const engine = useEngineStore.getState().engine;
+        if (!engine) {
+          useToastStore.getState().addToast("Engine not ready", "error");
+          return;
+        }
+
+        const buffer = await file.arrayBuffer();
+        const meshes = engine.importStep(buffer);
+
+        if (meshes.length === 0) {
+          useToastStore.getState().addToast("No geometry found in STEP file", "error");
+          return;
+        }
+
+        // Create an evaluated scene directly from the meshes
+        const scene = {
+          parts: meshes.map((mesh) => ({
+            mesh,
+            material: "default",
+          })),
+          clashes: [],
+        };
+
+        // Clear document and set imported scene
+        useDocumentStore.getState().loadDocument({
+          document: { version: "1", nodes: {}, roots: [], materials: {}, part_materials: {} },
+          parts: [],
+          nextNodeId: 1,
+          nextPartNum: 1,
+        });
+        useEngineStore.getState().setScene(scene);
+        useUiStore.getState().clearSelection();
+
+        useToastStore.getState().addToast(
+          `Imported ${meshes.length} solid${meshes.length > 1 ? "s" : ""} from STEP`,
+          "success"
+        );
+      } catch (err) {
+        console.error("Failed to import STEP:", err);
+        useToastStore.getState().addToast("Failed to import STEP file", "error");
+      }
+      return;
+    }
+
+    // Handle STL files
+    if (ext === "stl") {
+      try {
+        const buffer = await file.arrayBuffer();
+        const mesh = parseStl(buffer);
+        const triangleCount = mesh.indices.length / 3;
+
+        // Create an evaluated scene with the imported mesh
+        const scene = {
+          parts: [{ mesh, material: "default" }],
+          clashes: [],
+        };
+
+        // Clear document and set imported scene
+        useDocumentStore.getState().loadDocument({
+          document: { version: "1", nodes: {}, roots: [], materials: {}, part_materials: {} },
+          parts: [],
+          nextNodeId: 1,
+          nextPartNum: 1,
+        });
+        useEngineStore.getState().setScene(scene);
+        useUiStore.getState().clearSelection();
+
+        useToastStore.getState().addToast(
+          `Imported STL with ${triangleCount.toLocaleString()} triangles`,
+          "success"
+        );
+      } catch (err) {
+        console.error("Failed to import STL:", err);
+        useToastStore.getState().addToast("Failed to import STL file", "error");
+      }
+      return;
+    }
+
+    // Handle .vcad/.json files
+    try {
+      const text = await file.text();
+      const vcadFile = parseVcadFile(text);
+      useDocumentStore.getState().loadDocument(vcadFile);
+      useUiStore.getState().clearSelection();
+    } catch (err) {
+      console.error("Failed to load file:", err);
+      useToastStore.getState().addToast("Failed to load document", "error");
+    }
+  }, []);
+
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
-      const ext = file.name.split(".").pop()?.toLowerCase();
-
-      // Handle STEP files
-      if (ext === "step" || ext === "stp") {
-        try {
-          const engine = useEngineStore.getState().engine;
-          if (!engine) {
-            useToastStore.getState().addToast("Engine not ready", "error");
-            return;
-          }
-
-          const buffer = await file.arrayBuffer();
-          const meshes = engine.importStep(buffer);
-
-          if (meshes.length === 0) {
-            useToastStore.getState().addToast("No geometry found in STEP file", "error");
-            return;
-          }
-
-          // Create an evaluated scene directly from the meshes
-          const scene = {
-            parts: meshes.map((mesh) => ({
-              mesh,
-              material: "default",
-            })),
-            clashes: [],
-          };
-
-          // Clear document and set imported scene
-          useDocumentStore.getState().loadDocument({
-            document: { version: "1", nodes: {}, roots: [], materials: {}, part_materials: {} },
-            parts: [],
-            nextNodeId: 1,
-            nextPartNum: 1,
-          });
-          useEngineStore.getState().setScene(scene);
-          useUiStore.getState().clearSelection();
-
-          useToastStore.getState().addToast(
-            `Imported ${meshes.length} solid${meshes.length > 1 ? "s" : ""} from STEP`,
-            "success"
-          );
-        } catch (err) {
-          console.error("Failed to import STEP:", err);
-          useToastStore.getState().addToast("Failed to import STEP file", "error");
-        }
-        e.target.value = "";
-        return;
-      }
-
-      // Handle .vcad/.json files
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const text = reader.result as string;
-          const vcadFile = parseVcadFile(text);
-          useDocumentStore.getState().loadDocument(vcadFile);
-          useUiStore.getState().clearSelection();
-        } catch (err) {
-          console.error("Failed to load file:", err);
-          useToastStore.getState().addToast("Failed to load document", "error");
-        }
-      };
-      reader.readAsText(file);
-
+      await processFile(file);
       // Reset input so same file can be re-opened
       e.target.value = "";
     },
-    [],
+    [processFile],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (file) await processFile(file);
+    },
+    [processFile],
   );
 
   // Listen for save/open custom events from keyboard shortcuts
@@ -313,49 +366,66 @@ export function App() {
 
   return (
     <TooltipProvider>
-      <AppShell>
-        {/* Full-bleed viewport */}
-        <Viewport />
-        <SketchToolbar />
-        <FaceSelectionOverlay />
+      <div
+        className="contents"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <AppShell>
+          {/* Full-bleed viewport */}
+          <Viewport />
+          <SketchToolbar />
+          <FaceSelectionOverlay />
 
-        {/* Inline onboarding (centered over viewport) */}
-        <InlineOnboarding visible={showOnboarding} />
+          {/* Inline onboarding (centered over viewport) */}
+          <InlineOnboarding visible={showOnboarding} />
 
-        {/* Floating UI elements */}
-        <CornerIcons
+          {/* Floating UI elements */}
+          <CornerIcons
+            onAboutOpen={() => setAboutOpen(true)}
+            onSave={handleSave}
+            onOpen={handleOpen}
+          />
+          {!sketchActive && <FeatureTree />}
+          {!sketchActive && <PropertyPanel />}
+          {!sketchActive && <BottomToolbar />}
+
+          {/* Onboarding overlays */}
+          <GuidedFlowOverlay />
+          <GhostPromptController />
+          <CelebrationOverlay />
+
+          {/* Quote panel (slides in from right when Make It Real clicked) */}
+          <QuotePanel />
+
+          {/* Drag overlay */}
+          {isDragging && (
+            <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-accent/10 backdrop-blur-sm">
+              <div className="rounded-lg border-2 border-dashed border-accent bg-bg/90 px-8 py-6 text-center">
+                <div className="text-lg font-medium text-text">Drop file to import</div>
+                <div className="mt-1 text-sm text-text-muted">.vcad, .stl, .step</div>
+              </div>
+            </div>
+          )}
+        </AppShell>
+
+        {/* Modals */}
+        <AboutModal open={aboutOpen} onOpenChange={setAboutOpen} />
+        <CommandPalette
+          open={commandPaletteOpen}
+          onOpenChange={setCommandPaletteOpen}
           onAboutOpen={() => setAboutOpen(true)}
-          onSave={handleSave}
-          onOpen={handleOpen}
         />
-        {!sketchActive && <FeatureTree />}
-        {!sketchActive && <PropertyPanel />}
-        {!sketchActive && <BottomToolbar />}
-
-        {/* Onboarding overlays */}
-        <GuidedFlowOverlay />
-        <GhostPromptController />
-        <CelebrationOverlay />
-
-        {/* Quote panel (slides in from right when Make It Real clicked) */}
-        <QuotePanel />
-      </AppShell>
-
-      {/* Modals */}
-      <AboutModal open={aboutOpen} onOpenChange={setAboutOpen} />
-      <CommandPalette
-        open={commandPaletteOpen}
-        onOpenChange={setCommandPaletteOpen}
-        onAboutOpen={() => setAboutOpen(true)}
-      />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".vcad,.json,.step,.stp"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-      <ToastContainer />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".vcad,.json,.step,.stp,.stl"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <ToastContainer />
+      </div>
     </TooltipProvider>
   );
 }
