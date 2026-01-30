@@ -5,15 +5,16 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::entities::{
-    cylinder_to_placement, plane_to_placement, sphere_to_placement, write_advanced_face,
-    write_axis2_placement_3d, write_cartesian_point, write_closed_shell, write_conical_surface,
-    write_cylindrical_surface, write_direction, write_edge_curve, write_edge_loop,
-    write_face_bound, write_manifold_solid_brep, write_oriented_edge, write_plane,
-    write_spherical_surface, write_vertex_point, AxisPlacement,
+    cylinder_to_placement, plane_to_placement, sphere_to_placement, torus_to_placement,
+    write_advanced_face, write_axis2_placement_3d, write_cartesian_point, write_closed_shell,
+    write_conical_surface, write_cylindrical_surface, write_direction, write_edge_curve,
+    write_edge_loop, write_face_bound, write_manifold_solid_brep, write_oriented_edge,
+    write_plane, write_spherical_surface, write_toroidal_surface, write_vertex_point,
+    AxisPlacement,
 };
 use crate::error::StepError;
 
-use vcad_kernel_geom::{ConeSurface, CylinderSurface, Plane, SphereSurface, SurfaceKind};
+use vcad_kernel_geom::{ConeSurface, CylinderSurface, Plane, SphereSurface, SurfaceKind, TorusSurface};
 use vcad_kernel_math::{Dir3, Vec3};
 use vcad_kernel_primitives::BRepSolid;
 use vcad_kernel_topo::{EdgeId, FaceId, HalfEdgeId, LoopId, Orientation, VertexId};
@@ -184,6 +185,10 @@ impl<'a> StepWriter<'a> {
                         ref_direction: Some(cone.ref_dir),
                     }
                 }
+                SurfaceKind::Torus => {
+                    let torus = surface.as_any().downcast_ref::<TorusSurface>().unwrap();
+                    torus_to_placement(torus)
+                }
                 _ => {
                     // Unsupported surface type
                     AxisPlacement {
@@ -214,6 +219,10 @@ impl<'a> StepWriter<'a> {
                     // Since apex is at the placement location, radius is 0 there
                     // We need to compute radius at a reference distance
                     write_conical_surface(0.0, cone.half_angle, "", placement_id)
+                }
+                SurfaceKind::Torus => {
+                    let torus = surface.as_any().downcast_ref::<TorusSurface>().unwrap();
+                    write_toroidal_surface(torus.major_radius, torus.minor_radius, "", placement_id)
                 }
                 _ => {
                     // Unsupported surface type - write as plane placeholder

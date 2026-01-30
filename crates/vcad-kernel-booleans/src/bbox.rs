@@ -219,6 +219,69 @@ pub fn face_aabb(brep: &BRepSolid, face_id: FaceId) -> Aabb3 {
         vcad_kernel_geom::SurfaceKind::Bilinear => {
             // Bilinear surfaces: vertices are exact bounds (surface is defined by corners)
         }
+        vcad_kernel_geom::SurfaceKind::Torus => {
+            // For torus, compute tight bounds: center ± (R+r) in plane, center ± r along axis
+            if let Some(torus) = surface
+                .as_any()
+                .downcast_ref::<vcad_kernel_geom::TorusSurface>()
+            {
+                let center = torus.center;
+                let axis = torus.axis.into_inner();
+                let r_major = torus.major_radius;
+                let r_minor = torus.minor_radius;
+
+                // The torus extends (R+r) in any direction perpendicular to axis,
+                // and r along the axis direction.
+                // Build tight AABB by finding axis-aligned extents.
+
+                // For a torus centered at C with axis A:
+                // - Along A: extends from C - r*A to C + r*A
+                // - Perpendicular to A: extends R+r in all perpendicular directions
+
+                // The max extent in X, Y, Z depends on how the axis is oriented.
+                // For axis = (ax, ay, az), perpendicular extent factor for X is sqrt(1 - ax^2), etc.
+
+                let outer = r_major + r_minor;
+
+                // Compute extent in each axis direction
+                // Perpendicular extent in X = outer * sqrt(1 - ax^2) + r_minor * |ax|
+                let ax = axis.x;
+                let ay = axis.y;
+                let az = axis.z;
+
+                let extent_x = outer * (1.0 - ax * ax).sqrt() + r_minor * ax.abs();
+                let extent_y = outer * (1.0 - ay * ay).sqrt() + r_minor * ay.abs();
+                let extent_z = outer * (1.0 - az * az).sqrt() + r_minor * az.abs();
+
+                aabb = Aabb3::empty();
+                aabb.include_point(&Point3::new(
+                    center.x - extent_x,
+                    center.y - extent_y,
+                    center.z - extent_z,
+                ));
+                aabb.include_point(&Point3::new(
+                    center.x + extent_x,
+                    center.y + extent_y,
+                    center.z + extent_z,
+                ));
+            } else {
+                // Fallback: conservative expansion
+                let diag = ((aabb.max.x - aabb.min.x).powi(2)
+                    + (aabb.max.y - aabb.min.y).powi(2)
+                    + (aabb.max.z - aabb.min.z).powi(2))
+                .sqrt();
+                aabb.expand(diag * 0.5);
+            }
+        }
+        vcad_kernel_geom::SurfaceKind::BSpline => {
+            // For B-spline surfaces, use conservative expansion
+            // based on the vertex bounding box diagonal
+            let diag = ((aabb.max.x - aabb.min.x).powi(2)
+                + (aabb.max.y - aabb.min.y).powi(2)
+                + (aabb.max.z - aabb.min.z).powi(2))
+            .sqrt();
+            aabb.expand(diag * 0.5);
+        }
     }
 
     aabb

@@ -426,9 +426,7 @@ impl vcad_kernel_geom::Surface for BSplineSurface {
     }
 
     fn surface_type(&self) -> SurfaceKind {
-        // B-spline surfaces don't map to the analytic kinds.
-        // Use Plane as a fallback — the tessellation will use evaluate().
-        SurfaceKind::Plane
+        SurfaceKind::BSpline
     }
 
     fn clone_box(&self) -> Box<dyn vcad_kernel_geom::Surface> {
@@ -812,7 +810,7 @@ impl vcad_kernel_geom::Surface for NurbsSurface {
     }
 
     fn surface_type(&self) -> SurfaceKind {
-        SurfaceKind::Plane // fallback
+        SurfaceKind::BSpline
     }
 
     fn clone_box(&self) -> Box<dyn vcad_kernel_geom::Surface> {

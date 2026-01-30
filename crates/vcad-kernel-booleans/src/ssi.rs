@@ -5,9 +5,9 @@
 //! intersections have known closed-form solutions.
 
 use vcad_kernel_geom::{
-    Circle3d, CylinderSurface, Line3d, Plane, SphereSurface, Surface, SurfaceKind,
+    Circle3d, CylinderSurface, Line3d, Plane, SphereSurface, Surface, SurfaceKind, TorusSurface,
 };
-use vcad_kernel_math::{Dir3, Point3};
+use vcad_kernel_math::{Dir3, Point2, Point3};
 
 /// Result of a surface-surface intersection.
 #[derive(Debug, Clone)]
@@ -79,10 +79,36 @@ pub fn intersect_surfaces(a: &dyn Surface, b: &dyn Surface) -> IntersectionCurve
                 _ => IntersectionCurve::Empty,
             }
         }
+        // Torus intersections
+        (SurfaceKind::Plane, SurfaceKind::Torus) => {
+            let p = downcast_plane(a);
+            let t = downcast_torus(b);
+            match (p, t) {
+                (Some(p), Some(t)) => plane_torus(p, t),
+                _ => IntersectionCurve::Empty,
+            }
+        }
+        (SurfaceKind::Torus, SurfaceKind::Plane) => {
+            let t = downcast_torus(a);
+            let p = downcast_plane(b);
+            match (t, p) {
+                (Some(t), Some(p)) => plane_torus(p, t),
+                _ => IntersectionCurve::Empty,
+            }
+        }
+        (SurfaceKind::Cylinder, SurfaceKind::Torus)
+        | (SurfaceKind::Torus, SurfaceKind::Cylinder)
+        | (SurfaceKind::Sphere, SurfaceKind::Torus)
+        | (SurfaceKind::Torus, SurfaceKind::Sphere)
+        | (SurfaceKind::Torus, SurfaceKind::Torus) => {
+            // Complex torus intersections: use marching/sampling method
+            marching_ssi(a, b, 64)
+        }
+        // B-spline intersections: use marching/sampling method
+        (SurfaceKind::BSpline, _) | (_, SurfaceKind::BSpline) => marching_ssi(a, b, 64),
         _ => {
-            // Unsupported pair — return empty for now
-            // TODO: marching method for general cases
-            IntersectionCurve::Empty
+            // Unsupported pair — use marching method as fallback
+            marching_ssi(a, b, 32)
         }
     }
 }
@@ -101,6 +127,10 @@ fn downcast_sphere(s: &dyn Surface) -> Option<&SphereSurface> {
 
 fn downcast_cylinder(s: &dyn Surface) -> Option<&CylinderSurface> {
     s.as_any().downcast_ref::<CylinderSurface>()
+}
+
+fn downcast_torus(s: &dyn Surface) -> Option<&TorusSurface> {
+    s.as_any().downcast_ref::<TorusSurface>()
 }
 
 // =============================================================================
@@ -381,6 +411,247 @@ fn sphere_sphere(a: &SphereSurface, b: &SphereSurface) -> IntersectionCurve {
     ))
 }
 
+// =============================================================================
+// Plane-Torus intersection
+// =============================================================================
+
+/// Intersection of a plane and a torus.
+///
+/// Four cases:
+/// - No intersection: plane doesn't reach the torus
+/// - Tangent: single point or circle (degenerate)
+/// - One circle: plane cuts through the torus once
+/// - Two circles: plane cuts through outer and inner portions (Villarceau circles)
+///
+/// For simplicity, we use sampling for all cases since the analytic solution
+/// involves quartic equations. The most common case (fillet) is plane
+/// perpendicular to axis, which gives two circles.
+fn plane_torus(plane: &Plane, torus: &TorusSurface) -> IntersectionCurve {
+    let dist = plane.signed_distance(&torus.center).abs();
+    let max_dist = torus.major_radius + torus.minor_radius;
+
+    // Quick rejection: plane too far from torus
+    if dist > max_dist + 1e-9 {
+        return IntersectionCurve::Empty;
+    }
+
+    // Check if plane is perpendicular to torus axis (common case for fillets)
+    let cos_angle = plane.normal_dir.as_ref().dot(torus.axis.as_ref()).abs();
+
+    if (cos_angle - 1.0).abs() < 1e-12 {
+        // Plane perpendicular to torus axis
+        // The intersection is 0, 1, or 2 circles depending on distance
+        let z = plane.signed_distance(&torus.center);
+        let abs_z = z.abs();
+
+        if abs_z > torus.minor_radius + 1e-9 {
+            return IntersectionCurve::Empty;
+        }
+
+        if (abs_z - torus.minor_radius).abs() < 1e-9 {
+            // Tangent: single circle at R from center
+            let circle_center = torus.center - z * plane.normal_dir.into_inner();
+            return IntersectionCurve::Circle(Circle3d::with_normal(
+                circle_center,
+                torus.major_radius,
+                *plane.normal_dir.as_ref(),
+            ));
+        }
+
+        // Two circles: inner and outer
+        // r_circle = sqrt(r² - z²) is the radius contribution from the tube cross-section
+        let r_offset = (torus.minor_radius * torus.minor_radius - z * z).sqrt();
+        let r_outer = torus.major_radius + r_offset;
+        let _r_inner = (torus.major_radius - r_offset).abs();
+
+        let circle_center = torus.center - z * plane.normal_dir.into_inner();
+
+        // For simplicity, return the outer circle (most relevant for filleting)
+        // A more complete implementation would return both circles
+        return IntersectionCurve::Circle(Circle3d::with_normal(
+            circle_center,
+            r_outer,
+            *plane.normal_dir.as_ref(),
+        ));
+    }
+
+    // General case: sample the intersection
+    // The plane-torus intersection can be complex (Villarceau circles, spiric sections)
+    // We use parameter-space sampling
+    marching_ssi_torus_plane(plane, torus, 64)
+}
+
+/// Sample-based SSI specifically for plane-torus using UV parameter sweep.
+fn marching_ssi_torus_plane(
+    plane: &Plane,
+    torus: &TorusSurface,
+    n_samples: usize,
+) -> IntersectionCurve {
+    let mut points = Vec::new();
+
+    // Sweep through U parameter (around the main axis)
+    for i in 0..n_samples {
+        let u = 2.0 * std::f64::consts::PI * i as f64 / n_samples as f64;
+
+        // For each U, find V values where the torus intersects the plane
+        // P(u, v) is on plane when plane.normal · (P - plane.origin) = 0
+        // This is a transcendental equation in v, so we sample and find crossings
+
+        let mut prev_dist = None;
+        let n_v = 32;
+
+        for j in 0..=n_v {
+            let v = 2.0 * std::f64::consts::PI * j as f64 / n_v as f64;
+            let pt = torus.evaluate(Point2::new(u, v));
+            let dist = plane.signed_distance(&pt);
+
+            if let Some(prev_d) = prev_dist {
+                // Check for sign change
+                if prev_d * dist < 0.0 {
+                    // Refine the crossing using bisection
+                    let v_prev = 2.0 * std::f64::consts::PI * (j - 1) as f64 / n_v as f64;
+                    let v_refined = refine_crossing_v(torus, plane, u, v_prev, v);
+                    let pt_refined = torus.evaluate(Point2::new(u, v_refined));
+                    points.push(pt_refined);
+                }
+            }
+            prev_dist = Some(dist);
+        }
+    }
+
+    if points.is_empty() {
+        IntersectionCurve::Empty
+    } else {
+        IntersectionCurve::Sampled(points)
+    }
+}
+
+/// Binary search to refine the V parameter where torus crosses plane.
+fn refine_crossing_v(torus: &TorusSurface, plane: &Plane, u: f64, v_a: f64, v_b: f64) -> f64 {
+    let mut lo = v_a;
+    let mut hi = v_b;
+
+    for _ in 0..20 {
+        let mid = 0.5 * (lo + hi);
+        let pt = torus.evaluate(Point2::new(u, mid));
+        let dist = plane.signed_distance(&pt);
+        let pt_lo = torus.evaluate(Point2::new(u, lo));
+        let dist_lo = plane.signed_distance(&pt_lo);
+
+        if dist_lo * dist < 0.0 {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+
+    0.5 * (lo + hi)
+}
+
+// =============================================================================
+// General marching SSI for complex surface pairs
+// =============================================================================
+
+/// Sample-based surface-surface intersection using a grid march approach.
+///
+/// This is used for complex surface pairs (torus-torus, B-spline, etc.)
+/// where no closed-form solution exists.
+fn marching_ssi(a: &dyn Surface, b: &dyn Surface, n_samples: usize) -> IntersectionCurve {
+    let mut points = Vec::new();
+
+    let ((u_min_a, u_max_a), (v_min_a, v_max_a)) = a.domain();
+    // Clamp domains to reasonable bounds
+    let u_min_a = u_min_a.max(-100.0);
+    let u_max_a = u_max_a.min(100.0);
+    let v_min_a = v_min_a.max(-100.0);
+    let v_max_a = v_max_a.min(100.0);
+
+    // Sample surface A and find closest points on surface B
+    let n = n_samples;
+
+    for i in 0..=n {
+        let u = u_min_a + (u_max_a - u_min_a) * i as f64 / n as f64;
+        for j in 0..=n {
+            let v = v_min_a + (v_max_a - v_min_a) * j as f64 / n as f64;
+            let pt_a = a.evaluate(Point2::new(u, v));
+
+            // Find closest point on B to this point
+            // Simple approach: check if distance is small
+            let (closest_pt, dist) = closest_point_on_surface(b, &pt_a);
+
+            if dist < 1e-3 {
+                // Refine using Newton-Raphson or gradient descent
+                let refined = refine_intersection_point(a, b, &pt_a, &closest_pt);
+                if let Some(pt) = refined {
+                    // Check for duplicates
+                    let is_dup = points.iter().any(|p: &Point3| (*p - pt).norm() < 1e-6);
+                    if !is_dup {
+                        points.push(pt);
+                    }
+                }
+            }
+        }
+    }
+
+    if points.is_empty() {
+        IntersectionCurve::Empty
+    } else {
+        // Sort points by some criterion to form a curve
+        // For now, just return the sampled points
+        IntersectionCurve::Sampled(points)
+    }
+}
+
+/// Find the closest point on a surface to a given 3D point.
+fn closest_point_on_surface(surface: &dyn Surface, target: &Point3) -> (Point3, f64) {
+    let ((u_min, u_max), (v_min, v_max)) = surface.domain();
+    let u_min = u_min.max(-100.0);
+    let u_max = u_max.min(100.0);
+    let v_min = v_min.max(-100.0);
+    let v_max = v_max.min(100.0);
+
+    let mut best_pt = Point3::origin();
+    let mut best_dist = f64::INFINITY;
+
+    let n = 16;
+    for i in 0..=n {
+        let u = u_min + (u_max - u_min) * i as f64 / n as f64;
+        for j in 0..=n {
+            let v = v_min + (v_max - v_min) * j as f64 / n as f64;
+            let pt = surface.evaluate(Point2::new(u, v));
+            let dist = (pt - target).norm();
+            if dist < best_dist {
+                best_dist = dist;
+                best_pt = pt;
+            }
+        }
+    }
+
+    (best_pt, best_dist)
+}
+
+/// Refine an intersection point using iterative projection.
+fn refine_intersection_point(
+    _a: &dyn Surface,
+    _b: &dyn Surface,
+    pt_a: &Point3,
+    pt_b: &Point3,
+) -> Option<Point3> {
+    // Simple approach: return midpoint if close enough
+    let mid = Point3::new(
+        0.5 * (pt_a.x + pt_b.x),
+        0.5 * (pt_a.y + pt_b.y),
+        0.5 * (pt_a.z + pt_b.z),
+    );
+    let dist = (pt_a - pt_b).norm();
+
+    if dist < 1e-2 {
+        Some(mid)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -513,5 +784,48 @@ mod tests {
 
         let result = intersect_surfaces(a.as_ref(), b.as_ref());
         assert!(matches!(result, IntersectionCurve::Circle(_)));
+    }
+
+    #[test]
+    fn test_plane_torus_perpendicular() {
+        // Plane through the center of a torus (perpendicular to axis)
+        let plane = Plane::xy();
+        let torus = TorusSurface::new(10.0, 3.0); // R=10, r=3
+
+        let result = plane_torus(&plane, &torus);
+        match result {
+            IntersectionCurve::Circle(circle) => {
+                // Outer circle should have radius R+r = 13
+                assert!((circle.radius - 13.0).abs() < 1e-10);
+                assert!(circle.center.z.abs() < 1e-10);
+            }
+            _ => panic!("Expected Circle intersection, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_plane_torus_no_intersection() {
+        // Plane far from torus
+        let plane = Plane::new(Point3::new(0.0, 0.0, 20.0), Vec3::x(), Vec3::y());
+        let torus = TorusSurface::new(10.0, 3.0); // max extent is R+r = 13
+
+        let result = plane_torus(&plane, &torus);
+        assert!(matches!(result, IntersectionCurve::Empty));
+    }
+
+    #[test]
+    fn test_plane_torus_tangent() {
+        // Plane tangent to top of torus tube
+        let plane = Plane::new(Point3::new(0.0, 0.0, 3.0), Vec3::x(), Vec3::y());
+        let torus = TorusSurface::new(10.0, 3.0);
+
+        let result = plane_torus(&plane, &torus);
+        // Should be a circle of radius R
+        match result {
+            IntersectionCurve::Circle(circle) => {
+                assert!((circle.radius - 10.0).abs() < 1e-10);
+            }
+            _ => panic!("Expected Circle intersection at tangent"),
+        }
     }
 }

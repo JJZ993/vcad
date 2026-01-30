@@ -25,6 +25,10 @@ pub enum SurfaceKind {
     Cone,
     /// Spherical surface.
     Sphere,
+    /// Toroidal surface.
+    Torus,
+    /// B-spline or NURBS surface.
+    BSpline,
     /// Bilinear patch (4-corner interpolation).
     Bilinear,
 }
@@ -534,6 +538,147 @@ impl Surface for SphereSurface {
             radius: self.radius * scale,
             ref_dir: Dir3::new_normalize(new_ref),
             axis: Dir3::new_normalize(new_axis),
+        })
+    }
+}
+
+// =============================================================================
+// Torus
+// =============================================================================
+
+/// A toroidal surface defined by center, axis, and two radii.
+///
+/// Parameterization:
+/// ```text
+/// P(u, v) = center + (R + r·cos(v))·(cos(u)·ref_dir + sin(u)·y_dir) + r·sin(v)·axis
+/// ```
+///
+/// Where:
+/// - `R` = major radius (center to tube center)
+/// - `r` = minor radius (tube radius)
+/// - `u ∈ [0, 2π)` is the toroidal angle (around the main axis)
+/// - `v ∈ [0, 2π)` is the poloidal angle (around the tube)
+#[derive(Debug, Clone)]
+pub struct TorusSurface {
+    /// Center of the torus.
+    pub center: Point3,
+    /// Unit direction of the torus axis (perpendicular to the plane of the ring).
+    pub axis: Dir3,
+    /// Reference direction for u=0 (perpendicular to axis).
+    pub ref_dir: Dir3,
+    /// Major radius: distance from center to tube center.
+    pub major_radius: f64,
+    /// Minor radius: radius of the tube.
+    pub minor_radius: f64,
+}
+
+impl TorusSurface {
+    /// Create a torus centered at origin with axis along Z.
+    pub fn new(major_radius: f64, minor_radius: f64) -> Self {
+        Self {
+            center: Point3::origin(),
+            axis: Dir3::new_normalize(Vec3::z()),
+            ref_dir: Dir3::new_normalize(Vec3::x()),
+            major_radius,
+            minor_radius,
+        }
+    }
+
+    /// Create a torus with a custom center and axis.
+    pub fn with_axis(center: Point3, axis: Vec3, major_radius: f64, minor_radius: f64) -> Self {
+        let a = Dir3::new_normalize(axis);
+        let arbitrary = if a.as_ref().x.abs() < 0.9 {
+            Vec3::x()
+        } else {
+            Vec3::y()
+        };
+        let ref_dir = Dir3::new_normalize(arbitrary - arbitrary.dot(a.as_ref()) * a.as_ref());
+        Self {
+            center,
+            axis: a,
+            ref_dir,
+            major_radius,
+            minor_radius,
+        }
+    }
+
+    fn y_dir(&self) -> Vec3 {
+        self.axis.as_ref().cross(self.ref_dir.as_ref())
+    }
+}
+
+impl Surface for TorusSurface {
+    fn evaluate(&self, uv: Point2) -> Point3 {
+        let (sin_u, cos_u) = uv.x.sin_cos();
+        let (sin_v, cos_v) = uv.y.sin_cos();
+
+        // Point on the tube centerline (at angle u around the main axis)
+        let tube_center_dir = cos_u * self.ref_dir.as_ref() + sin_u * self.y_dir();
+
+        self.center
+            + (self.major_radius + self.minor_radius * cos_v) * tube_center_dir
+            + self.minor_radius * sin_v * self.axis.as_ref()
+    }
+
+    fn normal(&self, uv: Point2) -> Dir3 {
+        let (sin_u, cos_u) = uv.x.sin_cos();
+        let (sin_v, cos_v) = uv.y.sin_cos();
+
+        let tube_center_dir = cos_u * self.ref_dir.as_ref() + sin_u * self.y_dir();
+
+        // Normal points outward from the tube center
+        let n = cos_v * tube_center_dir + sin_v * self.axis.as_ref();
+        Dir3::new_normalize(n)
+    }
+
+    fn d_du(&self, uv: Point2) -> Vec3 {
+        let (sin_u, cos_u) = uv.x.sin_cos();
+        let cos_v = uv.y.cos();
+
+        // d/du of tube_center_dir = -sin_u * ref_dir + cos_u * y_dir
+        let d_tube_center_dir = -sin_u * self.ref_dir.as_ref() + cos_u * self.y_dir();
+
+        (self.major_radius + self.minor_radius * cos_v) * d_tube_center_dir
+    }
+
+    fn d_dv(&self, uv: Point2) -> Vec3 {
+        let (sin_u, cos_u) = uv.x.sin_cos();
+        let (sin_v, cos_v) = uv.y.sin_cos();
+
+        let tube_center_dir = cos_u * self.ref_dir.as_ref() + sin_u * self.y_dir();
+
+        // d/dv: -r·sin(v)·tube_center_dir + r·cos(v)·axis
+        -self.minor_radius * sin_v * tube_center_dir + self.minor_radius * cos_v * self.axis.as_ref()
+    }
+
+    fn domain(&self) -> ((f64, f64), (f64, f64)) {
+        ((0.0, 2.0 * PI), (0.0, 2.0 * PI))
+    }
+
+    fn surface_type(&self) -> SurfaceKind {
+        SurfaceKind::Torus
+    }
+
+    fn clone_box(&self) -> Box<dyn Surface> {
+        Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn transform(&self, t: &Transform) -> Box<dyn Surface> {
+        let new_center = t.apply_point(&self.center);
+        let new_axis = t.apply_vec(self.axis.as_ref());
+        let new_ref = t.apply_vec(self.ref_dir.as_ref());
+        // Scale factor affects radii — use the length of the transformed ref_dir
+        let scale = new_ref.norm();
+        Box::new(TorusSurface {
+            center: new_center,
+            axis: Dir3::new_normalize(new_axis),
+            ref_dir: Dir3::new_normalize(new_ref),
+            major_radius: self.major_radius * scale,
+            minor_radius: self.minor_radius * scale,
         })
     }
 }
@@ -1122,5 +1267,83 @@ mod tests {
         let mut store = GeometryStore::new();
         let idx = store.add_surface(Box::new(Plane::xy()));
         assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn test_torus_evaluate() {
+        let torus = TorusSurface::new(10.0, 3.0); // R=10, r=3
+        // u=0, v=0: outer equator, at (R+r, 0, 0) = (13, 0, 0)
+        let pt = torus.evaluate(Point2::new(0.0, 0.0));
+        assert!((pt.x - 13.0).abs() < 1e-10);
+        assert!(pt.y.abs() < 1e-10);
+        assert!(pt.z.abs() < 1e-10);
+
+        // u=0, v=π: inner equator, at (R-r, 0, 0) = (7, 0, 0)
+        let pt_inner = torus.evaluate(Point2::new(0.0, PI));
+        assert!((pt_inner.x - 7.0).abs() < 1e-10);
+        assert!(pt_inner.y.abs() < 1e-10);
+        assert!(pt_inner.z.abs() < 1e-10);
+
+        // u=π/2, v=0: at (0, R+r, 0) = (0, 13, 0)
+        let pt_y = torus.evaluate(Point2::new(PI / 2.0, 0.0));
+        assert!(pt_y.x.abs() < 1e-10);
+        assert!((pt_y.y - 13.0).abs() < 1e-10);
+        assert!(pt_y.z.abs() < 1e-10);
+
+        // u=0, v=π/2: top of tube, at (R, 0, r) = (10, 0, 3)
+        let pt_top = torus.evaluate(Point2::new(0.0, PI / 2.0));
+        assert!((pt_top.x - 10.0).abs() < 1e-10);
+        assert!(pt_top.y.abs() < 1e-10);
+        assert!((pt_top.z - 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_torus_normal() {
+        let torus = TorusSurface::new(10.0, 3.0);
+        // At u=0, v=0 (outer equator), normal should point in +x direction
+        let n = torus.normal(Point2::new(0.0, 0.0));
+        assert!((n.as_ref().x - 1.0).abs() < 1e-10);
+        assert!(n.as_ref().y.abs() < 1e-10);
+        assert!(n.as_ref().z.abs() < 1e-10);
+
+        // At u=0, v=π/2 (top of tube at x-axis), normal should point in +z
+        let n_top = torus.normal(Point2::new(0.0, PI / 2.0));
+        assert!(n_top.as_ref().x.abs() < 1e-10);
+        assert!(n_top.as_ref().y.abs() < 1e-10);
+        assert!((n_top.as_ref().z - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_torus_transform() {
+        let torus = TorusSurface::new(10.0, 3.0);
+        let t = Transform::translation(100.0, 0.0, 0.0);
+        let torus2 = torus.transform(&t);
+        let pt = torus2.evaluate(Point2::new(0.0, 0.0));
+        assert!((pt.x - 113.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_torus_partials() {
+        let torus = TorusSurface::new(10.0, 3.0);
+        // Verify partials by finite difference
+        let uv = Point2::new(0.5, 0.3);
+        let eps = 1e-7;
+
+        let p0 = torus.evaluate(uv);
+        let pu = torus.evaluate(Point2::new(uv.x + eps, uv.y));
+        let pv = torus.evaluate(Point2::new(uv.x, uv.y + eps));
+
+        let d_du_fd = (pu - p0) / eps;
+        let d_dv_fd = (pv - p0) / eps;
+
+        let d_du = torus.d_du(uv);
+        let d_dv = torus.d_dv(uv);
+
+        assert!((d_du.x - d_du_fd.x).abs() < 1e-4);
+        assert!((d_du.y - d_du_fd.y).abs() < 1e-4);
+        assert!((d_du.z - d_du_fd.z).abs() < 1e-4);
+        assert!((d_dv.x - d_dv_fd.x).abs() < 1e-4);
+        assert!((d_dv.y - d_dv_fd.y).abs() < 1e-4);
+        assert!((d_dv.z - d_dv_fd.z).abs() < 1e-4);
     }
 }

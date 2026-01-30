@@ -338,6 +338,52 @@ pub fn project_point_to_uv(surface: &dyn Surface, point: &Point3) -> Point2 {
             }
         }
         SurfaceKind::Cone => approx_project_to_uv(surface, point),
+        SurfaceKind::Torus => {
+            if let Some(torus) = surface
+                .as_any()
+                .downcast_ref::<vcad_kernel_geom::TorusSurface>()
+            {
+                // Torus parameterization:
+                // P(u,v) = center + (R + r·cos(v))·(cos(u)·ref_dir + sin(u)·y_dir) + r·sin(v)·axis
+                //
+                // To find u: project point onto the center plane and compute angle
+                // To find v: find angle around the tube cross-section
+
+                let d = point - torus.center;
+                let ref_dir = torus.ref_dir.as_ref();
+                let y_dir = torus.axis.as_ref().cross(ref_dir);
+
+                // Project d onto the center plane (remove axis component)
+                let d_axis = d.dot(torus.axis.as_ref());
+                let d_plane = d - d_axis * torus.axis.into_inner();
+                let d_plane_len = d_plane.norm();
+
+                // u = angle in the center plane
+                let u = if d_plane_len < 1e-12 {
+                    0.0 // degenerate case: point on axis
+                } else {
+                    let d_plane_norm = d_plane / d_plane_len;
+                    let u = d_plane_norm.dot(&y_dir).atan2(d_plane_norm.dot(ref_dir));
+                    if u < 0.0 {
+                        u + 2.0 * std::f64::consts::PI
+                    } else {
+                        u
+                    }
+                };
+
+                // v = angle around the tube cross-section
+                // The tube center at this u is at distance R from center
+                let tube_center_dist = torus.major_radius;
+                let radial_dist = d_plane_len - tube_center_dist; // distance from tube center in radial direction
+                let axial_dist = d_axis; // distance from tube center in axis direction
+
+                let v = axial_dist.atan2(radial_dist);
+
+                Point2::new(u, v)
+            } else {
+                approx_project_to_uv(surface, point)
+            }
+        }
         _ => approx_project_to_uv(surface, point),
     }
 }

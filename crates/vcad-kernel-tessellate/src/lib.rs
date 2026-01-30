@@ -124,6 +124,8 @@ fn tessellate_face(
         SurfaceKind::Sphere => tessellate_spherical_face(topo, geom, face_id, params, reversed),
         SurfaceKind::Cone => tessellate_conical_face(topo, geom, face_id, params, reversed),
         SurfaceKind::Bilinear => tessellate_bilinear_face(topo, geom, face_id, params, reversed),
+        SurfaceKind::Torus => tessellate_toroidal_face(topo, geom, face_id, params, reversed),
+        SurfaceKind::BSpline => tessellate_bspline_face(topo, geom, face_id, params, reversed),
     }
 }
 
@@ -1662,6 +1664,125 @@ fn tessellate_cone_direct(
                     mesh.indices.extend_from_slice(&[bl, br, tl]);
                     mesh.indices.extend_from_slice(&[br, tr, tl]);
                 }
+            }
+        }
+    }
+
+    mesh
+}
+
+/// Tessellate a toroidal face.
+///
+/// Uses UV grid sampling similar to sphere tessellation.
+fn tessellate_toroidal_face(
+    topo: &Topology,
+    geom: &GeometryStore,
+    face_id: FaceId,
+    params: &TessellationParams,
+    reversed: bool,
+) -> TriangleMesh {
+    let face = &topo.faces[face_id];
+    let surface = &geom.surfaces[face.surface_index];
+    let n_u = params.circle_segments as usize;
+    let n_v = params.circle_segments as usize;
+
+    let mut mesh = TriangleMesh::new();
+
+    // Get UV domain
+    let ((u_min, u_max), (v_min, v_max)) = surface.domain();
+
+    // Generate grid of vertices
+    for j in 0..=n_v {
+        let v = v_min + (v_max - v_min) * (j as f64 / n_v as f64);
+        for i in 0..=n_u {
+            let u = u_min + (u_max - u_min) * (i as f64 / n_u as f64);
+            let uv = Point2::new(u, v);
+            let pt = surface.evaluate(uv);
+            mesh.vertices.push(pt.x as f32);
+            mesh.vertices.push(pt.y as f32);
+            mesh.vertices.push(pt.z as f32);
+        }
+    }
+
+    // Generate triangles
+    let stride = (n_u + 1) as u32;
+    for j in 0..n_v {
+        for i in 0..n_u {
+            let bl = j as u32 * stride + i as u32;
+            let br = bl + 1;
+            let tl = bl + stride;
+            let tr = tl + 1;
+
+            if reversed {
+                mesh.indices.extend_from_slice(&[bl, tl, br, br, tl, tr]);
+            } else {
+                mesh.indices.extend_from_slice(&[bl, br, tl, br, tr, tl]);
+            }
+        }
+    }
+
+    mesh
+}
+
+/// Tessellate a B-spline or NURBS face.
+///
+/// Uses adaptive UV grid sampling.
+fn tessellate_bspline_face(
+    topo: &Topology,
+    geom: &GeometryStore,
+    face_id: FaceId,
+    params: &TessellationParams,
+    reversed: bool,
+) -> TriangleMesh {
+    let face = &topo.faces[face_id];
+    let surface = &geom.surfaces[face.surface_index];
+
+    // Use higher resolution for B-splines since they can be complex
+    let n_u = (params.circle_segments * 2).max(16) as usize;
+    let n_v = (params.circle_segments * 2).max(16) as usize;
+
+    let mut mesh = TriangleMesh::new();
+
+    // Get UV domain
+    let ((u_min, u_max), (v_min, v_max)) = surface.domain();
+
+    // Generate grid of vertices with normals
+    for j in 0..=n_v {
+        let v = v_min + (v_max - v_min) * (j as f64 / n_v as f64);
+        for i in 0..=n_u {
+            let u = u_min + (u_max - u_min) * (i as f64 / n_u as f64);
+            let uv = Point2::new(u, v);
+            let pt = surface.evaluate(uv);
+            let normal = surface.normal(uv);
+
+            mesh.vertices.push(pt.x as f32);
+            mesh.vertices.push(pt.y as f32);
+            mesh.vertices.push(pt.z as f32);
+
+            let (nx, ny, nz) = if reversed {
+                (-normal.x as f32, -normal.y as f32, -normal.z as f32)
+            } else {
+                (normal.x as f32, normal.y as f32, normal.z as f32)
+            };
+            mesh.normals.push(nx);
+            mesh.normals.push(ny);
+            mesh.normals.push(nz);
+        }
+    }
+
+    // Generate triangles
+    let stride = (n_u + 1) as u32;
+    for j in 0..n_v {
+        for i in 0..n_u {
+            let bl = j as u32 * stride + i as u32;
+            let br = bl + 1;
+            let tl = bl + stride;
+            let tr = tl + 1;
+
+            if reversed {
+                mesh.indices.extend_from_slice(&[bl, tl, br, br, tl, tr]);
+            } else {
+                mesh.indices.extend_from_slice(&[bl, br, tl, br, tr, tl]);
             }
         }
     }
