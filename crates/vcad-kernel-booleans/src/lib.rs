@@ -1933,6 +1933,7 @@ mod tests {
         use std::collections::HashMap;
         let mut splits_a: HashMap<vcad_kernel_topo::FaceId, Vec<ssi::IntersectionCurve>> =
             HashMap::new();
+        #[allow(unused_mut)]
         let mut splits_b: HashMap<vcad_kernel_topo::FaceId, Vec<ssi::IntersectionCurve>> =
             HashMap::new();
 
@@ -2437,38 +2438,346 @@ mod tests {
             bbox.0[0], bbox.0[1], bbox.0[2], bbox.1[0], bbox.1[1], bbox.1[2]
         );
 
-        // Known limitation: When the circle center is on the polygon boundary (corner),
-        // the current implementation doesn't properly handle the arc/partial circle case.
-        // This results in cylinder parts extending beyond the cube being included.
-        //
-        // The BBox extends to (-10, -10) because the cylinder caps aren't being split
-        // at the cube boundary planes (x=0, y=0). This requires implementing proper
-        // circular face splitting by lines, which is complex.
-        //
-        // TODO: Fix this by either:
-        // 1. Implementing proper arc support for circle-polygon intersection
-        // 2. Using a mesh-based fallback for edge cases
-        // 3. Improving the circular face representation in BRep
+        // This test verifies that when a cylinder is centered at the cube corner:
+        // 1. The cylinder lateral face is split into 4 quadrants
+        // 2. Only the quarter inside the cube is kept
+        // 3. The cylinder caps are split and only the quarter inside is kept
+        // 4. The resulting BBox stays within the cube bounds
 
-        // For now, check that we get reasonable results (volume within 50%)
-        // and that the geometry is topologically valid (triangles > 0)
+        // Check that we get reasonable results
         assert!(
             mesh.num_triangles() > 0,
             "Result should have triangles"
         );
+
+        // Volume should be within 10% of expected (tessellation approximation)
         assert!(
-            volume > expected_volume * 0.5 && volume < expected_volume * 1.5,
-            "Expected volume ~{:.0}, got {:.0} (allowing wider tolerance due to edge case)",
+            volume > expected_volume * 0.9 && volume < expected_volume * 1.1,
+            "Expected volume ~{:.0}, got {:.0} (within 10% tolerance)",
             expected_volume,
             volume
         );
 
-        // Log the known issue for future reference
-        if bbox.0[0] < -0.1 || bbox.0[1] < -0.1 {
-            eprintln!(
-                "KNOWN ISSUE: BBox extends beyond cube due to unsplit cylinder parts: {:?}",
-                bbox.0
-            );
+        // BBox should be within cube bounds (0,0,0) to (20,20,20)
+        // Allow small tolerance for floating point
+        assert!(
+            bbox.0[0] >= -0.1 && bbox.0[1] >= -0.1 && bbox.0[2] >= -0.1,
+            "BBox min should be >= 0, got {:?}",
+            bbox.0
+        );
+        assert!(
+            bbox.1[0] <= 20.1 && bbox.1[1] <= 20.1 && bbox.1[2] <= 20.1,
+            "BBox max should be <= 20, got {:?}",
+            bbox.1
+        );
+    }
+
+    #[test]
+    fn test_debug_circular_disk_split() {
+        use vcad_kernel_primitives::make_cylinder;
+        use vcad_kernel_geom::Line3d;
+        use vcad_kernel_math::{Point3, Vec3};
+
+        let cyl = make_cylinder(10.0, 20.0, 32);
+
+        println!("\n=== Debug Circular Disk Split ===");
+        println!("Cylinder faces:");
+        for (fid, face) in &cyl.topology.faces {
+            let surf = &cyl.geometry.surfaces[face.surface_index];
+            let is_disk = split::is_circular_disk_face(&cyl, fid);
+            let loop_hes: Vec<_> = cyl.topology.loop_half_edges(face.outer_loop).collect();
+            println!("  {:?}: {:?}, is_disk={}, loop_hes_len={}", fid, surf.surface_type(), is_disk, loop_hes.len());
+        }
+
+        // Find a bottom cap (should be a disk face at z=0)
+        let bottom_cap = cyl.topology.faces.iter()
+            .filter(|(fid, _)| split::is_circular_disk_face(&cyl, *fid))
+            .find(|(fid, _)| {
+                let face = &cyl.topology.faces[*fid];
+                let loop_hes: Vec<_> = cyl.topology.loop_half_edges(face.outer_loop).collect();
+                if !loop_hes.is_empty() {
+                    let v_id = cyl.topology.half_edges[loop_hes[0]].origin;
+                    let v_pt = cyl.topology.vertices[v_id].point;
+                    v_pt.z.abs() < 1.0 // z=0
+                } else {
+                    false
+                }
+            })
+            .map(|(fid, _)| fid);
+
+        if let Some(bottom_cap) = bottom_cap {
+            println!("\nBottom cap: {:?}", bottom_cap);
+
+            // Get disk params
+            let params = split::get_disk_circle_params(&cyl, bottom_cap);
+            println!("Disk params: {:?}", params);
+
+            // Test line at y=0 crossing the disk
+            let line = Line3d {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vec3::new(1.0, 0.0, 0.0),
+            };
+            println!("\nTest line: origin=(0,0,0), dir=(1,0,0)");
+
+            // Trim
+            let segs = trim::trim_curve_to_face(&ssi::IntersectionCurve::Line(line.clone()), bottom_cap, &cyl, 64);
+            println!("Trim segments: {} segments", segs.len());
+            for (i, seg) in segs.iter().enumerate() {
+                let p_start = line.origin + seg.t_start * line.direction;
+                let p_end = line.origin + seg.t_end * line.direction;
+                println!("  Seg {}: t=[{:.2}, {:.2}], pts=({:.1},{:.1},{:.1}) to ({:.1},{:.1},{:.1})",
+                    i, seg.t_start, seg.t_end, p_start.x, p_start.y, p_start.z, p_end.x, p_end.y, p_end.z);
+            }
+
+            // Split
+            let mut cyl_mut = cyl.clone();
+            let result = split::split_circular_face_by_line(&mut cyl_mut, bottom_cap, &line, 32);
+            println!("\nSplit result: {} sub-faces", result.sub_faces.len());
+        } else {
+            println!("No bottom cap found!");
+        }
+    }
+
+    #[test]
+    fn test_debug_two_line_disk_split() {
+        use vcad_kernel_primitives::make_cylinder;
+        use vcad_kernel_geom::Line3d;
+        use vcad_kernel_math::{Point3, Vec3};
+
+        let mut cyl = make_cylinder(10.0, 20.0, 32);
+
+        // Find the bottom cap
+        let bottom_cap = cyl.topology.faces.iter()
+            .filter(|(fid, _)| split::is_circular_disk_face(&cyl, *fid))
+            .find(|(fid, _)| {
+                let face = &cyl.topology.faces[*fid];
+                let loop_hes: Vec<_> = cyl.topology.loop_half_edges(face.outer_loop).collect();
+                if !loop_hes.is_empty() {
+                    let v_id = cyl.topology.half_edges[loop_hes[0]].origin;
+                    let v_pt = cyl.topology.vertices[v_id].point;
+                    v_pt.z.abs() < 1.0
+                } else {
+                    false
+                }
+            })
+            .map(|(fid, _)| fid)
+            .unwrap();
+
+        println!("\n=== Two-Line Disk Split Test ===");
+        println!("Original face: {:?}", bottom_cap);
+
+        // First line at x=0 (splitting left-right)
+        let line1 = Line3d {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vec3::new(0.0, 1.0, 0.0),
+        };
+
+        // Second line at y=0 (splitting top-bottom)
+        let line2 = Line3d {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vec3::new(1.0, 0.0, 0.0),
+        };
+
+        println!("\nStep 1: Split by line1 (y-axis)");
+        let result1 = split::split_circular_face_by_line(&mut cyl, bottom_cap, &line1, 32);
+        println!("  Result: {} sub-faces: {:?}", result1.sub_faces.len(), result1.sub_faces);
+
+        for &fid in &result1.sub_faces {
+            if cyl.topology.faces.contains_key(fid) {
+                let face = &cyl.topology.faces[fid];
+                let loop_hes: Vec<_> = cyl.topology.loop_half_edges(face.outer_loop).collect();
+                let is_disk = split::is_circular_disk_face(&cyl, fid);
+                let is_planar = split::is_planar_face(&cyl, fid);
+                println!("    {:?}: {} half-edges, is_disk={}, is_planar={}", fid, loop_hes.len(), is_disk, is_planar);
+            }
+        }
+
+        println!("\nStep 2: Split each sub-face by line2 (x-axis)");
+        let mut final_faces = Vec::new();
+        for &fid in &result1.sub_faces {
+            if !cyl.topology.faces.contains_key(fid) {
+                println!("  {:?}: REMOVED (shouldn't happen)", fid);
+                continue;
+            }
+
+            let is_disk = split::is_circular_disk_face(&cyl, fid);
+            let is_planar = split::is_planar_face(&cyl, fid);
+            println!("  Splitting {:?} (is_disk={}, is_planar={})...", fid, is_disk, is_planar);
+
+            // Try trim first
+            let curve = ssi::IntersectionCurve::Line(line2.clone());
+            let segs = trim::trim_curve_to_face(&curve, fid, &cyl, 64);
+            println!("    trim: {} segments", segs.len());
+            for seg in &segs {
+                let entry = evaluate_curve(&curve, seg.t_start);
+                let exit = evaluate_curve(&curve, seg.t_end);
+                println!("      entry=({:.2},{:.2},{:.2}), exit=({:.2},{:.2},{:.2}), dist={:.2}",
+                    entry.x, entry.y, entry.z, exit.x, exit.y, exit.z, (exit-entry).norm());
+            }
+
+            // Now split
+            if is_disk {
+                let result = split::split_circular_face_by_line(&mut cyl, fid, &line2, 32);
+                println!("    circular split: {} sub-faces", result.sub_faces.len());
+                final_faces.extend(result.sub_faces);
+            } else {
+                // Use general planar split
+                let result = split::split_planar_face(
+                    &mut cyl, fid, &curve, &Point3::origin(), &Point3::origin(), 32);
+                println!("    planar split: {} sub-faces", result.sub_faces.len());
+                final_faces.extend(result.sub_faces);
+            }
+        }
+
+        println!("\nFinal result: {} faces", final_faces.len());
+        for &fid in &final_faces {
+            if cyl.topology.faces.contains_key(fid) {
+                let face = &cyl.topology.faces[fid];
+                let loop_hes: Vec<_> = cyl.topology.loop_half_edges(face.outer_loop).collect();
+                println!("  {:?}: {} half-edges", fid, loop_hes.len());
+            } else {
+                println!("  {:?}: REMOVED", fid);
+            }
+        }
+
+        // Should have 4 quarter-disk faces
+        assert!(final_faces.len() >= 4, "Expected 4 quarter-disk faces, got {}", final_faces.len());
+    }
+
+    #[test]
+    fn test_debug_full_boolean_pipeline() {
+        use vcad_kernel_primitives::{make_cube, make_cylinder};
+
+        println!("\n=== Debug Full Boolean Pipeline ===");
+
+        let cube = make_cube(20.0, 20.0, 20.0);
+        let cyl = make_cylinder(10.0, 20.0, 32);
+
+        // Run the boolean operation with debug output
+        let result = boolean_op(&cube, &cyl, BooleanOp::Difference, 32);
+
+        // Get the BRep result
+        if let BooleanResult::BRep(ref brep) = result {
+            println!("\nResult BRep:");
+            println!("  Faces: {}", brep.topology.faces.len());
+
+            // Check each face's bounding box
+            for (fid, _face) in &brep.topology.faces {
+                let aabb = bbox::face_aabb(brep, fid);
+                let sample = classify::face_sample_point(brep, fid);
+                println!("  {:?}: bbox=[({:.1},{:.1},{:.1}) to ({:.1},{:.1},{:.1})], sample=({:.1},{:.1},{:.1})",
+                    fid,
+                    aabb.min.x, aabb.min.y, aabb.min.z,
+                    aabb.max.x, aabb.max.y, aabb.max.z,
+                    sample.x, sample.y, sample.z);
+
+                // Flag faces that extend outside the cube
+                if aabb.min.x < -0.1 || aabb.min.y < -0.1 {
+                    println!("    ^ WARNING: extends outside cube bounds!");
+                }
+            }
+        }
+
+        // Check the mesh
+        let mesh = result.to_mesh(32);
+        let bbox = compute_mesh_bbox(&mesh);
+        let volume = compute_mesh_volume(&mesh);
+
+        println!("\nMesh:");
+        println!("  BBox: ({:.1},{:.1},{:.1}) to ({:.1},{:.1},{:.1})",
+            bbox.0[0], bbox.0[1], bbox.0[2], bbox.1[0], bbox.1[1], bbox.1[2]);
+        println!("  Volume: {:.1}", volume);
+
+        let expected_volume = 8000.0 - std::f64::consts::PI * 100.0 * 20.0 / 4.0;
+        println!("  Expected: {:.1}", expected_volume);
+    }
+
+    #[test]
+    fn test_debug_boolean_splits() {
+        use vcad_kernel_primitives::{make_cube, make_cylinder};
+        use std::collections::HashMap;
+
+        println!("\n=== Debug Boolean Splits ===");
+
+        // Cube: 20x20x20 at origin
+        let cube = make_cube(20.0, 20.0, 20.0);
+        // Cylinder: radius 10, height 20, centered at origin
+        let cyl = make_cylinder(10.0, 20.0, 32);
+
+        // Find candidate face pairs
+        let pairs = bbox::find_candidate_face_pairs(&cube, &cyl);
+
+        // Collect split data (simulating the boolean pipeline)
+        // Only splits_b is used in this test, but we keep the structure for consistency
+        let mut splits_b: HashMap<vcad_kernel_topo::FaceId, Vec<(ssi::IntersectionCurve, Point3, Point3)>> = HashMap::new();
+
+        println!("\nProcessing face pairs...");
+        for (face_a, face_b) in &pairs {
+            let face_data_a = &cube.topology.faces[*face_a];
+            let face_data_b = &cyl.topology.faces[*face_b];
+            let surf_a = &cube.geometry.surfaces[face_data_a.surface_index];
+            let surf_b = &cyl.geometry.surfaces[face_data_b.surface_index];
+
+            let curve = ssi::intersect_surfaces(surf_a.as_ref(), surf_b.as_ref());
+
+            if matches!(curve, ssi::IntersectionCurve::Empty) {
+                continue;
+            }
+
+            println!("\n  {:?}({:?}) x {:?}({:?}): {:?}",
+                face_a, surf_a.surface_type(),
+                face_b, surf_b.surface_type(),
+                match &curve {
+                    ssi::IntersectionCurve::Line(l) => format!("Line at ({:.1},{:.1},{:.1})", l.origin.x, l.origin.y, l.origin.z),
+                    ssi::IntersectionCurve::Circle(c) => format!("Circle at ({:.1},{:.1},{:.1}) r={:.1}", c.center.x, c.center.y, c.center.z, c.radius),
+                    ssi::IntersectionCurve::TwoLines(l1, l2) => format!("TwoLines: ({:.1},{:.1},{:.1}) and ({:.1},{:.1},{:.1})",
+                        l1.origin.x, l1.origin.y, l1.origin.z, l2.origin.x, l2.origin.y, l2.origin.z),
+                    _ => format!("{:?}", curve),
+                });
+
+            // Check if B face is a circular disk
+            let is_b_disk = split::is_circular_disk_face(&cyl, *face_b);
+            println!("    face_b is_circular_disk: {}", is_b_disk);
+
+            // Expand TwoLines
+            let curves_to_process: Vec<ssi::IntersectionCurve> = match &curve {
+                ssi::IntersectionCurve::TwoLines(line1, line2) => {
+                    vec![
+                        ssi::IntersectionCurve::Line(line1.clone()),
+                        ssi::IntersectionCurve::Line(line2.clone()),
+                    ]
+                }
+                _ => vec![curve.clone()],
+            };
+
+            for single_curve in &curves_to_process {
+                // Trim to B's face
+                let segs_b = trim::trim_curve_to_face(single_curve, *face_b, &cyl, 64);
+                println!("    segs_b: {} segments", segs_b.len());
+                for seg in &segs_b {
+                    let entry = evaluate_curve(single_curve, seg.t_start);
+                    let exit = evaluate_curve(single_curve, seg.t_end);
+                    println!("      entry=({:.1},{:.1},{:.1}), exit=({:.1},{:.1},{:.1}), dist={:.2}",
+                        entry.x, entry.y, entry.z, exit.x, exit.y, exit.z, (exit - entry).norm());
+                    if (exit - entry).norm() > 1e-6 {
+                        splits_b.entry(*face_b).or_default().push((single_curve.clone(), entry, exit));
+                    }
+                }
+            }
+        }
+
+        println!("\n\nSplits for B (cylinder) faces:");
+        for (fid, splits) in &splits_b {
+            println!("  {:?}: {} splits", fid, splits.len());
+            for (curve, entry, exit) in splits {
+                println!("    {:?}: ({:.1},{:.1},{:.1}) to ({:.1},{:.1},{:.1})",
+                    match curve {
+                        ssi::IntersectionCurve::Line(_) => "Line",
+                        ssi::IntersectionCurve::Circle(_) => "Circle",
+                        _ => "Other",
+                    },
+                    entry.x, entry.y, entry.z, exit.x, exit.y, exit.z);
+            }
         }
     }
 }

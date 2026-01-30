@@ -400,8 +400,13 @@ pub fn split_planar_face_by_circle(
 
     // Check if the FULL circle is inside the polygon
     // We need to verify not just that the circle overlaps, but that it's fully contained.
-    // If only partially inside, skip the split (classification will handle it).
+    // If only partially inside, use arc-based splitting instead.
     if !circle_fully_inside_polygon(&loop_verts, circle) {
+        // Check if circle partially intersects (crosses exactly 2 edges)
+        if circle_partially_inside_polygon(&loop_verts, circle) {
+            return split_planar_face_by_arc(brep, face_id, circle, segments);
+        }
+        // Circle doesn't intersect at all
         return SplitResult {
             sub_faces: vec![face_id],
         };
@@ -753,6 +758,456 @@ fn circle_intersects_polygon_edges(cx: f64, cy: f64, radius: f64, polygon: &[(f6
         }
     }
     false
+}
+
+// =============================================================================
+// Arc-Based Planar Face Splitting
+// =============================================================================
+
+/// A circle-polygon intersection point with metadata.
+#[derive(Debug, Clone)]
+struct CirclePolygonIntersection {
+    /// The 3D intersection point.
+    point: Point3,
+    /// The 2D intersection point (projected onto the polygon plane).
+    point_2d: (f64, f64),
+    /// The edge index (starting vertex) where the intersection occurs.
+    edge_index: usize,
+    /// The parameter t along the edge (0 = start vertex, 1 = end vertex).
+    #[allow(dead_code)]
+    t_along_edge: f64,
+    /// The angle on the circle (0 to 2π).
+    angle: f64,
+}
+
+/// Find where a circle intersects a polygon's edges.
+///
+/// Returns intersection points sorted by angle on the circle.
+/// Each intersection includes the edge index, parameter along edge, and angle on circle.
+fn find_circle_polygon_intersections(
+    _polygon_3d: &[Point3],
+    polygon_2d: &[(f64, f64)],
+    circle_center_2d: (f64, f64),
+    radius: f64,
+    origin_3d: Point3,
+    u_axis: vcad_kernel_math::Vec3,
+    v_axis: vcad_kernel_math::Vec3,
+) -> Vec<CirclePolygonIntersection> {
+    let n = polygon_2d.len();
+    let mut intersections = Vec::new();
+    let (cx, cy) = circle_center_2d;
+    let tol = 1e-9;
+
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (x1, y1) = polygon_2d[i];
+        let (x2, y2) = polygon_2d[j];
+
+        // Solve for line-circle intersection in 2D.
+        // Line: P(t) = (x1, y1) + t * (x2 - x1, y2 - y1)
+        // Circle: (x - cx)² + (y - cy)² = r²
+        //
+        // Substituting:
+        // (x1 + t*dx - cx)² + (y1 + t*dy - cy)² = r²
+        // Let ax = x1 - cx, ay = y1 - cy, dx = x2 - x1, dy = y2 - y1
+        // (ax + t*dx)² + (ay + t*dy)² = r²
+        // ax² + 2*ax*t*dx + t²*dx² + ay² + 2*ay*t*dy + t²*dy² = r²
+        // t²*(dx² + dy²) + 2*t*(ax*dx + ay*dy) + (ax² + ay² - r²) = 0
+
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let ax = x1 - cx;
+        let ay = y1 - cy;
+
+        let a = dx * dx + dy * dy;
+        let b = 2.0 * (ax * dx + ay * dy);
+        let c = ax * ax + ay * ay - radius * radius;
+
+        if a.abs() < tol {
+            // Degenerate edge (zero length)
+            continue;
+        }
+
+        let discriminant = b * b - 4.0 * a * c;
+        if discriminant < -tol {
+            // No intersection
+            continue;
+        }
+
+        let discriminant = discriminant.max(0.0).sqrt();
+
+        for sign in [-1.0, 1.0] {
+            let t = (-b + sign * discriminant) / (2.0 * a);
+
+            // Check if intersection is within the segment [0, 1]
+            if t < -tol || t > 1.0 + tol {
+                continue;
+            }
+
+            // Clamp t to [0, 1] for robustness
+            let t = t.clamp(0.0, 1.0);
+
+            // Compute 2D intersection point
+            let px = x1 + t * dx;
+            let py = y1 + t * dy;
+
+            // Compute angle on circle
+            let angle = (py - cy).atan2(px - cx);
+            let angle = if angle < 0.0 {
+                angle + 2.0 * std::f64::consts::PI
+            } else {
+                angle
+            };
+
+            // Compute 3D point
+            let point_3d = origin_3d + px * u_axis + py * v_axis;
+
+            // Avoid duplicate intersections (at corners)
+            let is_duplicate = intersections.iter().any(|other: &CirclePolygonIntersection| {
+                let dist_2d =
+                    ((px - other.point_2d.0).powi(2) + (py - other.point_2d.1).powi(2)).sqrt();
+                dist_2d < 0.01
+            });
+
+            if !is_duplicate {
+                intersections.push(CirclePolygonIntersection {
+                    point: point_3d,
+                    point_2d: (px, py),
+                    edge_index: i,
+                    t_along_edge: t,
+                    angle,
+                });
+            }
+        }
+    }
+
+    // Sort by angle for consistent ordering
+    intersections.sort_by(|a, b| {
+        a.angle
+            .partial_cmp(&b.angle)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    intersections
+}
+
+/// Split a planar face along an arc where a circle partially intersects it.
+///
+/// When a circle only partially overlaps a polygon face, this function:
+/// 1. Finds where the circle crosses polygon edges (2 intersection points)
+/// 2. Determines which arc is inside the polygon
+/// 3. Creates two faces:
+///    - Face with arc boundary (inside the circle)
+///    - Face with chord boundary (outside the circle)
+///
+/// Returns the original face unchanged if:
+/// - The circle doesn't intersect the polygon at exactly 2 points
+/// - The intersections are too close together
+pub fn split_planar_face_by_arc(
+    brep: &mut BRepSolid,
+    face_id: FaceId,
+    circle: &vcad_kernel_geom::Circle3d,
+    segments: u32,
+) -> SplitResult {
+    let face = &brep.topology.faces[face_id];
+    let surface_index = face.surface_index;
+    let orientation = face.orientation;
+    let outer_loop = face.outer_loop;
+
+    // Get outer loop vertices
+    let loop_hes: Vec<_> = brep.topology.loop_half_edges(outer_loop).collect();
+    let loop_verts: Vec<Point3> = loop_hes
+        .iter()
+        .map(|&he| brep.topology.vertices[brep.topology.half_edges[he].origin].point)
+        .collect();
+
+    if loop_verts.len() < 3 {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
+
+    // Build 2D coordinate system from polygon
+    let v0 = loop_verts[0];
+    let v1 = loop_verts[1];
+    let v2 = loop_verts[2];
+
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let normal = e1.cross(&e2);
+    let normal_len = normal.norm();
+    if normal_len < 1e-12 {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
+
+    let u_axis = e1.normalize();
+    let v_axis = normal.cross(&e1).normalize();
+    let origin = v0;
+
+    // Project polygon vertices to 2D
+    let project = |p: &Point3| -> (f64, f64) {
+        let d = *p - origin;
+        (d.dot(&u_axis), d.dot(&v_axis))
+    };
+
+    let poly_2d: Vec<(f64, f64)> = loop_verts.iter().map(&project).collect();
+
+    // Project circle center to 2D
+    let center_2d = project(&circle.center);
+
+    // Find circle-polygon intersections
+    let intersections = find_circle_polygon_intersections(
+        &loop_verts,
+        &poly_2d,
+        center_2d,
+        circle.radius,
+        origin,
+        u_axis,
+        v_axis,
+    );
+
+    // Need exactly 2 intersections for a simple split
+    if intersections.len() != 2 {
+        // Complex case: more than 2 intersections, or circle doesn't cross edges
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
+
+    let int1 = &intersections[0];
+    let int2 = &intersections[1];
+
+    // Check if intersections are too close together (would create degenerate faces)
+    let dist = ((int1.point_2d.0 - int2.point_2d.0).powi(2)
+        + (int1.point_2d.1 - int2.point_2d.1).powi(2))
+    .sqrt();
+    if dist < 0.01 {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
+
+    // Determine which arc (from int1 to int2) is inside the polygon.
+    // The arc from angle1 to angle2 (CCW) might be inside or outside.
+    // Check by sampling the arc midpoint.
+
+    let angle1 = int1.angle;
+    let angle2 = int2.angle;
+
+    // Arc 1: from angle1 to angle2 (CCW, shorter if angle2 > angle1)
+    // Arc 2: from angle2 to angle1 (CCW, wrapping around)
+    let arc1_mid_angle = if angle2 >= angle1 {
+        (angle1 + angle2) / 2.0
+    } else {
+        // Wraps around
+        let mid = (angle1 + angle2 + 2.0 * std::f64::consts::PI) / 2.0;
+        if mid >= 2.0 * std::f64::consts::PI {
+            mid - 2.0 * std::f64::consts::PI
+        } else {
+            mid
+        }
+    };
+
+    let arc1_mid_x = center_2d.0 + circle.radius * arc1_mid_angle.cos();
+    let arc1_mid_y = center_2d.1 + circle.radius * arc1_mid_angle.sin();
+    let arc1_inside = point_in_polygon_2d(arc1_mid_x, arc1_mid_y, &poly_2d);
+
+    // Determine which arc is inside and which edge indices to walk
+    let (inside_start, inside_end, inside_start_angle, inside_end_angle) = if arc1_inside {
+        (int1, int2, angle1, angle2)
+    } else {
+        (int2, int1, angle2, angle1)
+    };
+
+    // Compute arc span (always positive, CCW direction)
+    let arc_span = if inside_end_angle >= inside_start_angle {
+        inside_end_angle - inside_start_angle
+    } else {
+        2.0 * std::f64::consts::PI - inside_start_angle + inside_end_angle
+    };
+
+    // Number of segments for the arc (proportional to arc length)
+    let n_arc = ((segments as f64) * arc_span / (2.0 * std::f64::consts::PI))
+        .max(2.0)
+        .ceil() as u32;
+
+    // Generate arc vertices (from inside_start to inside_end, CCW)
+    let (cx, cy) = center_2d;
+    let mut arc_points_2d: Vec<(f64, f64)> = Vec::with_capacity((n_arc + 1) as usize);
+    arc_points_2d.push(inside_start.point_2d);
+    for i in 1..n_arc {
+        let t = i as f64 / n_arc as f64;
+        let angle = inside_start_angle + t * arc_span;
+        let px = cx + circle.radius * angle.cos();
+        let py = cy + circle.radius * angle.sin();
+        arc_points_2d.push((px, py));
+    }
+    arc_points_2d.push(inside_end.point_2d);
+
+    // Convert arc 2D points to 3D
+    let arc_points_3d: Vec<Point3> = arc_points_2d
+        .iter()
+        .map(|&(x, y)| origin + x * u_axis + y * v_axis)
+        .collect();
+
+    // Build Face 1: the inside-circle portion
+    // Walk polygon from inside_end edge to inside_start edge, then add arc back
+    let n = loop_verts.len();
+    let mut face1_points: Vec<Point3> = Vec::new();
+
+    // Start at inside_end intersection
+    face1_points.push(inside_end.point);
+
+    // Walk polygon from inside_end edge to inside_start edge
+    let mut idx = (inside_end.edge_index + 1) % n;
+    while idx != (inside_start.edge_index + 1) % n {
+        face1_points.push(loop_verts[idx]);
+        idx = (idx + 1) % n;
+    }
+
+    // Add inside_start intersection
+    face1_points.push(inside_start.point);
+
+    // Add arc points (from inside_start back to inside_end, reversed)
+    for pt in arc_points_3d.iter().skip(1).rev().take(arc_points_3d.len() - 2) {
+        face1_points.push(*pt);
+    }
+
+    // Build Face 2: the outside-circle portion (polygon outside the arc)
+    // Walk polygon from inside_start edge to inside_end edge, then add chord back
+    let mut face2_points: Vec<Point3> = Vec::new();
+
+    // Start at inside_start intersection
+    face2_points.push(inside_start.point);
+
+    // Walk polygon from inside_start edge to inside_end edge
+    idx = (inside_start.edge_index + 1) % n;
+    while idx != (inside_end.edge_index + 1) % n {
+        face2_points.push(loop_verts[idx]);
+        idx = (idx + 1) % n;
+    }
+
+    // Add inside_end intersection (chord closes the face)
+    face2_points.push(inside_end.point);
+
+    // Validate faces have at least 3 vertices
+    if face1_points.len() < 3 || face2_points.len() < 3 {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
+
+    // Create the two new faces
+    let tolerance = 1e-6;
+
+    // Face 1 (arc-bounded, inside circle)
+    let face1_verts: Vec<_> = face1_points
+        .iter()
+        .map(|p| find_or_create_vertex(brep, p, tolerance))
+        .collect();
+    let face1_hes: Vec<_> = face1_verts
+        .iter()
+        .map(|&v| brep.topology.add_half_edge(v))
+        .collect();
+    let face1_loop = brep.topology.add_loop(&face1_hes);
+    let face1 = brep
+        .topology
+        .add_face(face1_loop, surface_index, orientation);
+
+    // Face 2 (chord-bounded, outside circle)
+    let face2_verts: Vec<_> = face2_points
+        .iter()
+        .map(|p| find_or_create_vertex(brep, p, tolerance))
+        .collect();
+    let face2_hes: Vec<_> = face2_verts
+        .iter()
+        .map(|&v| brep.topology.add_half_edge(v))
+        .collect();
+    let face2_loop = brep.topology.add_loop(&face2_hes);
+    let face2 = brep
+        .topology
+        .add_face(face2_loop, surface_index, orientation);
+
+    // Add twin edges for the chord (shared edge between face1 and face2)
+    // In face1, the chord goes from inside_end to inside_start (first edge after arc)
+    // In face2, the chord goes from inside_start to inside_end (last edge)
+    // These need to be matched correctly based on which edges share the intersection vertices
+    let chord_he1 = face1_hes[0]; // First edge of face1 starts at inside_end
+    let chord_he2 = face2_hes[face2_hes.len() - 1]; // Last edge of face2 ends at inside_end
+    brep.topology.add_edge(chord_he1, chord_he2);
+
+    // Add faces to shell
+    if let Some(shell_id) = brep.topology.faces[face_id].shell {
+        brep.topology.shells[shell_id].faces.push(face1);
+        brep.topology.shells[shell_id].faces.push(face2);
+
+        brep.topology.faces[face1].shell = Some(shell_id);
+        brep.topology.faces[face2].shell = Some(shell_id);
+
+        // Remove original face from shell
+        brep.topology.shells[shell_id]
+            .faces
+            .retain(|&f| f != face_id);
+    }
+
+    // Remove the original face
+    brep.topology.faces.remove(face_id);
+
+    // Add 3D curve for the arc
+    brep.geometry.add_curve_3d(Box::new(circle.clone()));
+
+    SplitResult {
+        sub_faces: vec![face1, face2],
+    }
+}
+
+/// Check if a circle partially intersects a polygon (crosses exactly 2 edges).
+///
+/// Returns true if the circle crosses the polygon boundary at exactly 2 points,
+/// meaning it's only partially inside and needs arc-based splitting.
+fn circle_partially_inside_polygon(polygon: &[Point3], circle: &vcad_kernel_geom::Circle3d) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+
+    // Build 2D coordinate system
+    let v0 = polygon[0];
+    let v1 = polygon[1];
+    let v2 = polygon[2];
+
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let normal = e1.cross(&e2);
+    let normal_len = normal.norm();
+    if normal_len < 1e-12 {
+        return false;
+    }
+
+    let u_axis = e1.normalize();
+    let v_axis = normal.cross(&e1).normalize();
+
+    let project = |p: &Point3| -> (f64, f64) {
+        let d = *p - v0;
+        (d.dot(&u_axis), d.dot(&v_axis))
+    };
+
+    let poly_2d: Vec<(f64, f64)> = polygon.iter().map(&project).collect();
+    let center_2d = project(&circle.center);
+
+    let intersections = find_circle_polygon_intersections(
+        polygon,
+        &poly_2d,
+        center_2d,
+        circle.radius,
+        v0,
+        u_axis,
+        v_axis,
+    );
+
+    // Partial intersection means exactly 2 crossing points
+    intersections.len() == 2
 }
 
 /// Split a planar face along an intersection curve.

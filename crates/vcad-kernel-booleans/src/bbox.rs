@@ -136,52 +136,67 @@ pub fn face_aabb(brep: &BRepSolid, face_id: FaceId) -> Aabb3 {
             }
         }
         vcad_kernel_geom::SurfaceKind::Cylinder => {
-            // For cylinders, compute AABB based on the actual cylinder geometry.
-            // The vertex-based AABB only includes seam vertices, which doesn't
-            // capture the full extent of the cylinder surface.
+            // For cylinders, check if it's a FULL wrap or PARTIAL face by examining
+            // the unique vertex positions. A full cylinder has only 2 unique positions
+            // (bottom seam and top seam), while a partial face has 4 distinct positions.
             if let Some(cyl) = surface
                 .as_any()
                 .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
             {
-                // Get the V range from the face vertices (height along axis)
-                let mut v_min = f64::INFINITY;
-                let mut v_max = f64::NEG_INFINITY;
+                // Collect unique vertex positions
+                let mut unique_positions: Vec<Point3> = Vec::new();
                 for he_id in topo.loop_half_edges(face.outer_loop) {
                     let v_id = topo.half_edges[he_id].origin;
                     let point = topo.vertices[v_id].point;
-                    let v = (point - cyl.center).dot(cyl.axis.as_ref());
-                    v_min = v_min.min(v);
-                    v_max = v_max.max(v);
+                    // Check if this position is already in the list
+                    let is_duplicate = unique_positions.iter().any(|p| {
+                        (p.x - point.x).abs() < 1e-6
+                            && (p.y - point.y).abs() < 1e-6
+                            && (p.z - point.z).abs() < 1e-6
+                    });
+                    if !is_duplicate {
+                        unique_positions.push(point);
+                    }
                 }
 
-                // Compute AABB for a full cylinder from center
-                // The cylinder extends ±radius in directions perpendicular to axis
-                let axis = cyl.axis.as_ref();
-                let center = cyl.center;
-                let r = cyl.radius;
+                // A full cylinder has 2 unique positions (seam vertices at top/bottom).
+                // A partial cylinder has 4 unique positions (two at each height).
+                let is_full_cylinder = unique_positions.len() <= 2;
 
-                // Bottom and top circle centers
-                let bottom_center = center + v_min * axis;
-                let top_center = center + v_max * axis;
+                if is_full_cylinder {
+                    // Full wrap face - expand to full cylinder extent
+                    let mut v_min = f64::INFINITY;
+                    let mut v_max = f64::NEG_INFINITY;
+                    for p in &unique_positions {
+                        let v = (*p - cyl.center).dot(cyl.axis.as_ref());
+                        v_min = v_min.min(v);
+                        v_max = v_max.max(v);
+                    }
 
-                // For a cylinder aligned with arbitrary axis, the AABB includes
-                // all points on circles at bottom and top. In the worst case,
-                // include ±r in x and y (assuming axis is close to z).
-                // For a general axis, we'd need to compute the actual projection.
-                // For now, use a conservative approach.
-                aabb = Aabb3::empty();
-                // Include bottom and top centers expanded by radius
-                aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(r, r, 0.0)));
-                aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(r, -r, 0.0)));
-                aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(-r, r, 0.0)));
-                aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(-r, -r, 0.0)));
-                aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(r, r, 0.0)));
-                aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(r, -r, 0.0)));
-                aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(-r, r, 0.0)));
-                aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(-r, -r, 0.0)));
+                    let axis = cyl.axis.as_ref();
+                    let center = cyl.center;
+                    let r = cyl.radius;
 
-                // For axis not aligned with Z, we'd need more points, but for common cases
-                // (axis along Z), this gives correct results.
+                    let bottom_center = center + v_min * axis;
+                    let top_center = center + v_max * axis;
+
+                    aabb = Aabb3::empty();
+                    aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(r, r, 0.0)));
+                    aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(r, -r, 0.0)));
+                    aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(-r, r, 0.0)));
+                    aabb.include_point(&(bottom_center + vcad_kernel_math::Vec3::new(-r, -r, 0.0)));
+                    aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(r, r, 0.0)));
+                    aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(r, -r, 0.0)));
+                    aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(-r, r, 0.0)));
+                    aabb.include_point(&(top_center + vcad_kernel_math::Vec3::new(-r, -r, 0.0)));
+                } else {
+                    // Partial face - vertices define the arc endpoints.
+                    // The arc may bulge slightly beyond the chord, so expand by a
+                    // small fraction of the radius to be conservative.
+                    // For a quarter arc, max bulge is r*(1 - cos(θ/2)) ≈ 0.29r for 90°
+                    let bulge_factor = 0.3 * cyl.radius;
+                    aabb.expand(bulge_factor);
+                }
             }
         }
         vcad_kernel_geom::SurfaceKind::Sphere => {

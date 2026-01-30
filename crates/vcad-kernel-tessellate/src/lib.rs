@@ -906,44 +906,109 @@ fn tessellate_cylindrical_face(
         .collect();
 
     let mut radius = None;
+    let mut u_min = 0.0;
+    let mut u_max = 2.0 * PI;
     let (v_min, v_max) = if let Some(cyl) = surface
         .as_any()
         .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
     {
         radius = Some(cyl.radius.abs().max(1e-6));
-        // Project vertices onto axis to get v parameter
+        // Project vertices onto axis to get v parameter and compute U angles
         let mut vmin = f64::MAX;
         let mut vmax = f64::MIN;
+
+        // Compute U (angle) for each vertex to find the angular range
+        let ref_dir = cyl.ref_dir.as_ref();
+        let y_dir = cyl.axis.as_ref().cross(ref_dir);
+        let mut angles: Vec<f64> = Vec::new();
+
         for pt in &verts {
-            let d = pt - cyl.center;
+            let d = *pt - cyl.center;
             let v = d.dot(cyl.axis.as_ref());
             vmin = vmin.min(v);
             vmax = vmax.max(v);
+
+            // Compute angle for this vertex
+            let u = d.dot(&y_dir).atan2(d.dot(ref_dir));
+            let u_normalized = if u < 0.0 { u + 2.0 * PI } else { u };
+            angles.push(u_normalized);
         }
+
+        // Determine U range from the face vertices
+        // For a partial face, we need to find the angular extent
+        // Get unique angles (vertices at same angle but different heights)
+        let mut unique_angles: Vec<f64> = Vec::new();
+        for &a in &angles {
+            if !unique_angles.iter().any(|&ua| (ua - a).abs() < 0.01) {
+                unique_angles.push(a);
+            }
+        }
+
+        if unique_angles.len() == 1 {
+            // Full cylinder (all vertices at same seam angle)
+            u_min = 0.0;
+            u_max = 2.0 * PI;
+        } else if unique_angles.len() == 2 {
+            // Partial cylinder with two distinct angles
+            unique_angles.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let a0 = unique_angles[0];
+            let a1 = unique_angles[1];
+
+            // Determine which arc to use (the smaller one, or check winding)
+            // For now, assume the face goes from a0 to a1 in CCW direction
+            let arc1 = a1 - a0; // Direct arc
+            let arc2 = (2.0 * PI) - arc1; // Wrap-around arc
+
+            if arc1 <= arc2 {
+                // Use direct arc from a0 to a1
+                u_min = a0;
+                u_max = a1;
+            } else {
+                // Use wrap-around arc: from a1 to a0 (going past 2π)
+                u_min = a1;
+                u_max = a0 + 2.0 * PI;
+            }
+        }
+
         (vmin, vmax)
     } else {
-        // Fallback: use z coordinates
+        // Fallback: use z coordinates, full angle
         let z_min = verts.iter().map(|v| v.z).fold(f64::MAX, f64::min);
         let z_max = verts.iter().map(|v| v.z).fold(f64::MIN, f64::max);
         (z_min, z_max)
     };
 
     let height = v_max - v_min;
+    let u_range = u_max - u_min;
+
+    // Adjust segment count based on angular range
+    let effective_n_circ = if u_range < 2.0 * PI - 0.01 {
+        // Partial face - scale segments by angular fraction
+        let fraction = u_range / (2.0 * PI);
+        (n_circ as f64 * fraction).ceil().max(2.0) as usize
+    } else {
+        n_circ
+    };
+
     if let Some(radius) = radius {
-        let circumference = 2.0 * PI * radius;
-        if circumference > 1e-9 {
-            let target = (height.abs() / circumference) * n_circ as f64;
+        let arc_length = radius * u_range;
+        if arc_length > 1e-9 {
+            let target = (height.abs() / arc_length) * effective_n_circ as f64;
             n_height = n_height.max(target.ceil() as usize).max(1);
         }
     }
     let mut mesh = TriangleMesh::new();
 
     // Generate grid of vertices using surface.evaluate
+    // Respect the face's U range (angular extent)
     for j in 0..=n_height {
         let v = v_min + height * (j as f64 / n_height as f64);
-        for i in 0..=n_circ {
-            let u = 2.0 * PI * (i as f64 / n_circ as f64);
-            let pt = surface.evaluate(Point2::new(u, v));
+        for i in 0..=effective_n_circ {
+            // Map i to the face's U range, not full 2π
+            let u = u_min + u_range * (i as f64 / effective_n_circ as f64);
+            // Normalize u to [0, 2π) for surface evaluation
+            let u_eval = u % (2.0 * PI);
+            let pt = surface.evaluate(Point2::new(u_eval, v));
             mesh.vertices.push(pt.x as f32);
             mesh.vertices.push(pt.y as f32);
             mesh.vertices.push(pt.z as f32);
@@ -951,9 +1016,9 @@ fn tessellate_cylindrical_face(
     }
 
     // Generate triangles
-    let stride = (n_circ + 1) as u32;
+    let stride = (effective_n_circ + 1) as u32;
     for j in 0..n_height {
-        for i in 0..n_circ {
+        for i in 0..effective_n_circ {
             let bl = j as u32 * stride + i as u32;
             let br = bl + 1;
             let tl = bl + stride;
