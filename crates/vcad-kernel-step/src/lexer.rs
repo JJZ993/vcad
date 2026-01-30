@@ -340,8 +340,22 @@ impl<'a> Lexer<'a> {
 
         // Decimal part
         if self.peek_char() == Some(b'.') {
-            // Check if next is a digit (to distinguish from enum start)
-            if self.pos + 1 < self.input.len() && self.input[self.pos + 1].is_ascii_digit() {
+            // Check what follows the decimal point
+            let next_char = self.input.get(self.pos + 1).copied();
+            let is_decimal = match next_char {
+                // Digit after decimal → definitely a real number (e.g., 100.5)
+                Some(ch) if ch.is_ascii_digit() => true,
+                // Delimiter after decimal → trailing decimal point (e.g., 100., common in STEP)
+                Some(b',') | Some(b')') | Some(b';') | None => true,
+                // Whitespace after decimal → trailing decimal point
+                Some(ch) if ch.is_ascii_whitespace() => true,
+                // Exponent after decimal → real number (e.g., 100.E5)
+                Some(b'E') | Some(b'e') => true,
+                // Letter after decimal → could be enum (e.g., .T. for true), don't consume
+                _ => false,
+            };
+
+            if is_decimal {
                 is_real = true;
                 num_str.push(b'.');
                 self.advance();
@@ -449,6 +463,28 @@ mod tests {
         assert_eq!(tokenize("3.14"), vec![Token::Real(3.14)]);
         assert_eq!(tokenize("-1.5E-10"), vec![Token::Real(-1.5e-10)]);
         assert_eq!(tokenize("2.0E3"), vec![Token::Real(2000.0)]);
+        // Trailing decimal point (common in STEP coordinate lists like "100.,200.,300.")
+        assert_eq!(tokenize("100."), vec![Token::Real(100.0)]);
+        assert_eq!(
+            tokenize("100.,200.,300."),
+            vec![
+                Token::Real(100.0),
+                Token::Comma,
+                Token::Real(200.0),
+                Token::Comma,
+                Token::Real(300.0),
+            ]
+        );
+        assert_eq!(
+            tokenize("(50.,60.)"),
+            vec![
+                Token::LParen,
+                Token::Real(50.0),
+                Token::Comma,
+                Token::Real(60.0),
+                Token::RParen,
+            ]
+        );
     }
 
     #[test]
