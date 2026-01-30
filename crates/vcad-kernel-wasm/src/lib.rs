@@ -290,10 +290,8 @@ impl Solid {
             return Err(JsError::new("Loft requires at least 2 profiles"));
         }
 
-        let kernel_profiles: Result<Vec<_>, _> = profiles
-            .iter()
-            .map(|p| p.to_kernel_profile())
-            .collect();
+        let kernel_profiles: Result<Vec<_>, _> =
+            profiles.iter().map(|p| p.to_kernel_profile()).collect();
         let kernel_profiles = kernel_profiles.map_err(|e| JsError::new(&e))?;
 
         let options = LoftOptions {
@@ -504,4 +502,183 @@ impl Solid {
     pub fn num_triangles(&self) -> usize {
         self.inner.num_triangles()
     }
+
+    /// Generate a section view by cutting the solid with a plane.
+    ///
+    /// # Arguments
+    /// * `plane_json` - JSON string with plane definition: `{"origin": [x,y,z], "normal": [x,y,z], "up": [x,y,z]}`
+    /// * `hatch_json` - Optional JSON string with hatch pattern: `{"spacing": f64, "angle": f64}`
+    /// * `segments` - Number of segments for tessellation (optional, default 32)
+    ///
+    /// # Returns
+    /// A JS object containing the section view with curves, hatch lines, and bounds.
+    #[wasm_bindgen(js_name = sectionView)]
+    pub fn section_view(
+        &self,
+        plane_json: &str,
+        hatch_json: Option<String>,
+        segments: Option<u32>,
+    ) -> JsValue {
+        use vcad_kernel_drafting::{section_mesh, HatchPattern, SectionPlane};
+
+        // Parse plane
+        let plane: SectionPlane = match serde_json::from_str(plane_json) {
+            Ok(p) => p,
+            Err(_) => return JsValue::NULL,
+        };
+
+        // Parse optional hatch pattern
+        let hatch: Option<HatchPattern> = hatch_json.and_then(|h| serde_json::from_str(&h).ok());
+
+        // Get mesh
+        let mesh = self.inner.to_mesh(segments.unwrap_or(32));
+
+        // Generate section view
+        let view = section_mesh(&mesh, &plane, hatch.as_ref());
+
+        serde_wasm_bindgen::to_value(&view).unwrap_or(JsValue::NULL)
+    }
+
+    /// Generate a horizontal section view at a given Z height.
+    ///
+    /// Convenience method that creates a horizontal section plane.
+    #[wasm_bindgen(js_name = horizontalSection)]
+    pub fn horizontal_section(
+        &self,
+        z: f64,
+        hatch_spacing: Option<f64>,
+        hatch_angle: Option<f64>,
+        segments: Option<u32>,
+    ) -> JsValue {
+        use vcad_kernel_drafting::{section_mesh, HatchPattern, SectionPlane};
+
+        let plane = SectionPlane::horizontal(z);
+
+        let hatch = hatch_spacing.map(|spacing| {
+            HatchPattern::new(spacing, hatch_angle.unwrap_or(std::f64::consts::FRAC_PI_4))
+        });
+
+        let mesh = self.inner.to_mesh(segments.unwrap_or(32));
+        let view = section_mesh(&mesh, &plane, hatch.as_ref());
+
+        serde_wasm_bindgen::to_value(&view).unwrap_or(JsValue::NULL)
+    }
+
+    /// Project the solid to a 2D view for technical drawing.
+    ///
+    /// # Arguments
+    /// * `view_direction` - View direction: "front", "back", "top", "bottom", "left", "right", or "isometric"
+    /// * `segments` - Number of segments for tessellation (optional, default 32)
+    ///
+    /// # Returns
+    /// A JS object containing the projected view with edges and bounds.
+    #[wasm_bindgen(js_name = projectView)]
+    pub fn project_view(&self, view_direction: &str, segments: Option<u32>) -> JsValue {
+        use vcad_kernel_drafting::{project_mesh, ViewDirection};
+
+        let mesh = self.inner.to_mesh(segments.unwrap_or(32));
+
+        let view_dir = match view_direction.to_lowercase().as_str() {
+            "front" => ViewDirection::Front,
+            "back" => ViewDirection::Back,
+            "top" => ViewDirection::Top,
+            "bottom" => ViewDirection::Bottom,
+            "left" => ViewDirection::Left,
+            "right" => ViewDirection::Right,
+            "isometric" => ViewDirection::ISOMETRIC_STANDARD,
+            _ => ViewDirection::Front,
+        };
+
+        let view = project_mesh(&mesh, view_dir);
+        serde_wasm_bindgen::to_value(&view).unwrap_or(JsValue::NULL)
+    }
+}
+
+// =========================================================================
+// Standalone drafting functions
+// =========================================================================
+
+/// Generate a section view from a triangle mesh.
+///
+/// # Arguments
+/// * `mesh_js` - Mesh data as JS object with `positions` (Float32Array) and `indices` (Uint32Array)
+/// * `plane_json` - JSON string with plane definition: `{"origin": [x,y,z], "normal": [x,y,z], "up": [x,y,z]}`
+/// * `hatch_json` - Optional JSON string with hatch pattern: `{"spacing": f64, "angle": f64}`
+///
+/// # Returns
+/// A JS object containing the section view with curves, hatch lines, and bounds.
+#[wasm_bindgen(js_name = sectionMesh)]
+pub fn section_mesh_wasm(
+    mesh_js: JsValue,
+    plane_json: &str,
+    hatch_json: Option<String>,
+) -> JsValue {
+    use vcad_kernel_drafting::{section_mesh, HatchPattern, SectionPlane};
+    use vcad_kernel_tessellate::TriangleMesh;
+
+    // Parse mesh from JS
+    let mesh_data: WasmMesh = match serde_wasm_bindgen::from_value(mesh_js) {
+        Ok(m) => m,
+        Err(_) => return JsValue::NULL,
+    };
+
+    let mesh = TriangleMesh {
+        vertices: mesh_data.positions,
+        indices: mesh_data.indices,
+        normals: Vec::new(),
+    };
+
+    // Parse plane
+    let plane: SectionPlane = match serde_json::from_str(plane_json) {
+        Ok(p) => p,
+        Err(_) => return JsValue::NULL,
+    };
+
+    // Parse optional hatch pattern
+    let hatch: Option<HatchPattern> = hatch_json.and_then(|h| serde_json::from_str(&h).ok());
+
+    // Generate section view
+    let view = section_mesh(&mesh, &plane, hatch.as_ref());
+
+    serde_wasm_bindgen::to_value(&view).unwrap_or(JsValue::NULL)
+}
+
+/// Project a triangle mesh to a 2D view.
+///
+/// # Arguments
+/// * `mesh_js` - Mesh data as JS object with `positions` (Float32Array) and `indices` (Uint32Array)
+/// * `view_direction` - View direction: "front", "back", "top", "bottom", "left", "right", or "isometric"
+///
+/// # Returns
+/// A JS object containing the projected view with edges and bounds.
+#[wasm_bindgen(js_name = projectMesh)]
+pub fn project_mesh_wasm(mesh_js: JsValue, view_direction: &str) -> JsValue {
+    use vcad_kernel_drafting::{project_mesh, ViewDirection};
+    use vcad_kernel_tessellate::TriangleMesh;
+
+    // Parse mesh from JS
+    let mesh_data: WasmMesh = match serde_wasm_bindgen::from_value(mesh_js) {
+        Ok(m) => m,
+        Err(_) => return JsValue::NULL,
+    };
+
+    let mesh = TriangleMesh {
+        vertices: mesh_data.positions,
+        indices: mesh_data.indices,
+        normals: Vec::new(),
+    };
+
+    let view_dir = match view_direction.to_lowercase().as_str() {
+        "front" => ViewDirection::Front,
+        "back" => ViewDirection::Back,
+        "top" => ViewDirection::Top,
+        "bottom" => ViewDirection::Bottom,
+        "left" => ViewDirection::Left,
+        "right" => ViewDirection::Right,
+        "isometric" => ViewDirection::ISOMETRIC_STANDARD,
+        _ => ViewDirection::Front,
+    };
+
+    let view = project_mesh(&mesh, view_dir);
+    serde_wasm_bindgen::to_value(&view).unwrap_or(JsValue::NULL)
 }

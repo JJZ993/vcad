@@ -697,10 +697,610 @@ impl Default for DxfDocument {
     }
 }
 
+/// DXF document builder for technical drawings with visible/hidden line support.
+///
+/// Exports projected views with proper layer and linetype definitions:
+/// - VISIBLE layer: continuous lines for visible edges
+/// - HIDDEN layer: dashed lines for hidden edges
+pub struct DxfDraftingDocument {
+    lines: Vec<DraftingLine>,
+}
+
+/// A line in a drafting document with visibility information.
+struct DraftingLine {
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+    visible: bool,
+}
+
+impl DxfDraftingDocument {
+    /// Create a new empty drafting document.
+    pub fn new() -> Self {
+        Self { lines: Vec::new() }
+    }
+
+    /// Add a visible line (continuous).
+    pub fn add_visible_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) {
+        self.lines.push(DraftingLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            visible: true,
+        });
+    }
+
+    /// Add a hidden line (dashed).
+    pub fn add_hidden_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) {
+        self.lines.push(DraftingLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            visible: false,
+        });
+    }
+
+    /// Export to DXF file with proper layer and linetype tables.
+    pub fn export(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        // DXF Header
+        self.write_header(&mut writer)?;
+
+        // Tables section with layers and linetypes
+        self.write_tables(&mut writer)?;
+
+        // Entities section
+        self.write_entities(&mut writer)?;
+
+        // End of file
+        writeln!(writer, "0")?;
+        writeln!(writer, "EOF")?;
+
+        Ok(())
+    }
+
+    fn write_header(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "SECTION")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "HEADER")?;
+
+        // AutoCAD version
+        writeln!(writer, "9")?;
+        writeln!(writer, "$ACADVER")?;
+        writeln!(writer, "1")?;
+        writeln!(writer, "AC1009")?; // DXF R12
+
+        // Units = millimeters
+        writeln!(writer, "9")?;
+        writeln!(writer, "$INSUNITS")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "4")?;
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDSEC")?;
+
+        Ok(())
+    }
+
+    fn write_tables(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "SECTION")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "TABLES")?;
+
+        // Linetype table
+        self.write_ltype_table(writer)?;
+
+        // Layer table
+        self.write_layer_table(writer)?;
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDSEC")?;
+
+        Ok(())
+    }
+
+    fn write_ltype_table(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "TABLE")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "LTYPE")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "2")?; // 2 entries
+
+        // CONTINUOUS linetype
+        writeln!(writer, "0")?;
+        writeln!(writer, "LTYPE")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "CONTINUOUS")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "3")?;
+        writeln!(writer, "Solid line")?;
+        writeln!(writer, "72")?;
+        writeln!(writer, "65")?;
+        writeln!(writer, "73")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "40")?;
+        writeln!(writer, "0.0")?;
+
+        // HIDDEN linetype (dashed)
+        writeln!(writer, "0")?;
+        writeln!(writer, "LTYPE")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "HIDDEN")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "3")?;
+        writeln!(writer, "Hidden line")?;
+        writeln!(writer, "72")?;
+        writeln!(writer, "65")?;
+        writeln!(writer, "73")?;
+        writeln!(writer, "2")?; // 2 dash elements
+        writeln!(writer, "40")?;
+        writeln!(writer, "9.525")?; // Total pattern length
+        writeln!(writer, "49")?;
+        writeln!(writer, "6.35")?; // Dash length
+        writeln!(writer, "49")?;
+        writeln!(writer, "-3.175")?; // Gap length (negative = space)
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDTAB")?;
+
+        Ok(())
+    }
+
+    fn write_layer_table(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "TABLE")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "LAYER")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "2")?; // 2 layers
+
+        // VISIBLE layer - continuous, color 7 (white/black)
+        writeln!(writer, "0")?;
+        writeln!(writer, "LAYER")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "VISIBLE")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "62")?;
+        writeln!(writer, "7")?; // Color 7 (white/black)
+        writeln!(writer, "6")?;
+        writeln!(writer, "CONTINUOUS")?;
+
+        // HIDDEN layer - hidden linetype, color 8 (gray)
+        writeln!(writer, "0")?;
+        writeln!(writer, "LAYER")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "HIDDEN")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "62")?;
+        writeln!(writer, "8")?; // Color 8 (gray)
+        writeln!(writer, "6")?;
+        writeln!(writer, "HIDDEN")?;
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDTAB")?;
+
+        Ok(())
+    }
+
+    fn write_entities(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "SECTION")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "ENTITIES")?;
+
+        for line in &self.lines {
+            writeln!(writer, "0")?;
+            writeln!(writer, "LINE")?;
+            writeln!(writer, "8")?;
+            writeln!(
+                writer,
+                "{}",
+                if line.visible { "VISIBLE" } else { "HIDDEN" }
+            )?;
+            writeln!(writer, "6")?;
+            writeln!(
+                writer,
+                "{}",
+                if line.visible { "CONTINUOUS" } else { "HIDDEN" }
+            )?;
+            writeln!(writer, "10")?;
+            writeln!(writer, "{:.6}", line.x1)?;
+            writeln!(writer, "20")?;
+            writeln!(writer, "{:.6}", line.y1)?;
+            writeln!(writer, "11")?;
+            writeln!(writer, "{:.6}", line.x2)?;
+            writeln!(writer, "21")?;
+            writeln!(writer, "{:.6}", line.y2)?;
+        }
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDSEC")?;
+
+        Ok(())
+    }
+
+    /// Number of visible lines.
+    pub fn num_visible(&self) -> usize {
+        self.lines.iter().filter(|l| l.visible).count()
+    }
+
+    /// Number of hidden lines.
+    pub fn num_hidden(&self) -> usize {
+        self.lines.iter().filter(|l| !l.visible).count()
+    }
+}
+
+impl Default for DxfDraftingDocument {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Section View DXF Export
+// ============================================================================
+
+/// DXF document builder for section views.
+///
+/// Exports section views with proper layer definitions:
+/// - SECTION layer: solid lines for section cut curves
+/// - HATCH layer: thinner lines for cross-hatching
+pub struct DxfSectionDocument {
+    section_lines: Vec<SectionLine>,
+    hatch_lines: Vec<HatchLine>,
+}
+
+/// A section curve line.
+struct SectionLine {
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+}
+
+/// A hatch line.
+struct HatchLine {
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+}
+
+impl DxfSectionDocument {
+    /// Create a new empty section document.
+    pub fn new() -> Self {
+        Self {
+            section_lines: Vec::new(),
+            hatch_lines: Vec::new(),
+        }
+    }
+
+    /// Add a section curve line.
+    pub fn add_section_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) {
+        self.section_lines.push(SectionLine { x1, y1, x2, y2 });
+    }
+
+    /// Add a hatch line.
+    pub fn add_hatch_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) {
+        self.hatch_lines.push(HatchLine { x1, y1, x2, y2 });
+    }
+
+    /// Add section curves from a polyline.
+    pub fn add_section_polyline(&mut self, points: &[(f64, f64)], closed: bool) {
+        if points.len() < 2 {
+            return;
+        }
+
+        for i in 0..points.len() - 1 {
+            let (x1, y1) = points[i];
+            let (x2, y2) = points[i + 1];
+            self.add_section_line(x1, y1, x2, y2);
+        }
+
+        if closed && points.len() >= 3 {
+            let (x1, y1) = points[points.len() - 1];
+            let (x2, y2) = points[0];
+            self.add_section_line(x1, y1, x2, y2);
+        }
+    }
+
+    /// Number of section lines.
+    pub fn num_section_lines(&self) -> usize {
+        self.section_lines.len()
+    }
+
+    /// Number of hatch lines.
+    pub fn num_hatch_lines(&self) -> usize {
+        self.hatch_lines.len()
+    }
+
+    /// Export to DXF file.
+    pub fn export(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        // DXF Header
+        self.write_header(&mut writer)?;
+
+        // Tables section with layers and linetypes
+        self.write_tables(&mut writer)?;
+
+        // Entities section
+        self.write_entities(&mut writer)?;
+
+        // End of file
+        writeln!(writer, "0")?;
+        writeln!(writer, "EOF")?;
+
+        Ok(())
+    }
+
+    fn write_header(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "SECTION")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "HEADER")?;
+
+        // AutoCAD version
+        writeln!(writer, "9")?;
+        writeln!(writer, "$ACADVER")?;
+        writeln!(writer, "1")?;
+        writeln!(writer, "AC1009")?; // DXF R12
+
+        // Units = millimeters
+        writeln!(writer, "9")?;
+        writeln!(writer, "$INSUNITS")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "4")?;
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDSEC")?;
+
+        Ok(())
+    }
+
+    fn write_tables(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "SECTION")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "TABLES")?;
+
+        // Linetype table
+        self.write_ltype_table(writer)?;
+
+        // Layer table
+        self.write_layer_table(writer)?;
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDSEC")?;
+
+        Ok(())
+    }
+
+    fn write_ltype_table(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "TABLE")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "LTYPE")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "1")?; // 1 entry
+
+        // CONTINUOUS linetype
+        writeln!(writer, "0")?;
+        writeln!(writer, "LTYPE")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "CONTINUOUS")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "3")?;
+        writeln!(writer, "Solid line")?;
+        writeln!(writer, "72")?;
+        writeln!(writer, "65")?;
+        writeln!(writer, "73")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "40")?;
+        writeln!(writer, "0.0")?;
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDTAB")?;
+
+        Ok(())
+    }
+
+    fn write_layer_table(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "TABLE")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "LAYER")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "2")?; // 2 layers
+
+        // SECTION layer - thick, color 7 (white/black)
+        writeln!(writer, "0")?;
+        writeln!(writer, "LAYER")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "SECTION")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "62")?;
+        writeln!(writer, "7")?; // Color 7 (white/black)
+        writeln!(writer, "6")?;
+        writeln!(writer, "CONTINUOUS")?;
+
+        // HATCH layer - thin, color 8 (gray)
+        writeln!(writer, "0")?;
+        writeln!(writer, "LAYER")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "HATCH")?;
+        writeln!(writer, "70")?;
+        writeln!(writer, "0")?;
+        writeln!(writer, "62")?;
+        writeln!(writer, "8")?; // Color 8 (gray)
+        writeln!(writer, "6")?;
+        writeln!(writer, "CONTINUOUS")?;
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDTAB")?;
+
+        Ok(())
+    }
+
+    fn write_entities(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writeln!(writer, "0")?;
+        writeln!(writer, "SECTION")?;
+        writeln!(writer, "2")?;
+        writeln!(writer, "ENTITIES")?;
+
+        // Section lines
+        for line in &self.section_lines {
+            writeln!(writer, "0")?;
+            writeln!(writer, "LINE")?;
+            writeln!(writer, "8")?;
+            writeln!(writer, "SECTION")?;
+            writeln!(writer, "6")?;
+            writeln!(writer, "CONTINUOUS")?;
+            // Line weight (thicker for section lines)
+            writeln!(writer, "370")?;
+            writeln!(writer, "50")?; // 0.50mm
+            writeln!(writer, "10")?;
+            writeln!(writer, "{:.6}", line.x1)?;
+            writeln!(writer, "20")?;
+            writeln!(writer, "{:.6}", line.y1)?;
+            writeln!(writer, "11")?;
+            writeln!(writer, "{:.6}", line.x2)?;
+            writeln!(writer, "21")?;
+            writeln!(writer, "{:.6}", line.y2)?;
+        }
+
+        // Hatch lines
+        for line in &self.hatch_lines {
+            writeln!(writer, "0")?;
+            writeln!(writer, "LINE")?;
+            writeln!(writer, "8")?;
+            writeln!(writer, "HATCH")?;
+            writeln!(writer, "6")?;
+            writeln!(writer, "CONTINUOUS")?;
+            // Line weight (thinner for hatch lines)
+            writeln!(writer, "370")?;
+            writeln!(writer, "13")?; // 0.13mm
+            writeln!(writer, "10")?;
+            writeln!(writer, "{:.6}", line.x1)?;
+            writeln!(writer, "20")?;
+            writeln!(writer, "{:.6}", line.y1)?;
+            writeln!(writer, "11")?;
+            writeln!(writer, "{:.6}", line.x2)?;
+            writeln!(writer, "21")?;
+            writeln!(writer, "{:.6}", line.y2)?;
+        }
+
+        writeln!(writer, "0")?;
+        writeln!(writer, "ENDSEC")?;
+
+        Ok(())
+    }
+}
+
+impl Default for DxfSectionDocument {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Export a section view to a DXF file.
+///
+/// Creates a DXF with SECTION layer for cut curves and HATCH layer for hatching.
+#[cfg(feature = "drafting")]
+pub fn export_section_to_dxf(
+    view: &vcad_kernel_drafting::SectionView,
+    path: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    let mut doc = DxfSectionDocument::new();
+
+    // Add section curves
+    for curve in &view.curves {
+        let points: Vec<(f64, f64)> = curve.points.iter().map(|p| (p.x, p.y)).collect();
+        doc.add_section_polyline(&points, curve.is_closed);
+    }
+
+    // Add hatch lines
+    for (p0, p1) in &view.hatch_lines {
+        doc.add_hatch_line(p0.x, p0.y, p1.x, p1.y);
+    }
+
+    doc.export(path)
+}
+
+/// Export a projected view to a DXF drafting document.
+///
+/// This function takes a ProjectedView from the drafting crate and
+/// creates a DxfDraftingDocument with proper visible/hidden line layers.
+#[cfg(feature = "drafting")]
+pub fn export_projected_view_to_dxf(
+    view: &vcad_kernel_drafting::ProjectedView,
+    path: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    use vcad_kernel_drafting::Visibility;
+
+    let mut doc = DxfDraftingDocument::new();
+
+    for edge in &view.edges {
+        let (x1, y1) = (edge.start.x, edge.start.y);
+        let (x2, y2) = (edge.end.x, edge.end.y);
+
+        match edge.visibility {
+            Visibility::Visible => doc.add_visible_line(x1, y1, x2, y2),
+            Visibility::Hidden => doc.add_hidden_line(x1, y1, x2, y2),
+        }
+    }
+
+    doc.export(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn test_dxf_section_document() {
+        let mut doc = DxfSectionDocument::new();
+
+        // Add section curves (a square)
+        doc.add_section_polyline(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], true);
+
+        // Add some hatch lines
+        doc.add_hatch_line(0.0, 2.0, 10.0, 2.0);
+        doc.add_hatch_line(0.0, 4.0, 10.0, 4.0);
+        doc.add_hatch_line(0.0, 6.0, 10.0, 6.0);
+        doc.add_hatch_line(0.0, 8.0, 10.0, 8.0);
+
+        assert_eq!(doc.num_section_lines(), 4); // 4 sides of square
+        assert_eq!(doc.num_hatch_lines(), 4);
+
+        let path = "/tmp/test_section.dxf";
+        doc.export(path).unwrap();
+
+        let content = fs::read_to_string(path).unwrap();
+
+        // Check structure
+        assert!(content.contains("SECTION"));
+        assert!(content.contains("HATCH"));
+        assert!(content.contains("TABLES"));
+        assert!(content.contains("LAYER"));
+        assert!(content.contains("EOF"));
+    }
 
     #[test]
     fn test_dxf_rectangle() {
@@ -738,5 +1338,43 @@ mod tests {
         let content = fs::read_to_string(path).unwrap();
         assert!(content.contains("LWPOLYLINE"));
         assert!(content.contains("42")); // Bulge code
+    }
+
+    #[test]
+    fn test_dxf_drafting_document() {
+        let mut doc = DxfDraftingDocument::new();
+
+        // Add some visible lines (front face of a square)
+        doc.add_visible_line(0.0, 0.0, 10.0, 0.0);
+        doc.add_visible_line(10.0, 0.0, 10.0, 10.0);
+        doc.add_visible_line(10.0, 10.0, 0.0, 10.0);
+        doc.add_visible_line(0.0, 10.0, 0.0, 0.0);
+
+        // Add some hidden lines (back face)
+        doc.add_hidden_line(2.0, 2.0, 12.0, 2.0);
+        doc.add_hidden_line(12.0, 2.0, 12.0, 12.0);
+
+        assert_eq!(doc.num_visible(), 4);
+        assert_eq!(doc.num_hidden(), 2);
+
+        let path = "/tmp/test_drafting.dxf";
+        doc.export(path).unwrap();
+
+        let content = fs::read_to_string(path).unwrap();
+
+        // Check structure
+        assert!(content.contains("SECTION"));
+        assert!(content.contains("TABLES"));
+        assert!(content.contains("LTYPE"));
+        assert!(content.contains("LAYER"));
+        assert!(content.contains("ENTITIES"));
+        assert!(content.contains("EOF"));
+
+        // Check linetypes
+        assert!(content.contains("CONTINUOUS"));
+        assert!(content.contains("HIDDEN"));
+
+        // Check layers
+        assert!(content.contains("VISIBLE"));
     }
 }

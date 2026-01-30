@@ -240,7 +240,11 @@ fn tessellate_bilinear_face(
 /// Tessellate a planar face with inner loops (holes).
 /// Uses a ring-based approach for better triangle quality: adds intermediate
 /// Steiner points around each hole to prevent long thin triangles.
-fn tessellate_planar_face_with_holes(topo: &Topology, face_id: FaceId, reversed: bool) -> TriangleMesh {
+fn tessellate_planar_face_with_holes(
+    topo: &Topology,
+    face_id: FaceId,
+    reversed: bool,
+) -> TriangleMesh {
     let face = &topo.faces[face_id];
 
     // Get outer loop vertices
@@ -290,9 +294,7 @@ fn tessellate_planar_face_with_holes(topo: &Topology, face_id: FaceId, reversed:
     };
 
     // Unproject 2D points back to 3D
-    let unproject = |uv: (f64, f64)| -> Point3 {
-        origin + uv.0 * u_axis + uv.1 * v_axis
-    };
+    let unproject = |uv: (f64, f64)| -> Point3 { origin + uv.0 * u_axis + uv.1 * v_axis };
 
     // Project outer loop
     let outer_2d: Vec<(f64, f64)> = outer_verts.iter().map(&project).collect();
@@ -355,7 +357,9 @@ where
 
     for (hole_2d, hole_3d) in inner_2d.iter().zip(inner_3d.iter()) {
         // Compute hole centroid
-        let centroid: (f64, f64) = hole_2d.iter().fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
+        let centroid: (f64, f64) = hole_2d
+            .iter()
+            .fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
         let n = hole_2d.len() as f64;
         let centroid = (centroid.0 / n, centroid.1 / n);
 
@@ -396,7 +400,9 @@ where
 
         // Create ring at 2x the hole radius, but capped at the max safe radius
         let desired_ring_radius = hole_radius * 2.5;
-        let ring_radius = desired_ring_radius.min(max_ring_radius).max(hole_radius * 1.2);
+        let ring_radius = desired_ring_radius
+            .min(max_ring_radius)
+            .max(hole_radius * 1.2);
 
         // Create ring vertices aligned with hole vertices (same angle, larger radius)
         // This ensures proper 1-to-1 correspondence for triangle creation
@@ -548,7 +554,9 @@ fn refine_outer_polygon_for_holes(
         }
 
         // Find centroid of hole
-        let centroid: (f64, f64) = hole.iter().fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
+        let centroid: (f64, f64) = hole
+            .iter()
+            .fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
         let n = hole.len() as f64;
         let centroid = (centroid.0 / n, centroid.1 / n);
 
@@ -599,7 +607,10 @@ fn refine_outer_polygon_for_holes(
             let j = (best_edge + 1) % result_2d.len();
             let a_2d = result_2d[best_edge];
             let b_2d = result_2d[j];
-            let new_2d = (a_2d.0 + best_t * (b_2d.0 - a_2d.0), a_2d.1 + best_t * (b_2d.1 - a_2d.1));
+            let new_2d = (
+                a_2d.0 + best_t * (b_2d.0 - a_2d.0),
+                a_2d.1 + best_t * (b_2d.1 - a_2d.1),
+            );
 
             let a_3d = result_3d[best_edge];
             let b_3d = result_3d[j];
@@ -672,7 +683,8 @@ fn triangulate_polygon_with_holes(
     let mut poly_indices: Vec<usize> = (0..refined_outer_2d.len()).collect();
 
     // Track which vertices have been used as bridge endpoints
-    let mut used_bridge_vertices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut used_bridge_vertices: std::collections::HashSet<usize> =
+        std::collections::HashSet::new();
 
     for (hole_idx, inner_start) in inner_starts.iter().enumerate() {
         let inner_len = inner_2d[hole_idx].len();
@@ -737,7 +749,6 @@ fn triangulate_polygon_with_holes(
 
         poly_indices = new_poly;
     }
-
 
     // Now triangulate the merged polygon using ear clipping
     ear_clip_triangulate(&all_verts_2d, &poly_indices, &mut mesh.indices, reversed);
@@ -1065,7 +1076,6 @@ fn tessellate_spherical_face(
     mesh
 }
 
-
 /// Tessellate a spherical cap defined by a boundary loop.
 /// Used for split faces from boolean operations.
 fn tessellate_spherical_cap(
@@ -1084,16 +1094,14 @@ fn tessellate_spherical_cap(
     // Get sphere center and radius
     let (center, radius) = if surface.surface_type() == SurfaceKind::Sphere {
         // Try to downcast to get sphere parameters
-        let sphere = unsafe {
-            &*(surface as *const dyn vcad_kernel_geom::Surface as *const SphereSurface)
-        };
+        let sphere =
+            unsafe { &*(surface as *const dyn vcad_kernel_geom::Surface as *const SphereSurface) };
         (sphere.center, sphere.radius)
     } else {
         // Fallback: estimate center from boundary
-        let centroid: Point3 = loop_verts.iter().fold(
-            Point3::origin(),
-            |acc, p| Point3::new(acc.x + p.x, acc.y + p.y, acc.z + p.z),
-        );
+        let centroid: Point3 = loop_verts.iter().fold(Point3::origin(), |acc, p| {
+            Point3::new(acc.x + p.x, acc.y + p.y, acc.z + p.z)
+        });
         let n = loop_verts.len() as f64;
         let centroid = Point3::new(centroid.x / n, centroid.y / n, centroid.z / n);
         let r = (loop_verts[0] - centroid).norm();
@@ -1101,13 +1109,15 @@ fn tessellate_spherical_cap(
     };
 
     // Compute centroid of boundary vertices for cap center
-    let boundary_centroid: Point3 = loop_verts.iter().fold(
-        Point3::origin(),
-        |acc, p| Point3::new(acc.x + p.x, acc.y + p.y, acc.z + p.z),
-    );
+    let boundary_centroid: Point3 = loop_verts.iter().fold(Point3::origin(), |acc, p| {
+        Point3::new(acc.x + p.x, acc.y + p.y, acc.z + p.z)
+    });
     let n = loop_verts.len() as f64;
-    let boundary_centroid =
-        Point3::new(boundary_centroid.x / n, boundary_centroid.y / n, boundary_centroid.z / n);
+    let boundary_centroid = Point3::new(
+        boundary_centroid.x / n,
+        boundary_centroid.y / n,
+        boundary_centroid.z / n,
+    );
 
     // Direction from sphere center to cap center
     let cap_dir = (boundary_centroid - center).normalize();
@@ -1121,7 +1131,10 @@ fn tessellate_spherical_cap(
         })
         .collect();
 
-    let min_angle = boundary_angles.iter().cloned().fold(f64::INFINITY, f64::min);
+    let min_angle = boundary_angles
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
     let avg_angle = boundary_angles.iter().sum::<f64>() / boundary_angles.len() as f64;
 
     // Determine if this is a large cap (> ~90 degrees) or small cap
@@ -1182,7 +1195,6 @@ fn tessellate_large_spherical_cap(
     min_angle: f64,
     reversed: bool,
 ) -> TriangleMesh {
-
     let mut mesh = TriangleMesh::new();
 
     // Antipodal pole (opposite to cap center)
@@ -1194,9 +1206,13 @@ fn tessellate_large_spherical_cap(
     // Create local coordinate system for longitude
     let up = cap_dir;
     let right = if up.x.abs() < 0.9 {
-        vcad_kernel_math::Vec3::new(1.0, 0.0, 0.0).cross(&up).normalize()
+        vcad_kernel_math::Vec3::new(1.0, 0.0, 0.0)
+            .cross(&up)
+            .normalize()
     } else {
-        vcad_kernel_math::Vec3::new(0.0, 1.0, 0.0).cross(&up).normalize()
+        vcad_kernel_math::Vec3::new(0.0, 1.0, 0.0)
+            .cross(&up)
+            .normalize()
     };
     let forward = up.cross(&right);
 
@@ -1302,6 +1318,7 @@ fn tessellate_large_spherical_cap(
 }
 
 /// Stitch a latitude ring to an arbitrary boundary loop.
+#[allow(clippy::too_many_arguments)]
 fn stitch_ring_to_boundary(
     mesh: &mut TriangleMesh,
     ring_start: u32,
@@ -1321,7 +1338,9 @@ fn stitch_ring_to_boundary(
         let mut closest_boundary = 0usize;
         let mut closest_dist = f64::INFINITY;
         for (j, &ba) in boundary_angles.iter().enumerate() {
-            let dist = (ba - ring_angle).abs().min(2.0 * PI - (ba - ring_angle).abs());
+            let dist = (ba - ring_angle)
+                .abs()
+                .min(2.0 * PI - (ba - ring_angle).abs());
             if dist < closest_dist {
                 closest_dist = dist;
                 closest_boundary = j;
@@ -1330,9 +1349,11 @@ fn stitch_ring_to_boundary(
         let boundary_idx = boundary_start + closest_boundary as u32;
 
         if reversed {
-            mesh.indices.extend_from_slice(&[ring_curr, boundary_idx, ring_next]);
+            mesh.indices
+                .extend_from_slice(&[ring_curr, boundary_idx, ring_next]);
         } else {
-            mesh.indices.extend_from_slice(&[ring_curr, ring_next, boundary_idx]);
+            mesh.indices
+                .extend_from_slice(&[ring_curr, ring_next, boundary_idx]);
         }
     }
 
@@ -1705,8 +1726,13 @@ pub fn tessellate(brep: &BRepSolid, segments: u32) -> TriangleMesh {
                 //  1 vertex in the loop, so we generate disks directly.)
             }
             SurfaceKind::Sphere => {
-                let face_mesh =
-                    tessellate_spherical_face(&brep.topology, &brep.geometry, face_id, &params, reversed);
+                let face_mesh = tessellate_spherical_face(
+                    &brep.topology,
+                    &brep.geometry,
+                    face_id,
+                    &params,
+                    reversed,
+                );
                 mesh.merge(&face_mesh);
             }
             SurfaceKind::Cone => {
@@ -1794,8 +1820,13 @@ pub fn tessellate_brep(brep: &BRepSolid, segments: u32) -> TriangleMesh {
                 mesh.merge(&face_mesh);
             }
             SurfaceKind::Sphere => {
-                let face_mesh =
-                    tessellate_spherical_face(&brep.topology, &brep.geometry, face_id, &params, reversed);
+                let face_mesh = tessellate_spherical_face(
+                    &brep.topology,
+                    &brep.geometry,
+                    face_id,
+                    &params,
+                    reversed,
+                );
                 mesh.merge(&face_mesh);
             }
             SurfaceKind::Cone => {
@@ -1965,12 +1996,7 @@ mod tests {
         use vcad_kernel_math::Point3;
 
         // Square: 10x10 in XY plane at Z=0 (CCW winding)
-        let outer_2d: Vec<(f64, f64)> = vec![
-            (0.0, 0.0),
-            (10.0, 0.0),
-            (10.0, 10.0),
-            (0.0, 10.0),
-        ];
+        let outer_2d: Vec<(f64, f64)> = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)];
         let outer_3d: Vec<Point3> = vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(10.0, 0.0, 0.0),
@@ -1996,9 +2022,14 @@ mod tests {
         let inner_2d = vec![hole_2d];
         let inner_3d = vec![hole_3d];
 
-        let mesh = triangulate_polygon_with_holes(&outer_2d, &inner_2d, &outer_3d, &inner_3d, false);
+        let mesh =
+            triangulate_polygon_with_holes(&outer_2d, &inner_2d, &outer_3d, &inner_3d, false);
 
-        println!("Square with hole: {} triangles, {} vertices", mesh.num_triangles(), mesh.num_vertices());
+        println!(
+            "Square with hole: {} triangles, {} vertices",
+            mesh.num_triangles(),
+            mesh.num_vertices()
+        );
 
         // Should have triangles
         assert!(mesh.num_triangles() > 0, "Should produce triangles");

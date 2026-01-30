@@ -569,16 +569,32 @@ pub struct BilinearSurface {
 impl BilinearSurface {
     /// Create a bilinear surface from four corner points.
     pub fn new(p00: Point3, p10: Point3, p01: Point3, p11: Point3) -> Self {
-        Self { p00, p10, p01, p11, corner_normals: None }
+        Self {
+            p00,
+            p10,
+            p01,
+            p11,
+            corner_normals: None,
+        }
     }
 
     /// Create a bilinear surface with explicit corner normals for smooth shading.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_normals(
-        p00: Point3, p10: Point3, p01: Point3, p11: Point3,
-        n00: Dir3, n10: Dir3, n01: Dir3, n11: Dir3,
+        p00: Point3,
+        p10: Point3,
+        p01: Point3,
+        p11: Point3,
+        n00: Dir3,
+        n10: Dir3,
+        n01: Dir3,
+        n11: Dir3,
     ) -> Self {
         Self {
-            p00, p10, p01, p11,
+            p00,
+            p10,
+            p01,
+            p11,
             corner_normals: Some([n00, n10, n01, n11]),
         }
     }
@@ -674,9 +690,9 @@ impl Surface for BilinearSurface {
             p10: t.apply_point(&self.p10),
             p01: t.apply_point(&self.p01),
             p11: t.apply_point(&self.p11),
-            corner_normals: self.corner_normals.map(|normals| {
-                normals.map(|n| Dir3::new_normalize(t.apply_vec(&n.into_inner())))
-            }),
+            corner_normals: self
+                .corner_normals
+                .map(|normals| normals.map(|n| Dir3::new_normalize(t.apply_vec(&n.into_inner())))),
         })
     }
 }
