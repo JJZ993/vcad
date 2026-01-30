@@ -746,8 +746,12 @@ impl DxfDraftingDocument {
     /// Export to DXF file with proper layer and linetype tables.
     pub fn export(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
         let file = File::create(path)?;
-        let mut writer = BufWriter::new(file);
+        let writer = BufWriter::new(file);
+        self.export_to_writer(writer)
+    }
 
+    /// Export to a writer with proper layer and linetype tables.
+    pub fn export_to_writer(&self, mut writer: impl Write) -> std::io::Result<()> {
         // DXF Header
         self.write_header(&mut writer)?;
 
@@ -1266,6 +1270,33 @@ pub fn export_projected_view_to_dxf(
     }
 
     doc.export(path)
+}
+
+/// Export a projected view to a DXF byte buffer.
+///
+/// This function takes a ProjectedView from the drafting crate and
+/// returns the DXF content as bytes for use in WASM or other contexts.
+#[cfg(feature = "drafting")]
+pub fn export_projected_view_to_dxf_buffer(
+    view: &vcad_kernel_drafting::ProjectedView,
+) -> std::io::Result<Vec<u8>> {
+    use vcad_kernel_drafting::Visibility;
+
+    let mut doc = DxfDraftingDocument::new();
+
+    for edge in &view.edges {
+        let (x1, y1) = (edge.start.x, edge.start.y);
+        let (x2, y2) = (edge.end.x, edge.end.y);
+
+        match edge.visibility {
+            Visibility::Visible => doc.add_visible_line(x1, y1, x2, y2),
+            Visibility::Hidden => doc.add_hidden_line(x1, y1, x2, y2),
+        }
+    }
+
+    let mut buffer = Vec::new();
+    doc.export_to_writer(&mut buffer)?;
+    Ok(buffer)
 }
 
 #[cfg(test)]

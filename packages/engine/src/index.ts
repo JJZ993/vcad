@@ -19,13 +19,6 @@ export {
 /** Re-export Solid class for direct use */
 export type { Solid, WasmAnnotationLayer } from "@vcad/kernel-wasm";
 
-/** Type for the initialized kernel module */
-export interface KernelModule {
-  Solid: typeof Solid;
-  WasmAnnotationLayer: typeof WasmAnnotationLayer;
-  projectMesh: (mesh: { positions: Float32Array; indices: Uint32Array }, viewDirection: string) => ProjectedView | null;
-}
-
 /** 2D projected edge with visibility info */
 export interface ProjectedEdge {
   start: { x: number; y: number };
@@ -48,6 +41,40 @@ export interface ProjectedView {
   edges: ProjectedEdge[];
   bounds: BoundingBox2D;
   view_direction: string;
+}
+
+/** Detail view parameters */
+export interface DetailViewParams {
+  center: { x: number; y: number };
+  scale: number;
+  width: number;
+  height: number;
+  label: string;
+}
+
+/** A magnified region view */
+export interface DetailView {
+  edges: ProjectedEdge[];
+  bounds: BoundingBox2D;
+  params: DetailViewParams;
+}
+
+/** Type for the initialized kernel module */
+export interface KernelModule {
+  Solid: typeof Solid;
+  WasmAnnotationLayer: typeof WasmAnnotationLayer;
+  projectMesh: (mesh: { positions: Float32Array; indices: Uint32Array }, viewDirection: string) => ProjectedView | null;
+  importStepBuffer: (data: Uint8Array) => Array<{ positions: Float32Array; indices: Uint32Array }>;
+  exportProjectedViewToDxf: (view_json: string) => Uint8Array;
+  createDetailView: (
+    parent_json: string,
+    center_x: number,
+    center_y: number,
+    scale: number,
+    width: number,
+    height: number,
+    label: string,
+  ) => DetailView;
 }
 
 /** Rendered dimension types from the annotation layer */
@@ -126,6 +153,9 @@ export class Engine {
       Solid: wasmModule.Solid,
       WasmAnnotationLayer: wasmModule.WasmAnnotationLayer,
       projectMesh: wasmModule.projectMesh,
+      importStepBuffer: wasmModule.importStepBuffer,
+      exportProjectedViewToDxf: wasmModule.exportProjectedViewToDxf,
+      createDetailView: wasmModule.createDetailView,
     });
   }
 
@@ -150,6 +180,51 @@ export class Engine {
       { positions: mesh.positions, indices: mesh.indices },
       viewDirection,
     );
+  }
+
+  /** Import solids from a STEP file buffer.
+   *
+   * Returns an array of triangle meshes, one for each body in the STEP file.
+   */
+  importStep(data: ArrayBuffer): TriangleMesh[] {
+    const bytes = new Uint8Array(data);
+    const meshes = this.kernel.importStepBuffer(bytes);
+    return meshes.map((m) => ({
+      positions: new Float32Array(m.positions),
+      indices: new Uint32Array(m.indices),
+    }));
+  }
+
+  /** Export a projected view to DXF format.
+   *
+   * Returns the DXF file content as a Uint8Array.
+   */
+  exportDrawingToDxf(view: ProjectedView): Uint8Array {
+    const json = JSON.stringify(view);
+    return this.kernel.exportProjectedViewToDxf(json);
+  }
+
+  /** Create a detail view (magnified region) from a projected view.
+   *
+   * @param view - The parent projected view
+   * @param centerX - X coordinate of the region center
+   * @param centerY - Y coordinate of the region center
+   * @param scale - Magnification factor (e.g., 2.0 = 2x)
+   * @param width - Width of the region to capture
+   * @param height - Height of the region to capture
+   * @param label - Label for the detail view (e.g., "A")
+   */
+  createDetailView(
+    view: ProjectedView,
+    centerX: number,
+    centerY: number,
+    scale: number,
+    width: number,
+    height: number,
+    label: string,
+  ): DetailView {
+    const json = JSON.stringify(view);
+    return this.kernel.createDetailView(json, centerX, centerY, scale, width, height, label);
   }
 
   /** Evaluate a preview extrusion without adding to document */

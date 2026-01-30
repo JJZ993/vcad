@@ -15,10 +15,12 @@ default = ["gltf"]
 step = []
 gltf = ["dep:gltf", "dep:base64"]
 usd = []
+drafting = ["dep:vcad-kernel-drafting"]
 
 [dependencies]
 vcad-ir = { workspace = true }
 vcad-kernel = { workspace = true }
+vcad-kernel-drafting = { workspace = true, optional = true }
 nalgebra = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }

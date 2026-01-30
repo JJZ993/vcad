@@ -866,3 +866,253 @@ impl Default for WasmAnnotationLayer {
         Self::new()
     }
 }
+
+// =========================================================================
+// DXF Export
+// =========================================================================
+
+/// Export a projected view to DXF format.
+///
+/// Returns the DXF content as bytes.
+///
+/// # Arguments
+/// * `view_json` - JSON string of a ProjectedView
+///
+/// # Returns
+/// A byte array containing the DXF file content.
+#[wasm_bindgen(js_name = exportProjectedViewToDxf)]
+pub fn export_projected_view_to_dxf(view_json: &str) -> Result<Vec<u8>, JsError> {
+    use std::io::Write;
+    use vcad_kernel_drafting::{ProjectedView, Visibility};
+
+    let view: ProjectedView =
+        serde_json::from_str(view_json).map_err(|e| JsError::new(&e.to_string()))?;
+
+    // Build DXF content
+    let mut buffer = Vec::new();
+
+    // Header
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "SECTION").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "HEADER").unwrap();
+    writeln!(buffer, "9").unwrap();
+    writeln!(buffer, "$ACADVER").unwrap();
+    writeln!(buffer, "1").unwrap();
+    writeln!(buffer, "AC1009").unwrap();
+    writeln!(buffer, "9").unwrap();
+    writeln!(buffer, "$INSUNITS").unwrap();
+    writeln!(buffer, "70").unwrap();
+    writeln!(buffer, "4").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "ENDSEC").unwrap();
+
+    // Tables
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "SECTION").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "TABLES").unwrap();
+
+    // Linetypes
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "TABLE").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "LTYPE").unwrap();
+    writeln!(buffer, "70").unwrap();
+    writeln!(buffer, "2").unwrap();
+
+    // Continuous
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "LTYPE").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "CONTINUOUS").unwrap();
+    writeln!(buffer, "70").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "3").unwrap();
+    writeln!(buffer, "Solid line").unwrap();
+    writeln!(buffer, "72").unwrap();
+    writeln!(buffer, "65").unwrap();
+    writeln!(buffer, "73").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "40").unwrap();
+    writeln!(buffer, "0.0").unwrap();
+
+    // Hidden
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "LTYPE").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "HIDDEN").unwrap();
+    writeln!(buffer, "70").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "3").unwrap();
+    writeln!(buffer, "Hidden line").unwrap();
+    writeln!(buffer, "72").unwrap();
+    writeln!(buffer, "65").unwrap();
+    writeln!(buffer, "73").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "40").unwrap();
+    writeln!(buffer, "9.525").unwrap();
+    writeln!(buffer, "49").unwrap();
+    writeln!(buffer, "6.35").unwrap();
+    writeln!(buffer, "49").unwrap();
+    writeln!(buffer, "-3.175").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "ENDTAB").unwrap();
+
+    // Layers
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "TABLE").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "LAYER").unwrap();
+    writeln!(buffer, "70").unwrap();
+    writeln!(buffer, "2").unwrap();
+
+    // VISIBLE layer
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "LAYER").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "VISIBLE").unwrap();
+    writeln!(buffer, "70").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "62").unwrap();
+    writeln!(buffer, "7").unwrap();
+    writeln!(buffer, "6").unwrap();
+    writeln!(buffer, "CONTINUOUS").unwrap();
+
+    // HIDDEN layer
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "LAYER").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "HIDDEN").unwrap();
+    writeln!(buffer, "70").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "62").unwrap();
+    writeln!(buffer, "8").unwrap();
+    writeln!(buffer, "6").unwrap();
+    writeln!(buffer, "HIDDEN").unwrap();
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "ENDTAB").unwrap();
+
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "ENDSEC").unwrap();
+
+    // Entities
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "SECTION").unwrap();
+    writeln!(buffer, "2").unwrap();
+    writeln!(buffer, "ENTITIES").unwrap();
+
+    for edge in &view.edges {
+        let (layer, linetype) = match edge.visibility {
+            Visibility::Visible => ("VISIBLE", "CONTINUOUS"),
+            Visibility::Hidden => ("HIDDEN", "HIDDEN"),
+        };
+
+        writeln!(buffer, "0").unwrap();
+        writeln!(buffer, "LINE").unwrap();
+        writeln!(buffer, "8").unwrap();
+        writeln!(buffer, "{}", layer).unwrap();
+        writeln!(buffer, "6").unwrap();
+        writeln!(buffer, "{}", linetype).unwrap();
+        writeln!(buffer, "10").unwrap();
+        writeln!(buffer, "{:.6}", edge.start.x).unwrap();
+        writeln!(buffer, "20").unwrap();
+        writeln!(buffer, "{:.6}", edge.start.y).unwrap();
+        writeln!(buffer, "11").unwrap();
+        writeln!(buffer, "{:.6}", edge.end.x).unwrap();
+        writeln!(buffer, "21").unwrap();
+        writeln!(buffer, "{:.6}", edge.end.y).unwrap();
+    }
+
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "ENDSEC").unwrap();
+
+    // EOF
+    writeln!(buffer, "0").unwrap();
+    writeln!(buffer, "EOF").unwrap();
+
+    Ok(buffer)
+}
+
+// =========================================================================
+// Detail Views
+// =========================================================================
+
+/// Create a detail view from a projected view.
+///
+/// A detail view is a magnified region of a parent view, useful for showing
+/// fine features that would be too small in the main view.
+///
+/// # Arguments
+/// * `parent_json` - JSON string of the parent ProjectedView
+/// * `center_x` - X coordinate of the region center
+/// * `center_y` - Y coordinate of the region center
+/// * `scale` - Magnification factor (e.g., 2.0 = 2x)
+/// * `width` - Width of the region to capture
+/// * `height` - Height of the region to capture
+/// * `label` - Label for the detail view (e.g., "A")
+///
+/// # Returns
+/// A JS object containing the detail view with edges and bounds.
+#[wasm_bindgen(js_name = createDetailView)]
+#[allow(clippy::too_many_arguments)]
+pub fn create_detail_view(
+    parent_json: &str,
+    center_x: f64,
+    center_y: f64,
+    scale: f64,
+    width: f64,
+    height: f64,
+    label: &str,
+) -> Result<JsValue, JsError> {
+    use vcad_kernel_drafting::{create_detail_view as create_detail, DetailViewParams, Point2D, ProjectedView};
+
+    let parent: ProjectedView =
+        serde_json::from_str(parent_json).map_err(|e| JsError::new(&e.to_string()))?;
+
+    let params = DetailViewParams::new(
+        Point2D::new(center_x, center_y),
+        scale,
+        width,
+        height,
+        label,
+    );
+
+    let detail = create_detail(&parent, &params);
+
+    serde_wasm_bindgen::to_value(&detail).map_err(|e| JsError::new(&e.to_string()))
+}
+
+// =========================================================================
+// STEP Import
+// =========================================================================
+
+/// Import solids from STEP file bytes.
+///
+/// Returns a JS array of mesh data for each imported body.
+/// Each mesh contains `positions` (Float32Array) and `indices` (Uint32Array).
+///
+/// # Arguments
+/// * `data` - Raw STEP file contents as bytes
+///
+/// # Returns
+/// A JS array of mesh objects for rendering the imported geometry.
+#[wasm_bindgen(js_name = importStepBuffer)]
+pub fn import_step_buffer(data: &[u8]) -> Result<JsValue, JsError> {
+    let solids = vcad_kernel::Solid::from_step_buffer_all(data)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+
+    // Convert each solid to a mesh
+    let meshes: Vec<WasmMesh> = solids
+        .iter()
+        .map(|s| {
+            let mesh = s.to_mesh(32);
+            WasmMesh {
+                positions: mesh.vertices,
+                indices: mesh.indices,
+            }
+        })
+        .collect();
+
+    serde_wasm_bindgen::to_value(&meshes).map_err(|e| JsError::new(&e.to_string()))
+}

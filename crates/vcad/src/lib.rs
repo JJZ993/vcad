@@ -474,7 +474,10 @@ impl Part {
     /// // result.write_step("box_with_hole.step"); // May return StepExportError::NotBRep
     /// ```
     #[cfg(feature = "step")]
-    pub fn write_step(&self, path: impl AsRef<std::path::Path>) -> Result<(), step::StepExportError> {
+    pub fn write_step(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<(), step::StepExportError> {
         self.solid.to_step(path)
     }
 

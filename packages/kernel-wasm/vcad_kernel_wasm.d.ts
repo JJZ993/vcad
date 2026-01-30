@@ -279,6 +279,53 @@ export class WasmAnnotationLayer {
 }
 
 /**
+ * Create a detail view from a projected view.
+ *
+ * A detail view is a magnified region of a parent view, useful for showing
+ * fine features that would be too small in the main view.
+ *
+ * # Arguments
+ * * `parent_json` - JSON string of the parent ProjectedView
+ * * `center_x` - X coordinate of the region center
+ * * `center_y` - Y coordinate of the region center
+ * * `scale` - Magnification factor (e.g., 2.0 = 2x)
+ * * `width` - Width of the region to capture
+ * * `height` - Height of the region to capture
+ * * `label` - Label for the detail view (e.g., "A")
+ *
+ * # Returns
+ * A JS object containing the detail view with edges and bounds.
+ */
+export function createDetailView(parent_json: string, center_x: number, center_y: number, scale: number, width: number, height: number, label: string): any;
+
+/**
+ * Export a projected view to DXF format.
+ *
+ * Returns the DXF content as bytes.
+ *
+ * # Arguments
+ * * `view_json` - JSON string of a ProjectedView
+ *
+ * # Returns
+ * A byte array containing the DXF file content.
+ */
+export function exportProjectedViewToDxf(view_json: string): Uint8Array;
+
+/**
+ * Import solids from STEP file bytes.
+ *
+ * Returns a JS array of mesh data for each imported body.
+ * Each mesh contains `positions` (Float32Array) and `indices` (Uint32Array).
+ *
+ * # Arguments
+ * * `data` - Raw STEP file contents as bytes
+ *
+ * # Returns
+ * A JS array of mesh objects for rendering the imported geometry.
+ */
+export function importStepBuffer(data: Uint8Array): any;
+
+/**
  * Initialize the WASM module (sets up panic hook for better error messages).
  */
 export function init(): void;
@@ -314,6 +361,9 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_solid_free: (a: number, b: number) => void;
     readonly __wbg_wasmannotationlayer_free: (a: number, b: number) => void;
+    readonly createDetailView: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
+    readonly exportProjectedViewToDxf: (a: number, b: number) => [number, number, number, number];
+    readonly importStepBuffer: (a: number, b: number) => [number, number, number];
     readonly projectMesh: (a: any, b: number, c: number) => any;
     readonly sectionMesh: (a: any, b: number, c: number, d: number, e: number) => any;
     readonly solid_boundingBox: (a: number) => [number, number];

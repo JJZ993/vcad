@@ -602,6 +602,93 @@ export class WasmAnnotationLayer {
 if (Symbol.dispose) WasmAnnotationLayer.prototype[Symbol.dispose] = WasmAnnotationLayer.prototype.free;
 
 /**
+ * Create a detail view from a projected view.
+ *
+ * A detail view is a magnified region of a parent view, useful for showing
+ * fine features that would be too small in the main view.
+ *
+ * # Arguments
+ * * `parent_json` - JSON string of the parent ProjectedView
+ * * `center_x` - X coordinate of the region center
+ * * `center_y` - Y coordinate of the region center
+ * * `scale` - Magnification factor (e.g., 2.0 = 2x)
+ * * `width` - Width of the region to capture
+ * * `height` - Height of the region to capture
+ * * `label` - Label for the detail view (e.g., "A")
+ *
+ * # Returns
+ * A JS object containing the detail view with edges and bounds.
+ * @param {string} parent_json
+ * @param {number} center_x
+ * @param {number} center_y
+ * @param {number} scale
+ * @param {number} width
+ * @param {number} height
+ * @param {string} label
+ * @returns {any}
+ */
+export function createDetailView(parent_json, center_x, center_y, scale, width, height, label) {
+    const ptr0 = passStringToWasm0(parent_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.createDetailView(ptr0, len0, center_x, center_y, scale, width, height, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * Export a projected view to DXF format.
+ *
+ * Returns the DXF content as bytes.
+ *
+ * # Arguments
+ * * `view_json` - JSON string of a ProjectedView
+ *
+ * # Returns
+ * A byte array containing the DXF file content.
+ * @param {string} view_json
+ * @returns {Uint8Array}
+ */
+export function exportProjectedViewToDxf(view_json) {
+    const ptr0 = passStringToWasm0(view_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.exportProjectedViewToDxf(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
+ * Import solids from STEP file bytes.
+ *
+ * Returns a JS array of mesh data for each imported body.
+ * Each mesh contains `positions` (Float32Array) and `indices` (Uint32Array).
+ *
+ * # Arguments
+ * * `data` - Raw STEP file contents as bytes
+ *
+ * # Returns
+ * A JS array of mesh objects for rendering the imported geometry.
+ * @param {Uint8Array} data
+ * @returns {any}
+ */
+export function importStepBuffer(data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.importStepBuffer(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * Initialize the WASM module (sets up panic hook for better error messages).
  */
 export function init() {
@@ -1033,6 +1120,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passArrayF64ToWasm0(arg, malloc) {

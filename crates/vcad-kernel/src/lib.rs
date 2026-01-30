@@ -699,6 +699,30 @@ impl Solid {
         })
     }
 
+    /// Import all solids from a STEP buffer.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Raw STEP file contents
+    ///
+    /// # Returns
+    ///
+    /// A vector of `Solid` objects, one for each body in the STEP file.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `StepError` if the buffer cannot be parsed.
+    pub fn from_step_buffer_all(data: &[u8]) -> Result<Vec<Self>, StepError> {
+        let solids = vcad_kernel_step::read_step_from_buffer(data)?;
+        Ok(solids
+            .into_iter()
+            .map(|brep| Self {
+                repr: SolidRepr::BRep(Box::new(brep)),
+                segments: 32,
+            })
+            .collect())
+    }
+
     /// Export this solid to a STEP file.
     ///
     /// # Arguments
