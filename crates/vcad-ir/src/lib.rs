@@ -9,6 +9,139 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ============================================================================
+// Assembly types (for kinematics)
+// ============================================================================
+
+/// 3D transform (translation, rotation in degrees, scale).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Transform3D {
+    /// Translation offset.
+    pub translation: Vec3,
+    /// Rotation angles in degrees (Euler XYZ).
+    pub rotation: Vec3,
+    /// Scale factors per axis.
+    pub scale: Vec3,
+}
+
+impl Default for Transform3D {
+    fn default() -> Self {
+        Self {
+            translation: Vec3::new(0.0, 0.0, 0.0),
+            rotation: Vec3::new(0.0, 0.0, 0.0),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+        }
+    }
+}
+
+impl Transform3D {
+    /// Create an identity transform (no translation, rotation, or scaling).
+    pub fn identity() -> Self {
+        Self::default()
+    }
+}
+
+/// Joint limits as `[min, max]` tuple for constrained joints.
+pub type JointLimits = (f64, f64);
+
+/// Joint kind variants for assembly joints.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum JointKind {
+    /// Fixed joint — no degrees of freedom.
+    Fixed,
+    /// Revolute joint — rotation around an axis.
+    Revolute {
+        /// Rotation axis.
+        axis: Vec3,
+        /// Optional angle limits in degrees.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        limits: Option<JointLimits>,
+    },
+    /// Slider joint — translation along an axis.
+    Slider {
+        /// Translation axis.
+        axis: Vec3,
+        /// Optional position limits in mm.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        limits: Option<JointLimits>,
+    },
+    /// Cylindrical joint — rotation and translation along an axis.
+    Cylindrical {
+        /// Axis of rotation/translation.
+        axis: Vec3,
+    },
+    /// Ball joint — rotation around all axes.
+    Ball,
+}
+
+/// A joint connecting two instances in an assembly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Joint {
+    /// Unique identifier.
+    pub id: String,
+    /// Optional human-readable name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Parent instance ID (null for world-grounded joints).
+    #[serde(rename = "parentInstanceId")]
+    pub parent_instance_id: Option<String>,
+    /// Child instance ID.
+    #[serde(rename = "childInstanceId")]
+    pub child_instance_id: String,
+    /// Anchor point on parent (or world origin if parent is null).
+    #[serde(rename = "parentAnchor")]
+    pub parent_anchor: Vec3,
+    /// Anchor point on child.
+    #[serde(rename = "childAnchor")]
+    pub child_anchor: Vec3,
+    /// Joint type and parameters.
+    pub kind: JointKind,
+    /// Current joint state (angle in degrees or position in mm).
+    pub state: f64,
+}
+
+/// An instance of a part definition in an assembly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Instance {
+    /// Unique identifier.
+    pub id: String,
+    /// Reference to the part definition.
+    #[serde(rename = "partDefId")]
+    pub part_def_id: String,
+    /// Optional human-readable name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Optional transform override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<Transform3D>,
+    /// Optional material override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
+}
+
+/// Alias for [`Instance`] (used in some components).
+pub type PartInstance = Instance;
+
+/// A reusable part definition in an assembly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartDef {
+    /// Unique identifier.
+    pub id: String,
+    /// Optional human-readable name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Root node of the geometry DAG.
+    pub root: NodeId,
+    /// Default material key.
+    #[serde(rename = "defaultMaterial", skip_serializing_if = "Option::is_none")]
+    pub default_material: Option<String>,
+}
+
+// ============================================================================
+// Core IR types
+// ============================================================================
+
 /// Unique identifier for a node in the IR graph.
 pub type NodeId = u64;
 
@@ -270,6 +403,20 @@ pub struct Document {
     pub part_materials: HashMap<String, String>,
     /// Scene entries (assembled parts with materials).
     pub roots: Vec<SceneEntry>,
+
+    // Assembly fields (optional, for kinematics)
+    /// Part definitions for assembly mode.
+    #[serde(rename = "partDefs", skip_serializing_if = "Option::is_none")]
+    pub part_defs: Option<HashMap<String, PartDef>>,
+    /// Instances of part definitions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instances: Option<Vec<Instance>>,
+    /// Joints connecting instances.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub joints: Option<Vec<Joint>>,
+    /// The instance that is fixed in world space (ground).
+    #[serde(rename = "groundInstanceId", skip_serializing_if = "Option::is_none")]
+    pub ground_instance_id: Option<String>,
 }
 
 impl Default for Document {
@@ -280,6 +427,10 @@ impl Default for Document {
             materials: HashMap::new(),
             part_materials: HashMap::new(),
             roots: Vec::new(),
+            part_defs: None,
+            instances: None,
+            joints: None,
+            ground_instance_id: None,
         }
     }
 }
@@ -533,5 +684,206 @@ mod tests {
         assert!(json.contains(r#""type":"Revolve""#));
         let restored: CsgOp = serde_json::from_str(&json).unwrap();
         assert_eq!(op, restored);
+    }
+
+    #[test]
+    fn assembly_document_roundtrip() {
+        let mut doc = Document::new();
+
+        // Add a cube node
+        let cube_id = 1;
+        doc.nodes.insert(
+            cube_id,
+            Node {
+                id: cube_id,
+                name: Some("base_cube".to_string()),
+                op: CsgOp::Cube {
+                    size: Vec3::new(10.0, 10.0, 10.0),
+                },
+            },
+        );
+
+        // Add a cylinder node
+        let cyl_id = 2;
+        doc.nodes.insert(
+            cyl_id,
+            Node {
+                id: cyl_id,
+                name: Some("arm_cylinder".to_string()),
+                op: CsgOp::Cylinder {
+                    radius: 2.0,
+                    height: 20.0,
+                    segments: 0,
+                },
+            },
+        );
+
+        // Add part definitions
+        let mut part_defs = HashMap::new();
+        part_defs.insert(
+            "base".to_string(),
+            PartDef {
+                id: "base".to_string(),
+                name: Some("Base Plate".to_string()),
+                root: cube_id,
+                default_material: Some("aluminum".to_string()),
+            },
+        );
+        part_defs.insert(
+            "arm".to_string(),
+            PartDef {
+                id: "arm".to_string(),
+                name: Some("Arm".to_string()),
+                root: cyl_id,
+                default_material: None,
+            },
+        );
+        doc.part_defs = Some(part_defs);
+
+        // Add instances
+        doc.instances = Some(vec![
+            Instance {
+                id: "base_inst".to_string(),
+                part_def_id: "base".to_string(),
+                name: Some("Ground Base".to_string()),
+                transform: None,
+                material: None,
+            },
+            Instance {
+                id: "arm_inst".to_string(),
+                part_def_id: "arm".to_string(),
+                name: Some("Rotating Arm".to_string()),
+                transform: Some(Transform3D {
+                    translation: Vec3::new(0.0, 0.0, 10.0),
+                    rotation: Vec3::new(0.0, 0.0, 0.0),
+                    scale: Vec3::new(1.0, 1.0, 1.0),
+                }),
+                material: Some("steel".to_string()),
+            },
+        ]);
+
+        // Add joints
+        doc.joints = Some(vec![Joint {
+            id: "joint_1".to_string(),
+            name: Some("Base-Arm Revolute".to_string()),
+            parent_instance_id: Some("base_inst".to_string()),
+            child_instance_id: "arm_inst".to_string(),
+            parent_anchor: Vec3::new(5.0, 5.0, 10.0),
+            child_anchor: Vec3::new(0.0, 0.0, 0.0),
+            kind: JointKind::Revolute {
+                axis: Vec3::new(0.0, 0.0, 1.0),
+                limits: Some((-90.0, 90.0)),
+            },
+            state: 0.0,
+        }]);
+
+        // Set ground instance
+        doc.ground_instance_id = Some("base_inst".to_string());
+
+        // Serialize and deserialize
+        let json = doc.to_json().expect("serialize");
+        let restored = Document::from_json(&json).expect("deserialize");
+
+        assert_eq!(doc, restored);
+
+        // Verify assembly fields
+        assert!(restored.part_defs.is_some());
+        assert_eq!(restored.part_defs.as_ref().unwrap().len(), 2);
+        assert!(restored.instances.is_some());
+        assert_eq!(restored.instances.as_ref().unwrap().len(), 2);
+        assert!(restored.joints.is_some());
+        assert_eq!(restored.joints.as_ref().unwrap().len(), 1);
+        assert_eq!(restored.ground_instance_id, Some("base_inst".to_string()));
+
+        // Verify camelCase serialization
+        assert!(json.contains(r#""partDefs""#));
+        assert!(json.contains(r#""partDefId""#));
+        assert!(json.contains(r#""parentInstanceId""#));
+        assert!(json.contains(r#""childInstanceId""#));
+        assert!(json.contains(r#""parentAnchor""#));
+        assert!(json.contains(r#""childAnchor""#));
+        assert!(json.contains(r#""groundInstanceId""#));
+        assert!(json.contains(r#""defaultMaterial""#));
+    }
+
+    #[test]
+    fn joint_kind_serialization() {
+        // Test Fixed
+        let fixed = JointKind::Fixed;
+        let json = serde_json::to_string(&fixed).unwrap();
+        assert!(json.contains(r#""type":"Fixed""#));
+        let restored: JointKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(fixed, restored);
+
+        // Test Revolute with limits
+        let revolute = JointKind::Revolute {
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            limits: Some((-180.0, 180.0)),
+        };
+        let json = serde_json::to_string(&revolute).unwrap();
+        assert!(json.contains(r#""type":"Revolute""#));
+        assert!(json.contains(r#""axis""#));
+        assert!(json.contains(r#""limits""#));
+        let restored: JointKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(revolute, restored);
+
+        // Test Revolute without limits
+        let revolute_no_limits = JointKind::Revolute {
+            axis: Vec3::new(1.0, 0.0, 0.0),
+            limits: None,
+        };
+        let json = serde_json::to_string(&revolute_no_limits).unwrap();
+        assert!(!json.contains(r#""limits""#)); // skip_serializing_if works
+        let restored: JointKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(revolute_no_limits, restored);
+
+        // Test Slider
+        let slider = JointKind::Slider {
+            axis: Vec3::new(1.0, 0.0, 0.0),
+            limits: Some((0.0, 100.0)),
+        };
+        let json = serde_json::to_string(&slider).unwrap();
+        assert!(json.contains(r#""type":"Slider""#));
+        let restored: JointKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(slider, restored);
+
+        // Test Cylindrical
+        let cylindrical = JointKind::Cylindrical {
+            axis: Vec3::new(0.0, 1.0, 0.0),
+        };
+        let json = serde_json::to_string(&cylindrical).unwrap();
+        assert!(json.contains(r#""type":"Cylindrical""#));
+        let restored: JointKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(cylindrical, restored);
+
+        // Test Ball
+        let ball = JointKind::Ball;
+        let json = serde_json::to_string(&ball).unwrap();
+        assert!(json.contains(r#""type":"Ball""#));
+        let restored: JointKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(ball, restored);
+    }
+
+    #[test]
+    fn transform3d_default() {
+        let t = Transform3D::default();
+        assert_eq!(t.translation, Vec3::new(0.0, 0.0, 0.0));
+        assert_eq!(t.rotation, Vec3::new(0.0, 0.0, 0.0));
+        assert_eq!(t.scale, Vec3::new(1.0, 1.0, 1.0));
+
+        let t2 = Transform3D::identity();
+        assert_eq!(t, t2);
+    }
+
+    #[test]
+    fn empty_assembly_fields_omitted() {
+        let doc = Document::new();
+        let json = doc.to_json().expect("serialize");
+
+        // Assembly fields should not appear when None
+        assert!(!json.contains(r#""partDefs""#));
+        assert!(!json.contains(r#""instances""#));
+        assert!(!json.contains(r#""joints""#));
+        assert!(!json.contains(r#""groundInstanceId""#));
     }
 }
