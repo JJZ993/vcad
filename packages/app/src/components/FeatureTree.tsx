@@ -560,6 +560,19 @@ export function FeatureTree() {
     });
   }
 
+  const hasContent = hasInstances || parts.length > 0;
+
+  // Close by default if there's no content on first render
+  const hasInitialized = useRef(false);
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      if (!hasContent) {
+        setFeatureTreeOpen(false);
+      }
+    }
+  }, [hasContent, setFeatureTreeOpen]);
+
   if (!featureTreeOpen) return null;
 
   return (
@@ -587,39 +600,42 @@ export function FeatureTree() {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
-        <ContextMenu>
-          <div>
-            {/* Assembly mode: show instances and joints */}
-            {hasInstances ? (
-              <AssemblyTree
-                instances={document.instances!}
-                joints={document.joints ?? []}
-                groundInstanceId={document.groundInstanceId}
-              />
-            ) : (
-              <>
-                {/* Legacy mode: show parts */}
-                {parts.length === 0 && (
-                  <div className="px-2 py-4 text-center text-xs text-text-muted">
-                    no parts yet — add one from the toolbar
-                  </div>
-                )}
-                {parts.map((part) => (
-                  <TreeNode
-                    key={part.id}
-                    part={part}
-                    depth={0}
-                    expandedIds={expandedIds}
-                    toggleExpanded={toggleExpanded}
-                    consumedParts={consumedParts}
-                    renamingId={renamingId}
-                    setRenamingId={setRenamingId}
-                  />
-                ))}
-              </>
-            )}
+        {!hasContent ? (
+          <div className="px-2 py-4 text-center text-xs text-text-muted">
+            No features yet.
+            <br />
+            Use the command bar to create a part.
           </div>
-        </ContextMenu>
+        ) : (
+          <ContextMenu>
+            <div>
+              {/* Assembly mode: show instances and joints */}
+              {hasInstances ? (
+                <AssemblyTree
+                  instances={document.instances!}
+                  joints={document.joints ?? []}
+                  groundInstanceId={document.groundInstanceId}
+                />
+              ) : (
+                <>
+                  {/* Legacy mode: show parts */}
+                  {parts.map((part) => (
+                    <TreeNode
+                      key={part.id}
+                      part={part}
+                      depth={0}
+                      expandedIds={expandedIds}
+                      toggleExpanded={toggleExpanded}
+                      consumedParts={consumedParts}
+                      renamingId={renamingId}
+                      setRenamingId={setRenamingId}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          </ContextMenu>
+        )}
       </div>
     </div>
   );

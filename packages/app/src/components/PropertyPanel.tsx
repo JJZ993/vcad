@@ -7,22 +7,9 @@ import type { PartInfo, PrimitivePartInfo, SweepPartInfo } from "@vcad/core";
 import type { Vec3, PartInstance, Joint, JointKind } from "@vcad/ir";
 import { identityTransform } from "@vcad/ir";
 import { cn } from "@/lib/utils";
+import { MaterialSelector, InstanceMaterialSelector } from "@/components/materials";
+import { useVolumeCalculation } from "@/hooks/useVolumeCalculation";
 
-const MATERIAL_SWATCHES = [
-  { key: "default", label: "Default", color: "#b3b3bf" },
-  { key: "red", label: "Red", color: "#ef4444" },
-  { key: "blue", label: "Blue", color: "#3b82f6" },
-  { key: "green", label: "Green", color: "#22c55e" },
-  { key: "orange", label: "Orange", color: "#f97316" },
-  { key: "purple", label: "Purple", color: "#a855f7" },
-];
-
-function hexToRgb(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  return [r, g, b];
-}
 
 function SectionHeader({ children, tooltip }: { children: string; tooltip?: string }) {
   const content = (
@@ -51,47 +38,23 @@ function PartTypeBadge({ kind }: { kind: string }) {
 
 function MaterialPicker({ partId }: { partId: string }) {
   const document = useDocumentStore((s) => s.document);
-  const setPartMaterial = useDocumentStore((s) => s.setPartMaterial);
   const parts = useDocumentStore((s) => s.parts);
   const part = parts.find((p) => p.id === partId);
+  const volumeMm3 = useVolumeCalculation(partId);
+
   if (!part) return null;
 
   const rootEntry = document.roots.find((r) => r.root === part.translateNodeId);
   const currentMaterial = rootEntry?.material ?? "default";
 
-  function handleSelect(swatch: (typeof MATERIAL_SWATCHES)[number]) {
-    const state = useDocumentStore.getState();
-    const newDoc = structuredClone(state.document);
-    if (!newDoc.materials[swatch.key]) {
-      const rgb = hexToRgb(swatch.color);
-      newDoc.materials[swatch.key] = {
-        name: swatch.label,
-        color: rgb,
-        metallic: 0.1,
-        roughness: 0.6,
-      };
-    }
-    setPartMaterial(partId, swatch.key);
-  }
-
   return (
     <div>
-      <SectionHeader tooltip="Assign a material color to this part">Material</SectionHeader>
-      <div className="flex gap-1.5">
-        {MATERIAL_SWATCHES.map((swatch) => (
-          <Tooltip key={swatch.key} content={swatch.label} side="bottom">
-            <button
-              className={`h-5 w-5 rounded-full border-2 cursor-pointer ${
-                currentMaterial === swatch.key
-                  ? "border-accent"
-                  : "border-transparent hover:border-border"
-              }`}
-              style={{ backgroundColor: swatch.color }}
-              onClick={() => handleSelect(swatch)}
-            />
-          </Tooltip>
-        ))}
-      </div>
+      <SectionHeader tooltip="Assign a material to this part">Material</SectionHeader>
+      <MaterialSelector
+        partId={partId}
+        currentMaterialKey={currentMaterial}
+        volumeMm3={volumeMm3}
+      />
     </div>
   );
 }
@@ -403,45 +366,20 @@ function Divider() {
 
 function InstanceMaterialPicker({ instanceId }: { instanceId: string }) {
   const document = useDocumentStore((s) => s.document);
-  const setInstanceMaterial = useDocumentStore((s) => s.setInstanceMaterial);
 
   const instance = document.instances?.find((i) => i.id === instanceId);
   const partDef = instance ? document.partDefs?.[instance.partDefId] : undefined;
   const currentMaterial = instance?.material ?? partDef?.defaultMaterial ?? "default";
 
-  function handleSelect(swatch: (typeof MATERIAL_SWATCHES)[number]) {
-    const state = useDocumentStore.getState();
-    const newDoc = structuredClone(state.document);
-    if (!newDoc.materials[swatch.key]) {
-      const rgb = hexToRgb(swatch.color);
-      newDoc.materials[swatch.key] = {
-        name: swatch.label,
-        color: rgb,
-        metallic: 0.1,
-        roughness: 0.6,
-      };
-    }
-    setInstanceMaterial(instanceId, swatch.key);
-  }
-
+  // For instances, we use instanceId as the partId for the material selector
+  // The selector will call setInstanceMaterial internally when detecting an instance ID pattern
   return (
     <div>
-      <SectionHeader tooltip="Assign a material color to this instance">Material</SectionHeader>
-      <div className="flex gap-1.5">
-        {MATERIAL_SWATCHES.map((swatch) => (
-          <Tooltip key={swatch.key} content={swatch.label} side="bottom">
-            <button
-              className={`h-5 w-5 rounded-full border-2 cursor-pointer ${
-                currentMaterial === swatch.key
-                  ? "border-accent"
-                  : "border-transparent hover:border-border"
-              }`}
-              style={{ backgroundColor: swatch.color }}
-              onClick={() => handleSelect(swatch)}
-            />
-          </Tooltip>
-        ))}
-      </div>
+      <SectionHeader tooltip="Assign a material to this instance">Material</SectionHeader>
+      <InstanceMaterialSelector
+        instanceId={instanceId}
+        currentMaterialKey={currentMaterial}
+      />
     </div>
   );
 }

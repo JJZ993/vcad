@@ -79,16 +79,29 @@ export function evaluateDocument(
   const { Solid } = kernel;
   const cache = new Map<NodeId, Solid>();
 
+  console.group("[ENGINE] evaluateDocument");
+  console.log("Number of roots:", doc.roots.length);
+  console.log("Roots:", JSON.stringify(doc.roots, null, 2));
+
   // Traditional mode: evaluate roots
   const solids: Solid[] = [];
-  const parts = doc.roots.map((entry) => {
-    const solid = evaluateNode(entry.root, doc.nodes, Solid, cache);
+  const parts = doc.roots.map((entry, idx) => {
+    const node = doc.nodes[String(entry.root)];
+    console.group(`[ENGINE] Evaluating root[${idx}] nodeId=${entry.root}`);
+    console.log("Node:", JSON.stringify(node, null, 2));
+    const solid = evaluateNode(entry.root, doc.nodes, Solid, cache, 0);
+    const mesh = solidToMesh(solid);
+    console.log("Result mesh - triangles:", mesh.indices.length / 3, "vertices:", mesh.positions.length / 3);
+    console.groupEnd();
     solids.push(solid);
     return {
-      mesh: solidToMesh(solid),
+      mesh,
       material: entry.material,
     };
   });
+
+  console.log("Total parts evaluated:", parts.length);
+  console.groupEnd();
 
   // Assembly mode: evaluate partDefs and instances
   let evaluatedPartDefs: EvaluatedPartDef[] | undefined;
@@ -105,7 +118,7 @@ export function evaluateDocument(
 
     evaluatedPartDefs = [];
     for (const [id, partDef] of Object.entries(doc.partDefs)) {
-      const solid = evaluateNode(partDef.root, doc.nodes, Solid, cache);
+      const solid = evaluateNode(partDef.root, doc.nodes, Solid, cache, 0);
       partDefSolids.set(id, solid);
       const mesh = solidToMesh(solid);
       partDefMeshes.set(id, mesh);
@@ -204,16 +217,22 @@ function evaluateNode(
   nodes: Record<string, Node>,
   Solid: typeof import("@vcad/kernel-wasm").Solid,
   cache: Map<NodeId, import("@vcad/kernel-wasm").Solid>,
+  depth = 0,
 ): import("@vcad/kernel-wasm").Solid {
+  const indent = "  ".repeat(depth);
   const cached = cache.get(nodeId);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`${indent}[NODE] ${nodeId} (CACHED)`);
+    return cached;
+  }
 
   const node = nodes[String(nodeId)];
   if (!node) {
     throw new Error(`Missing node: ${nodeId}`);
   }
 
-  const result = evaluateOp(node.op, nodes, Solid, cache);
+  console.log(`${indent}[NODE] ${nodeId} type=${node.op.type} name=${node.name || "(unnamed)"}`);
+  const result = evaluateOp(node.op, nodes, Solid, cache, depth);
   cache.set(nodeId, result);
   return result;
 }
@@ -223,12 +242,16 @@ function evaluateOp(
   nodes: Record<string, Node>,
   Solid: typeof import("@vcad/kernel-wasm").Solid,
   cache: Map<NodeId, import("@vcad/kernel-wasm").Solid>,
+  depth = 0,
 ): import("@vcad/kernel-wasm").Solid {
+  const indent = "  ".repeat(depth);
   switch (op.type) {
     case "Cube":
+      console.log(`${indent}  -> Cube(${op.size.x}, ${op.size.y}, ${op.size.z})`);
       return Solid.cube(op.size.x, op.size.y, op.size.z);
 
     case "Cylinder":
+      console.log(`${indent}  -> Cylinder(r=${op.radius}, h=${op.height})`);
       return Solid.cylinder(op.radius, op.height, op.segments || undefined);
 
     case "Sphere":
@@ -246,35 +269,45 @@ function evaluateOp(
       return Solid.empty();
 
     case "Union": {
-      const left = evaluateNode(op.left, nodes, Solid, cache);
-      const right = evaluateNode(op.right, nodes, Solid, cache);
+      console.log(`${indent}  -> Union(left=${op.left}, right=${op.right})`);
+      const left = evaluateNode(op.left, nodes, Solid, cache, depth + 1);
+      const right = evaluateNode(op.right, nodes, Solid, cache, depth + 1);
       return left.union(right);
     }
 
     case "Difference": {
-      const left = evaluateNode(op.left, nodes, Solid, cache);
-      const right = evaluateNode(op.right, nodes, Solid, cache);
-      return left.difference(right);
+      console.log(`${indent}  -> Difference(left=${op.left}, right=${op.right})`);
+      const left = evaluateNode(op.left, nodes, Solid, cache, depth + 1);
+      const right = evaluateNode(op.right, nodes, Solid, cache, depth + 1);
+      const leftTris = left.getMesh().indices.length / 3;
+      const rightTris = right.getMesh().indices.length / 3;
+      console.log(`${indent}  -> Difference: left has ${leftTris} tris, right has ${rightTris} tris`);
+      const result = left.difference(right);
+      console.log(`${indent}  -> Difference result: ${result.getMesh().indices.length / 3} tris`);
+      return result;
     }
 
     case "Intersection": {
-      const left = evaluateNode(op.left, nodes, Solid, cache);
-      const right = evaluateNode(op.right, nodes, Solid, cache);
+      const left = evaluateNode(op.left, nodes, Solid, cache, depth + 1);
+      const right = evaluateNode(op.right, nodes, Solid, cache, depth + 1);
       return left.intersection(right);
     }
 
     case "Translate": {
-      const child = evaluateNode(op.child, nodes, Solid, cache);
+      console.log(`${indent}  -> Translate(${op.offset.x}, ${op.offset.y}, ${op.offset.z}) child=${op.child}`);
+      const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.translate(op.offset.x, op.offset.y, op.offset.z);
     }
 
     case "Rotate": {
-      const child = evaluateNode(op.child, nodes, Solid, cache);
+      console.log(`${indent}  -> Rotate(${op.angles.x}, ${op.angles.y}, ${op.angles.z}) child=${op.child}`);
+      const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.rotate(op.angles.x, op.angles.y, op.angles.z);
     }
 
     case "Scale": {
-      const child = evaluateNode(op.child, nodes, Solid, cache);
+      console.log(`${indent}  -> Scale(${op.factor.x}, ${op.factor.y}, ${op.factor.z}) child=${op.child}`);
+      const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.scale(op.factor.x, op.factor.y, op.factor.z);
     }
 
@@ -284,6 +317,7 @@ function evaluateOp(
       return Solid.empty();
 
     case "Extrude": {
+      console.log(`${indent}  -> Extrude(sketch=${op.sketch}, dir=(${op.direction.x}, ${op.direction.y}, ${op.direction.z}))`);
       const sketchNode = nodes[String(op.sketch)];
       if (!sketchNode || sketchNode.op.type !== "Sketch2D") {
         throw new Error(`Extrude references invalid sketch node: ${op.sketch}`);
@@ -294,7 +328,9 @@ function evaluateOp(
         op.direction.y,
         op.direction.z,
       ]);
-      return Solid.extrude(profile, direction);
+      const result = Solid.extrude(profile, direction);
+      console.log(`${indent}  -> Extrude result: ${result.getMesh().indices.length / 3} tris`);
+      return result;
     }
 
     case "Revolve": {
@@ -317,7 +353,7 @@ function evaluateOp(
     }
 
     case "LinearPattern": {
-      const child = evaluateNode(op.child, nodes, Solid, cache);
+      const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.linearPattern(
         op.direction.x,
         op.direction.y,
@@ -328,7 +364,7 @@ function evaluateOp(
     }
 
     case "CircularPattern": {
-      const child = evaluateNode(op.child, nodes, Solid, cache);
+      const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.circularPattern(
         op.axis_origin.x,
         op.axis_origin.y,
@@ -342,7 +378,7 @@ function evaluateOp(
     }
 
     case "Shell": {
-      const child = evaluateNode(op.child, nodes, Solid, cache);
+      const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.shell(op.thickness);
     }
 

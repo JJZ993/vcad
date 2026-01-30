@@ -14,6 +14,8 @@ import {
   BookOpen,
   Cube,
   ArrowsOutCardinal,
+  GithubLogo,
+  DiscordLogo,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -413,6 +415,35 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
             <Moon size={18} />
           )}
         </IconButton>
+
+        {/* External links */}
+        <Tooltip content="GitHub">
+          <a
+            href="https://github.com/ecto/vcad"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "flex h-8 w-8 items-center justify-center",
+              "text-text-muted/70 hover:text-text hover:bg-hover",
+            )}
+          >
+            <GithubLogo size={18} />
+          </a>
+        </Tooltip>
+        <Tooltip content="Discord">
+          <a
+            href="https://discord.gg/ZU8QHnFAc2"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "flex h-8 w-8 items-center justify-center",
+              "text-text-muted/70 hover:text-text hover:bg-hover",
+            )}
+          >
+            <DiscordLogo size={18} />
+          </a>
+        </Tooltip>
+
         <SettingsMenu onAboutOpen={onAboutOpen} />
       </div>
     </>
