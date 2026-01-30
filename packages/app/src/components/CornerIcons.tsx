@@ -325,7 +325,7 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
         </div>
       </div>
 
-      {/* Top-right: file actions, utilities, settings - with safe area padding */}
+      {/* Top-right: file actions, utilities, settings, BUILD - with safe area padding */}
       <div className="absolute z-20 flex items-center gap-1 top-[max(0.75rem,var(--safe-top))] right-[max(0.75rem,var(--safe-right))]">
         {/* File actions - always visible */}
         <IconButton tooltip="Save (Cmd+S)" onClick={onSave}>
@@ -334,9 +334,6 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
         <IconButton tooltip="Open (Cmd+O)" onClick={onOpen}>
           <FolderOpen size={18} />
         </IconButton>
-
-        {/* Output button - THE primary action */}
-        <OutputButton />
 
         {/* Desktop-only icons */}
         <div className="hidden sm:flex items-center gap-1">
@@ -395,6 +392,9 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
         </div>
 
         <SettingsMenu onAboutOpen={onAboutOpen} />
+
+        {/* BUILD - primary CTA at the end */}
+        <OutputButton />
       </div>
     </>
   );
