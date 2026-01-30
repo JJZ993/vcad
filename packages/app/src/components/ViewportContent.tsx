@@ -11,7 +11,7 @@ import {
 import { EffectComposer, N8AO, Vignette } from "@react-three/postprocessing";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { GridPlane } from "./GridPlane";
-import { SceneMesh } from "./SceneMesh";
+import { SceneMesh, ImportedMesh } from "./SceneMesh";
 import { ClashMesh } from "./ClashMesh";
 import { PreviewMesh } from "./PreviewMesh";
 import { SketchPlane3D } from "./SketchPlane3D";
@@ -534,8 +534,20 @@ export function ViewportContent() {
         );
       })}
 
-      {/* Scene meshes - Legacy mode (parts) */}
+      {/* Imported meshes (no PartInfo - direct mesh display) */}
       {(!scene?.instances || scene.instances.length === 0) &&
+        parts.length === 0 &&
+        scene?.parts.map((evalPart, idx) => (
+          <ImportedMesh
+            key={`imported-${idx}`}
+            mesh={evalPart.mesh}
+            materialKey={evalPart.material}
+          />
+        ))}
+
+      {/* Scene meshes - Legacy mode (parts with PartInfo) */}
+      {(!scene?.instances || scene.instances.length === 0) &&
+        parts.length > 0 &&
         scene?.parts.map((evalPart, idx) => {
           const partInfo = parts[idx];
           if (!partInfo) return null;

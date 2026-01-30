@@ -70,6 +70,16 @@ export function useEngine() {
       // Debounce to next animation frame
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
+        // Skip re-evaluation for empty documents if we already have a scene
+        // (preserves imported STL/STEP meshes that bypass the document model)
+        // Check must be inside RAF so it runs after setScene() has been called
+        if (state.document.roots.length === 0) {
+          const currentScene = useEngineStore.getState().scene;
+          if (currentScene && currentScene.parts.length > 0) {
+            return;
+          }
+        }
+
         try {
           const scene = engine.evaluate(state.document);
           useEngineStore.getState().setScene(scene);

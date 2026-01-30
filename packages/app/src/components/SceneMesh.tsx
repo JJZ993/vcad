@@ -171,6 +171,86 @@ function computeFaceInfo(
   };
 }
 
+/**
+ * Simplified mesh component for imported files (STL/STEP) that don't have PartInfo.
+ * No selection/hover/rename UI - just renders the mesh with material and wireframe toggle.
+ */
+interface ImportedMeshProps {
+  mesh: TriangleMesh;
+  materialKey: string;
+}
+
+export function ImportedMesh({ mesh, materialKey }: ImportedMeshProps) {
+  const geoRef = useRef<THREE.BufferGeometry>(null);
+  const showWireframe = useUiStore((s) => s.showWireframe);
+  const document = useDocumentStore((s) => s.document);
+
+  // Resolve material from document
+  const materialDef = useMemo(() => {
+    return document.materials[materialKey] ?? null;
+  }, [document, materialKey]);
+
+  const materialColor = useMemo(() => {
+    if (materialDef) {
+      return new THREE.Color(
+        materialDef.color[0],
+        materialDef.color[1],
+        materialDef.color[2],
+      );
+    }
+    return new THREE.Color(0.55, 0.55, 0.55);
+  }, [materialDef]);
+
+  useEffect(() => {
+    const geo = geoRef.current;
+    if (!geo) return;
+
+    // Clone arrays to avoid issues with transferred/shared buffers
+    const positions = new Float32Array(mesh.positions);
+    const indices = new Uint32Array(mesh.indices);
+
+    // Create temp geometry
+    const tempGeo = new THREE.BufferGeometry();
+    tempGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    tempGeo.setIndex(new THREE.BufferAttribute(indices, 1));
+
+    // Use toCreasedNormals for angle-based normal computation
+    const creasedGeo = toCreasedNormals(tempGeo, Math.PI / 6);
+
+    // Copy data to our geometry
+    geo.setAttribute("position", creasedGeo.getAttribute("position"));
+    geo.setAttribute("normal", creasedGeo.getAttribute("normal"));
+    if (creasedGeo.index) {
+      geo.setIndex(creasedGeo.index);
+    }
+    geo.computeBoundingSphere();
+    geo.computeBoundingBox();
+
+    // Cleanup temp geometry
+    tempGeo.dispose();
+    creasedGeo.dispose();
+
+    return () => {
+      geo.dispose();
+    };
+  }, [mesh]);
+
+  return (
+    <mesh castShadow receiveShadow>
+      <bufferGeometry ref={geoRef} />
+      <meshStandardMaterial
+        color={materialColor}
+        metalness={materialDef?.metallic ?? 0.0}
+        roughness={materialDef?.roughness ?? 0.7}
+        envMapIntensity={0.8}
+        flatShading={false}
+        side={THREE.DoubleSide}
+      />
+      {showWireframe && <Edges threshold={15} color="#666" />}
+    </mesh>
+  );
+}
+
 export function SceneMesh({
   partInfo,
   mesh,
