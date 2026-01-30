@@ -1,0 +1,21 @@
+{
+  "name": "@vcad/kernel-wasm",
+  "type": "module",
+  "description": "WASM bindings for the vcad B-rep kernel",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ecto/vcad"
+  },
+  "files": [
+    "vcad_kernel_wasm_bg.wasm",
+    "vcad_kernel_wasm.js",
+    "vcad_kernel_wasm.d.ts"
+  ],
+  "main": "vcad_kernel_wasm.js",
+  "types": "vcad_kernel_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
