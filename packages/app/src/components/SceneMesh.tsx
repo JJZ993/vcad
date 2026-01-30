@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import * as THREE from "three";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Edges, Html } from "@react-three/drei";
 import type { TriangleMesh, PartInfo, FaceInfo } from "@vcad/core";
 import { useUiStore, useDocumentStore, useSketchStore } from "@vcad/core";
@@ -216,14 +216,21 @@ export function SceneMesh({
   const [draftName, setDraftName] = useState(partInfo.name);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Resolve material color from document using the materialKey passed from evaluation
-  const materialColor = useMemo(() => {
-    const mat = document.materials[materialKey];
-    if (mat) {
-      return new THREE.Color(mat.color[0], mat.color[1], mat.color[2]);
-    }
-    return new THREE.Color(0.7, 0.7, 0.75);
+  // Resolve material from document using the materialKey passed from evaluation
+  const materialDef = useMemo(() => {
+    return document.materials[materialKey] ?? null;
   }, [document, materialKey]);
+
+  const materialColor = useMemo(() => {
+    if (materialDef) {
+      return new THREE.Color(
+        materialDef.color[0],
+        materialDef.color[1],
+        materialDef.color[2],
+      );
+    }
+    return new THREE.Color(0.55, 0.55, 0.55);
+  }, [materialDef]);
 
   // Compute emissive state: selected > hovered > none (face highlight uses overlay)
   const emissiveColor = useMemo(() => {
@@ -256,27 +263,28 @@ export function SceneMesh({
     const positions = new Float32Array(mesh.positions);
     const indices = new Uint32Array(mesh.indices);
 
-    // Create temp geometry to merge vertices for smooth normals
+    // Create temp geometry
     const tempGeo = new THREE.BufferGeometry();
     tempGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     tempGeo.setIndex(new THREE.BufferAttribute(indices, 1));
 
-    // Merge coincident vertices so normals can interpolate smoothly
-    const mergedGeo = mergeVertices(tempGeo, 0.0001);
-    mergedGeo.computeVertexNormals();
+    // Use toCreasedNormals for angle-based normal computation
+    // This preserves hard edges (like plate-to-cylinder transitions) while
+    // smoothing curved surfaces. Crease angle of ~30 degrees (0.5 radians).
+    const creasedGeo = toCreasedNormals(tempGeo, Math.PI / 6);
 
-    // Copy merged data to our geometry
-    geo.setAttribute("position", mergedGeo.getAttribute("position"));
-    geo.setAttribute("normal", mergedGeo.getAttribute("normal"));
-    if (mergedGeo.index) {
-      geo.setIndex(mergedGeo.index);
+    // Copy data to our geometry
+    geo.setAttribute("position", creasedGeo.getAttribute("position"));
+    geo.setAttribute("normal", creasedGeo.getAttribute("normal"));
+    if (creasedGeo.index) {
+      geo.setIndex(creasedGeo.index);
     }
     geo.computeBoundingSphere();
     geo.computeBoundingBox();
 
     // Cleanup temp geometry
     tempGeo.dispose();
-    mergedGeo.dispose();
+    creasedGeo.dispose();
 
     return () => {
       geo.dispose();
@@ -417,8 +425,8 @@ export function SceneMesh({
         color={materialColor}
         emissive={emissiveColor}
         emissiveIntensity={emissiveIntensity}
-        metalness={0.15}
-        roughness={0.5}
+        metalness={materialDef?.metallic ?? 0.0}
+        roughness={materialDef?.roughness ?? 0.7}
         envMapIntensity={0.8}
         flatShading={false}
         side={THREE.DoubleSide}

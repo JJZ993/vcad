@@ -8,6 +8,7 @@ import type {
   SketchSegment2D,
   PathCurve,
   Transform3D,
+  SweepOp,
 } from "@vcad/ir";
 import { createDocument, identityTransform } from "@vcad/ir";
 import type {
@@ -21,7 +22,15 @@ import type {
   LoftPartInfo,
   SketchPlane,
 } from "../types.js";
-import { isPrimitivePart, isBooleanPart, isExtrudePart, isRevolvePart, isSweepPart, isLoftPart, getSketchPlaneDirections } from "../types.js";
+import {
+  isPrimitivePart,
+  isBooleanPart,
+  isExtrudePart,
+  isRevolvePart,
+  isSweepPart,
+  isLoftPart,
+  getSketchPlaneDirections,
+} from "../types.js";
 
 const MAX_UNDO = 50;
 
@@ -61,8 +70,17 @@ export interface DocumentState {
   setRotation: (partId: string, angles: Vec3, skipUndo?: boolean) => void;
   setScale: (partId: string, factor: Vec3, skipUndo?: boolean) => void;
   updatePrimitiveOp: (partId: string, op: CsgOp, skipUndo?: boolean) => void;
+  updateSweepOp: (
+    partId: string,
+    updates: Partial<SweepOp>,
+    skipUndo?: boolean,
+  ) => void;
   renamePart: (partId: string, name: string) => void;
-  applyBoolean: (type: BooleanType, partIdA: string, partIdB: string) => string | null;
+  applyBoolean: (
+    type: BooleanType,
+    partIdA: string,
+    partIdB: string,
+  ) => string | null;
   duplicateParts: (partIds: string[]) => string[];
   loadDocument: (file: VcadFile) => void;
   addExtrude: (
@@ -84,10 +102,18 @@ export interface DocumentState {
     origin: Vec3,
     segments: SketchSegment2D[],
     path: PathCurve,
-    options?: { twist_angle?: number; scale_start?: number; scale_end?: number },
+    options?: {
+      twist_angle?: number;
+      scale_start?: number;
+      scale_end?: number;
+    },
   ) => string | null;
   addLoft: (
-    profiles: Array<{ plane: SketchPlane; origin: Vec3; segments: SketchSegment2D[] }>,
+    profiles: Array<{
+      plane: SketchPlane;
+      origin: Vec3;
+      segments: SketchSegment2D[];
+    }>,
     options?: { closed?: boolean },
   ) => string | null;
   setPartMaterial: (partId: string, materialKey: string) => void;
@@ -96,7 +122,11 @@ export interface DocumentState {
   redo: () => void;
   markSaved: () => void;
   // Assembly operations
-  setInstanceTransform: (instanceId: string, transform: Transform3D, skipUndo?: boolean) => void;
+  setInstanceTransform: (
+    instanceId: string,
+    transform: Transform3D,
+    skipUndo?: boolean,
+  ) => void;
   setInstanceMaterial: (instanceId: string, materialKey: string) => void;
   setJointState: (jointId: string, state: number, skipUndo?: boolean) => void;
 }
@@ -116,7 +146,10 @@ function snapshot(state: DocumentState, actionName: string): Snapshot {
   };
 }
 
-function pushUndo(state: DocumentState, actionName: string): Pick<DocumentState, "undoStack" | "redoStack"> {
+function pushUndo(
+  state: DocumentState,
+  actionName: string,
+): Pick<DocumentState, "undoStack" | "redoStack"> {
   const snap = snapshot(state, actionName);
   const stack = [...state.undoStack, snap];
   if (stack.length > MAX_UNDO) stack.shift();
@@ -196,15 +229,19 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     newDoc.nodes[String(primitiveId)] = makeNode(primitiveId, null, primOp);
     newDoc.nodes[String(scaleId)] = makeNode(scaleId, null, scaleOp);
     newDoc.nodes[String(rotateId)] = makeNode(rotateId, null, rotateOp);
-    newDoc.nodes[String(translateId)] = makeNode(translateId, name, translateOp);
+    newDoc.nodes[String(translateId)] = makeNode(
+      translateId,
+      name,
+      translateOp,
+    );
     newDoc.roots.push({ root: translateId, material: "default" });
 
     if (!newDoc.materials["default"]) {
       newDoc.materials["default"] = {
         name: "Default",
-        color: [0.7, 0.7, 0.75],
-        metallic: 0.1,
-        roughness: 0.6,
+        color: [0.55, 0.55, 0.55],
+        metallic: 0.0,
+        roughness: 0.7,
       };
     }
 
@@ -265,9 +302,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     delete newDoc.nodes[String(part.translateNodeId)];
 
     // Remove scene root
-    newDoc.roots = newDoc.roots.filter(
-      (r) => r.root !== part.translateNodeId,
-    );
+    newDoc.roots = newDoc.roots.filter((r) => r.root !== part.translateNodeId);
 
     set({
       document: newDoc,
@@ -337,6 +372,22 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({ document: newDoc, isDirty: true, ...undoState });
   },
 
+  updateSweepOp: (partId, updates, skipUndo) => {
+    const state = get();
+    const part = state.parts.find((p) => p.id === partId);
+    if (!part || !isSweepPart(part)) return;
+
+    const undoState = skipUndo ? {} : pushUndo(state, "Edit Sweep");
+    const newDoc = structuredClone(state.document);
+    const node = newDoc.nodes[String(part.sweepNodeId)];
+    if (node && node.op.type === "Sweep") {
+      // Merge updates into the existing op
+      node.op = { ...node.op, ...updates };
+    }
+
+    set({ document: newDoc, isDirty: true, ...undoState });
+  },
+
   applyBoolean: (type, partIdA, partIdB) => {
     const state = get();
     const partA = state.parts.find((p) => p.id === partIdA);
@@ -394,11 +445,16 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     newDoc.nodes[String(booleanId)] = makeNode(booleanId, null, boolOp);
     newDoc.nodes[String(scaleId)] = makeNode(scaleId, null, scaleOp);
     newDoc.nodes[String(rotateId)] = makeNode(rotateId, null, rotateOp);
-    newDoc.nodes[String(translateId)] = makeNode(translateId, name, translateOp);
+    newDoc.nodes[String(translateId)] = makeNode(
+      translateId,
+      name,
+      translateOp,
+    );
 
     // Remove source parts from roots (nodes stay for DAG references)
     newDoc.roots = newDoc.roots.filter(
-      (r) => r.root !== partA.translateNodeId && r.root !== partB.translateNodeId,
+      (r) =>
+        r.root !== partA.translateNodeId && r.root !== partB.translateNodeId,
     );
     newDoc.roots.push({ root: translateId, material: "default" });
 
@@ -470,7 +526,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       } else if (isLoftPart(srcPart)) {
         nodeIdsToClone.push(...srcPart.sketchNodeIds, srcPart.loftNodeId);
       }
-      nodeIdsToClone.push(srcPart.scaleNodeId, srcPart.rotateNodeId, srcPart.translateNodeId);
+      nodeIdsToClone.push(
+        srcPart.scaleNodeId,
+        srcPart.rotateNodeId,
+        srcPart.translateNodeId,
+      );
 
       // Allocate new IDs
       for (const oldId of nodeIdsToClone) {
@@ -499,7 +559,9 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
           clonedOp.sketch = idMap.get(clonedOp.sketch) ?? clonedOp.sketch;
         }
         if ("sketches" in clonedOp && Array.isArray(clonedOp.sketches)) {
-          clonedOp.sketches = clonedOp.sketches.map((id: number) => idMap.get(id) ?? id);
+          clonedOp.sketches = clonedOp.sketches.map(
+            (id: number) => idMap.get(id) ?? id,
+          );
         }
 
         newDoc.nodes[String(newId)] = makeNode(newId, oldNode.name, clonedOp);
@@ -680,15 +742,19 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     newDoc.nodes[String(extrudeId)] = makeNode(extrudeId, null, extrudeOp);
     newDoc.nodes[String(scaleId)] = makeNode(scaleId, null, scaleOp);
     newDoc.nodes[String(rotateId)] = makeNode(rotateId, null, rotateOp);
-    newDoc.nodes[String(translateId)] = makeNode(translateId, name, translateOp);
+    newDoc.nodes[String(translateId)] = makeNode(
+      translateId,
+      name,
+      translateOp,
+    );
     newDoc.roots.push({ root: translateId, material: "default" });
 
     if (!newDoc.materials["default"]) {
       newDoc.materials["default"] = {
         name: "Default",
-        color: [0.7, 0.7, 0.75],
-        metallic: 0.1,
-        roughness: 0.6,
+        color: [0.55, 0.55, 0.55],
+        metallic: 0.0,
+        roughness: 0.7,
       };
     }
 
@@ -772,15 +838,19 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     newDoc.nodes[String(revolveId)] = makeNode(revolveId, null, revolveOp);
     newDoc.nodes[String(scaleId)] = makeNode(scaleId, null, scaleOp);
     newDoc.nodes[String(rotateId)] = makeNode(rotateId, null, rotateOp);
-    newDoc.nodes[String(translateId)] = makeNode(translateId, name, translateOp);
+    newDoc.nodes[String(translateId)] = makeNode(
+      translateId,
+      name,
+      translateOp,
+    );
     newDoc.roots.push({ root: translateId, material: "default" });
 
     if (!newDoc.materials["default"]) {
       newDoc.materials["default"] = {
         name: "Default",
-        color: [0.7, 0.7, 0.75],
-        metallic: 0.1,
-        roughness: 0.6,
+        color: [0.55, 0.55, 0.55],
+        metallic: 0.0,
+        roughness: 0.7,
       };
     }
 
@@ -865,15 +935,19 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     newDoc.nodes[String(sweepId)] = makeNode(sweepId, null, sweepOp);
     newDoc.nodes[String(scaleId)] = makeNode(scaleId, null, scaleOp);
     newDoc.nodes[String(rotateId)] = makeNode(rotateId, null, rotateOp);
-    newDoc.nodes[String(translateId)] = makeNode(translateId, name, translateOp);
+    newDoc.nodes[String(translateId)] = makeNode(
+      translateId,
+      name,
+      translateOp,
+    );
     newDoc.roots.push({ root: translateId, material: "default" });
 
     if (!newDoc.materials["default"]) {
       newDoc.materials["default"] = {
         name: "Default",
-        color: [0.7, 0.7, 0.75],
-        metallic: 0.1,
-        roughness: 0.6,
+        color: [0.55, 0.55, 0.55],
+        metallic: 0.0,
+        roughness: 0.7,
       };
     }
 
@@ -960,21 +1034,29 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
     // Add all sketch nodes
     for (let i = 0; i < sketchIds.length; i++) {
-      newDoc.nodes[String(sketchIds[i])] = makeNode(sketchIds[i]!, null, sketchOps[i]!);
+      newDoc.nodes[String(sketchIds[i])] = makeNode(
+        sketchIds[i]!,
+        null,
+        sketchOps[i]!,
+      );
     }
 
     newDoc.nodes[String(loftId)] = makeNode(loftId, null, loftOp);
     newDoc.nodes[String(scaleId)] = makeNode(scaleId, null, scaleOp);
     newDoc.nodes[String(rotateId)] = makeNode(rotateId, null, rotateOp);
-    newDoc.nodes[String(translateId)] = makeNode(translateId, name, translateOp);
+    newDoc.nodes[String(translateId)] = makeNode(
+      translateId,
+      name,
+      translateOp,
+    );
     newDoc.roots.push({ root: translateId, material: "default" });
 
     if (!newDoc.materials["default"]) {
       newDoc.materials["default"] = {
         name: "Default",
-        color: [0.7, 0.7, 0.75],
-        metallic: 0.1,
-        roughness: 0.6,
+        color: [0.55, 0.55, 0.55],
+        metallic: 0.0,
+        roughness: 0.7,
       };
     }
 
