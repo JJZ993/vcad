@@ -1,51 +1,70 @@
 import { useEffect, useRef } from "react";
 import { Engine, useDocumentStore, useEngineStore } from "@vcad/core";
 
-export function useEngine() {
-  const engineRef = useRef<Engine | null>(null);
-  const rafRef = useRef<number>(0);
-  const setEngine = useEngineStore((s) => s.setEngine);
-  const setScene = useEngineStore((s) => s.setScene);
-  const setEngineReady = useEngineStore((s) => s.setEngineReady);
-  const setLoading = useEngineStore((s) => s.setLoading);
-  const setError = useEngineStore((s) => s.setError);
+// Module-level engine instance to survive HMR
+let globalEngine: Engine | null = null;
 
-  // Init engine
+export function useEngine() {
+  const engineRef = useRef<Engine | null>(globalEngine);
+  const rafRef = useRef<number>(0);
+
+  // Init engine (only once, survives HMR)
   useEffect(() => {
+    // If engine already exists (from previous HMR cycle), reuse it
+    if (globalEngine) {
+      engineRef.current = globalEngine;
+      useEngineStore.getState().setEngine(globalEngine);
+      useEngineStore.getState().setEngineReady(true);
+      useEngineStore.getState().setLoading(false);
+
+      // Re-evaluate the document to restore the scene
+      const doc = useDocumentStore.getState().document;
+      if (doc.roots.length > 0) {
+        try {
+          useEngineStore.getState().setScene(globalEngine.evaluate(doc));
+        } catch (e) {
+          useEngineStore.getState().setError(String(e));
+        }
+      }
+      return;
+    }
+
     let cancelled = false;
-    setLoading(true);
+    useEngineStore.getState().setLoading(true);
 
     Engine.init()
       .then((engine) => {
         if (cancelled) return;
+        globalEngine = engine;
         engineRef.current = engine;
-        setEngine(engine);
-        setEngineReady(true);
-        setLoading(false);
+        useEngineStore.getState().setEngine(engine);
+        useEngineStore.getState().setEngineReady(true);
+        useEngineStore.getState().setLoading(false);
 
         // Evaluate initial document
         const doc = useDocumentStore.getState().document;
         if (doc.roots.length > 0) {
           try {
-            setScene(engine.evaluate(doc));
+            useEngineStore.getState().setScene(engine.evaluate(doc));
           } catch (e) {
-            setError(String(e));
+            useEngineStore.getState().setError(String(e));
           }
         }
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) useEngineStore.getState().setError(String(e));
       });
 
     return () => {
       cancelled = true;
     };
-  }, [setEngine, setScene, setEngineReady, setLoading, setError]);
+  }, []); // Empty deps - only run on initial mount
 
   // Subscribe to document changes and re-evaluate
   useEffect(() => {
     const unsub = useDocumentStore.subscribe((state) => {
-      const engine = engineRef.current;
+      // Use globalEngine for HMR stability (engineRef might be stale)
+      const engine = globalEngine;
       if (!engine) return;
 
       // Debounce to next animation frame
@@ -53,9 +72,9 @@ export function useEngine() {
       rafRef.current = requestAnimationFrame(() => {
         try {
           const scene = engine.evaluate(state.document);
-          setScene(scene);
+          useEngineStore.getState().setScene(scene);
         } catch (e) {
-          setError(String(e));
+          useEngineStore.getState().setError(String(e));
         }
       });
     });
@@ -64,5 +83,5 @@ export function useEngine() {
       unsub();
       cancelAnimationFrame(rafRef.current);
     };
-  }, [setScene, setError]);
+  }, []); // Empty deps - subscription is stable
 }
