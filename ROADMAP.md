@@ -112,12 +112,40 @@ This isn't incremental improvement. This is **category creation**.
 
 | Operation | GPU Method | Expected Speedup |
 |-----------|------------|------------------|
+| **Direct BRep ray tracing** | Ray-trace analytic surfaces, skip tessellation | ∞ quality |
 | NURBS evaluation | De Boor on compute shader | 50x |
 | Boolean SSI | Parallel face-pairs via `wgpu` | 20x |
 | Tessellation | Hardware tessellator | 100x |
 | Collision detection | BVH on GPU | 30x |
 
 **Rust stack:** `wgpu` for WebGPU/Vulkan, `rayon` for CPU parallelism
+
+#### Direct BRep Ray Tracing (Revolutionary)
+
+Instead of tessellating BRep → triangles → rasterize, ray-trace the actual surfaces:
+
+```
+Planes      → closed-form ray-plane intersection
+Cylinders   → quadratic solve
+Spheres     → quadratic solve
+Cones       → quadratic solve
+Tori        → quartic solve (Ferrari's method)
+NURBS       → Newton iteration on ray-surface
+```
+
+**Benefits:**
+- **Pixel-perfect silhouettes** at any zoom level (no faceting ever)
+- **No tessellation latency** when parameters change — instant feedback
+- **Exact edge display** — the #1 visual quality complaint about CAD software
+- **LOD-free** — same quality at 1000x zoom as at 1x
+
+**Implementation:**
+1. Build BVH over BRep faces (AABB hierarchy)
+2. WebGPU compute shader traces rays against analytic surfaces
+3. Trimmed surfaces use 2D point-in-region test on parameter space
+4. Fall back to tessellation only for degenerate cases
+
+**Why this beats everyone:** No commercial CAD does this. They all tessellate. This is a generational leap in visual quality.
 
 ---
 
@@ -179,6 +207,7 @@ vcad-pcb/
 | API-First | 🔶 | ❌ | ❌ | ✅ | ❌ | 🔶 | **✅** |
 | PCB Integration | 🔶 | ❌ | ❌ | ❌ | ❌ | 🔶 | **✅** |
 | GPU Acceleration | ❌ | ❌ | 🔶 | ❌ | ❌ | ❌ | **✅** |
+| Direct BRep Rendering | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **✅** |
 | Self-Hosted | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | **✅** |
 | Price | $$$$ | $$$$$ | $$$$$ | $$$ | $$ | Free | **Free** |
 
@@ -202,9 +231,10 @@ vcad-pcb/
 9. **KiCad import** — leverage existing designs
 
 ### Phase D: Performance (Q4)
-10. **GPU tessellation** — wgpu compute shaders
-11. **CRDT collaboration** — Collabs-inspired sync
-12. **Topology optimization** — SIMP + marching cubes
+10. **Direct BRep ray tracing** — WebGPU renderer for analytic surfaces (pixel-perfect, no tessellation)
+11. **GPU tessellation** — wgpu compute shaders (fallback for complex NURBS)
+12. **CRDT collaboration** — Collabs-inspired sync
+13. **Topology optimization** — SIMP + marching cubes
 
 ---
 
@@ -343,6 +373,7 @@ vcad already incorporates arXiv research:
 2. ✅ Create criterion benchmark suite for booleans
 3. Integrate Shewchuk's exact predicates for containment queries
 4. GPU acceleration via wgpu for SSI computation
+5. **Direct BRep ray tracing** — WebGPU compute shader renderer that ray-traces analytic surfaces (planes, cylinders, spheres, cones, tori, NURBS) instead of tessellating to triangles
 
 ### Web App Enhancements
 1. STEP import UI in web app (kernel support exists)
