@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, Suspense } from "react";
+import { useRef, useEffect, useMemo, useState, Suspense } from "react";
 import { Spherical, Vector3, Box3, Raycaster, Vector2, Quaternion, Matrix4 } from "three";
 import { useThree, useFrame } from "@react-three/fiber";
 import {
@@ -93,6 +93,9 @@ function computeLevelQuaternion(
 export function ViewportContent() {
   useCameraControls();
   useInputDeviceDetection();
+
+  // Track camera motion to disable expensive effects during animation/orbit
+  const [isCameraMoving, setIsCameraMoving] = useState(false);
 
   const engineReady = useEngineStore((s) => s.engineReady);
   const scene = useEngineStore((s) => s.scene);
@@ -248,6 +251,9 @@ export function ViewportContent() {
   useFrame(() => {
     if (!isAnimatingTargetRef.current || !orbitRef.current) return;
 
+    // Ensure effects are disabled during animation
+    if (!isCameraMoving) setIsCameraMoving(true);
+
     const target = orbitRef.current.target;
     const targetGoal = targetGoalRef.current;
     const distanceGoal = distanceGoalRef.current;
@@ -296,6 +302,8 @@ export function ViewportContent() {
       isAnimatingTargetRef.current = false;
       distanceGoalRef.current = null;
       cameraPositionGoalRef.current = null;
+      // Re-enable expensive effects now that animation is complete
+      setIsCameraMoving(false);
     }
   });
 
@@ -498,13 +506,19 @@ export function ViewportContent() {
     return () => domElement.removeEventListener("wheel", handleWheel);
   }, [camera, controlScheme, effectiveDevice, zoomBehavior, orbitMomentum]);
 
-  // Disable raycasting during orbit for performance (large meshes)
+  // Disable raycasting and expensive effects during orbit for performance
   useEffect(() => {
     const controls = orbitRef.current;
     if (!controls) return;
 
-    const handleStart = () => setOrbiting(true);
-    const handleEnd = () => setOrbiting(false);
+    const handleStart = () => {
+      setOrbiting(true);
+      setIsCameraMoving(true);
+    };
+    const handleEnd = () => {
+      setOrbiting(false);
+      setIsCameraMoving(false);
+    };
 
     controls.addEventListener("start", handleStart);
     controls.addEventListener("end", handleEnd);
@@ -668,16 +682,18 @@ export function ViewportContent() {
       {/* Rim light for edge definition */}
       <directionalLight position={[-50, 20, 50]} intensity={0.2} />
 
-      {/* Contact shadows - soft shadow beneath objects */}
-      <ContactShadows
-        position={[0, -0.01, 0]}
-        opacity={isDark ? 0.4 : 0.3}
-        scale={200}
-        blur={2}
-        far={100}
-        resolution={512}
-        color={isDark ? "#000000" : "#1a1a1a"}
-      />
+      {/* Contact shadows - soft shadow beneath objects (disabled during camera motion for FPS) */}
+      {!isCameraMoving && (
+        <ContactShadows
+          position={[0, -0.01, 0]}
+          opacity={isDark ? 0.4 : 0.3}
+          scale={200}
+          blur={2}
+          far={100}
+          resolution={512}
+          color={isDark ? "#000000" : "#1a1a1a"}
+        />
+      )}
 
       {/* Grid */}
       <GridPlane />
@@ -802,8 +818,8 @@ export function ViewportContent() {
         </>
       )}
 
-      {/* Post-processing effects - deferred until engine ready */}
-      {engineReady && (
+      {/* Post-processing effects - disabled during camera motion for FPS */}
+      {engineReady && !isCameraMoving && (
         <EffectComposer>
           {/* N8AO - high quality ambient occlusion */}
           <N8AO
