@@ -1,0 +1,516 @@
+//! B-rep boolean pipeline - face splitting, classification, and sewing.
+
+use std::collections::HashMap;
+
+use rayon::prelude::*;
+use vcad_kernel_math::Point3;
+use vcad_kernel_primitives::BRepSolid;
+use vcad_kernel_tessellate::TriangleMesh;
+use vcad_kernel_topo::FaceId;
+
+use crate::api::{BooleanOp, BooleanResult};
+use crate::{bbox, classify, sew, split, ssi, trim};
+
+/// Debug logging macro - only prints when debug-boolean feature is enabled
+#[allow(unused_macros)]
+#[cfg(feature = "debug-boolean")]
+macro_rules! debug_bool {
+    ($($arg:tt)*) => {
+        eprintln!($($arg)*)
+    };
+}
+
+/// No-op version when debug-boolean feature is disabled
+#[allow(unused_macros)]
+#[cfg(not(feature = "debug-boolean"))]
+macro_rules! debug_bool {
+    ($($arg:tt)*) => {};
+}
+
+/// Handle boolean operations on non-overlapping solids.
+pub(crate) fn non_overlapping_boolean(
+    solid_a: &BRepSolid,
+    solid_b: &BRepSolid,
+    op: BooleanOp,
+    _segments: u32,
+) -> BooleanResult {
+    match op {
+        BooleanOp::Union => {
+            // Union of non-overlapping = both solids combined
+            let faces_a: Vec<_> = solid_a.topology.faces.keys().collect();
+            let faces_b: Vec<_> = solid_b.topology.faces.keys().collect();
+            let result = sew::sew_faces(solid_a, &faces_a, solid_b, &faces_b, false, 1e-6);
+            BooleanResult::BRep(Box::new(result))
+        }
+        BooleanOp::Difference => {
+            // Difference with non-overlapping = just A (nothing to subtract)
+            let faces_a: Vec<_> = solid_a.topology.faces.keys().collect();
+            let result = sew::sew_faces(solid_a, &faces_a, solid_b, &[], false, 1e-6);
+            BooleanResult::BRep(Box::new(result))
+        }
+        BooleanOp::Intersection => {
+            // Intersection of non-overlapping = empty
+            BooleanResult::Mesh(TriangleMesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                normals: Vec::new(),
+            })
+        }
+    }
+}
+
+/// Snap a value to 0 if it's within epsilon of 0.
+/// This prevents floating point errors like -0.0000001 from affecting classification.
+fn snap_to_zero(v: f64, eps: f64) -> f64 {
+    if v.abs() < eps {
+        0.0
+    } else {
+        v
+    }
+}
+
+/// Snap a point's coordinates to 0 if they're very close to 0.
+fn snap_point(p: Point3) -> Point3 {
+    const EPS: f64 = 1e-9;
+    Point3::new(
+        snap_to_zero(p.x, EPS),
+        snap_to_zero(p.y, EPS),
+        snap_to_zero(p.z, EPS),
+    )
+}
+
+/// Evaluate a point on an intersection curve at parameter t.
+fn evaluate_curve(curve: &ssi::IntersectionCurve, t: f64) -> Point3 {
+    let p = match curve {
+        ssi::IntersectionCurve::Line(line) => line.origin + t * line.direction,
+        ssi::IntersectionCurve::TwoLines(line1, _line2) => {
+            // For TwoLines, evaluate on the first line by default
+            // Caller should expand TwoLines before calling this
+            line1.origin + t * line1.direction
+        }
+        ssi::IntersectionCurve::Circle(c) => {
+            let (sin_t, cos_t) = t.sin_cos();
+            c.center + c.radius * (cos_t * c.x_dir.into_inner() + sin_t * c.y_dir.into_inner())
+        }
+        ssi::IntersectionCurve::Point(p) => *p,
+        ssi::IntersectionCurve::Sampled(points) => {
+            if points.is_empty() {
+                return Point3::origin();
+            }
+            // Linear interpolation along sampled curve
+            let idx = ((t * (points.len() - 1) as f64).floor() as usize).min(points.len() - 2);
+            let frac = t * (points.len() - 1) as f64 - idx as f64;
+            let p0 = points[idx];
+            let p1 = points[idx + 1];
+            Point3::new(
+                p0.x + frac * (p1.x - p0.x),
+                p0.y + frac * (p1.y - p0.y),
+                p0.z + frac * (p1.z - p0.z),
+            )
+        }
+        ssi::IntersectionCurve::Empty => Point3::origin(),
+    };
+    // Snap small values to exactly 0 to avoid floating point classification issues
+    snap_point(p)
+}
+
+/// Apply splits from intersection curves to solid A.
+fn apply_splits_to_solid(
+    solid: &mut BRepSolid,
+    splits: HashMap<FaceId, Vec<(ssi::IntersectionCurve, Point3, Point3)>>,
+    segments: u32,
+    _solid_name: &str,
+) {
+    for (face_id, split_list) in splits {
+        let mut current_faces = vec![face_id];
+        for (curve, _entry, _exit) in split_list {
+            let mut new_faces = Vec::new();
+            for &fid in &current_faces {
+                if solid.topology.faces.contains_key(fid) {
+                    // Check if this is a cylindrical face - use specialized split
+                    if split::is_cylindrical_face(solid, fid) {
+                        let result = split::split_cylindrical_face(solid, fid, &curve);
+                        if result.sub_faces.len() >= 2 {
+                            new_faces.extend(result.sub_faces);
+                        } else {
+                            new_faces.push(fid);
+                        }
+                        continue;
+                    }
+
+                    // Check if this is a circular disk face (cylinder cap) with a line curve
+                    if split::is_circular_disk_face(solid, fid) {
+                        if let ssi::IntersectionCurve::Line(_) = &curve {
+                            let result =
+                                split::split_circular_disk_face(solid, fid, &curve, segments);
+                            if result.sub_faces.len() >= 2 {
+                                new_faces.extend(result.sub_faces);
+                            } else {
+                                new_faces.push(fid);
+                            }
+                            continue;
+                        }
+                    }
+
+                    // Check if this is a planar face with a circle curve - use specialized split
+                    if split::is_planar_face(solid, fid) {
+                        if let ssi::IntersectionCurve::Circle(_circle) = &curve {
+                            debug_bool!(
+                                "  Split {} face {:?}: planar + Circle at ({:.1},{:.1},{:.1}) r={:.1}",
+                                solid_name,
+                                fid,
+                                circle.center.x,
+                                circle.center.y,
+                                circle.center.z,
+                                circle.radius
+                            );
+                            let result = split::split_planar_face(
+                                solid,
+                                fid,
+                                &curve,
+                                &Point3::origin(),
+                                &Point3::origin(),
+                                segments,
+                            );
+                            debug_bool!(
+                                "    -> Circle split result: {} sub-faces {:?}",
+                                result.sub_faces.len(),
+                                result.sub_faces
+                            );
+                            if result.sub_faces.len() >= 2 {
+                                new_faces.extend(result.sub_faces);
+                            } else {
+                                new_faces.push(fid);
+                            }
+                            continue;
+                        }
+
+                        // Handle line curves on planar faces
+                        if let ssi::IntersectionCurve::Line(_) = &curve {
+                            let result = split::split_planar_face(
+                                solid,
+                                fid,
+                                &curve,
+                                &Point3::origin(),
+                                &Point3::origin(),
+                                segments,
+                            );
+                            if result.sub_faces.len() >= 2 {
+                                new_faces.extend(result.sub_faces);
+                            } else {
+                                new_faces.push(fid);
+                            }
+                            continue;
+                        }
+                    }
+
+                    // Re-trim the curve to THIS sub-face's boundary
+                    let segs = trim::trim_curve_to_face(&curve, fid, solid, 64);
+                    debug_bool!(
+                        "  Split {} face {:?}: re-trim got {} segs",
+                        solid_name,
+                        fid,
+                        segs.len()
+                    );
+                    if segs.is_empty() {
+                        // Curve doesn't cross this face, keep it unchanged
+                        debug_bool!("    -> empty segs, keeping face unchanged");
+                        new_faces.push(fid);
+                        continue;
+                    }
+                    // Use the first segment's trimmed entry/exit
+                    let seg = &segs[0];
+                    let entry = evaluate_curve(&curve, seg.t_start);
+                    let exit = evaluate_curve(&curve, seg.t_end);
+                    let len = (exit - entry).norm();
+                    debug_bool!(
+                        "    -> entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2}) len={:.4}",
+                        entry.x,
+                        entry.y,
+                        entry.z,
+                        exit.x,
+                        exit.y,
+                        exit.z,
+                        len
+                    );
+                    if len < 1e-6 {
+                        debug_bool!("    -> too short, keeping face unchanged");
+                        new_faces.push(fid);
+                        continue;
+                    }
+                    let result = split::split_face_by_curve(solid, fid, &curve, &entry, &exit);
+                    debug_bool!(
+                        "    -> split result: {} sub-faces {:?}",
+                        result.sub_faces.len(),
+                        result.sub_faces
+                    );
+                    if result.sub_faces.len() >= 2 {
+                        new_faces.extend(result.sub_faces);
+                    } else {
+                        new_faces.push(fid);
+                    }
+                }
+            }
+            if !new_faces.is_empty() {
+                current_faces = new_faces;
+            }
+        }
+    }
+}
+
+/// B-rep boolean pipeline for overlapping solids.
+///
+/// Handles general boolean operations by:
+/// 1. Finding candidate face pairs via AABB
+/// 2. Computing surface-surface intersections
+/// 3. Splitting both A and B faces along intersection curves
+/// 4. Classifying split sub-faces
+/// 5. Selecting and sewing result faces
+pub(crate) fn brep_boolean(
+    solid_a: &BRepSolid,
+    solid_b: &BRepSolid,
+    op: BooleanOp,
+    segments: u32,
+) -> BooleanResult {
+    debug_bool!("\n========== BREP BOOLEAN START ==========");
+    debug_bool!("Operation: {:?}", op);
+    debug_bool!("Solid A: {} faces", solid_a.topology.faces.len());
+    debug_bool!("Solid B: {} faces", solid_b.topology.faces.len());
+
+    // Clone both solids so we can split them
+    let mut a = solid_a.clone();
+    let mut b = solid_b.clone();
+
+    // 1. Find candidate face pairs via AABB filtering
+    let pairs = bbox::find_candidate_face_pairs(&a, &b);
+    debug_bool!("\n--- Stage 1: AABB filtering ---");
+    debug_bool!("Candidate face pairs: {}", pairs.len());
+
+    // 2. For each face pair, compute SSI and collect splits for both A and B
+    // This is the hot path - parallelize with rayon
+    let split_results: Vec<_> = pairs
+        .par_iter()
+        .filter_map(|(face_a, face_b)| {
+            // Get face data with bounds checking to avoid panics
+            let face_data_a = a.topology.faces.get(*face_a)?;
+            let face_data_b = b.topology.faces.get(*face_b)?;
+            let surf_a = a.geometry.surfaces.get(face_data_a.surface_index)?;
+            let surf_b = b.geometry.surfaces.get(face_data_b.surface_index)?;
+
+            let curve = ssi::intersect_surfaces(surf_a.as_ref(), surf_b.as_ref());
+
+            if matches!(curve, ssi::IntersectionCurve::Empty) {
+                return None;
+            }
+
+            let mut results_a = Vec::new();
+            let mut results_b = Vec::new();
+
+            // For circle curves on planar faces, we don't need to trim
+            if let ssi::IntersectionCurve::Circle(circle) = &curve {
+                if split::is_planar_face(&a, *face_a) {
+                    results_a.push((curve.clone(), circle.center, circle.center));
+                }
+                if split::is_cylindrical_face(&b, *face_b) {
+                    results_b.push((curve.clone(), circle.center, circle.center));
+                }
+                return Some((*face_a, results_a, *face_b, results_b));
+            }
+
+            // Expand TwoLines into individual Line curves for processing
+            let curves_to_process: Vec<ssi::IntersectionCurve> = match &curve {
+                ssi::IntersectionCurve::TwoLines(line1, line2) => {
+                    debug_bool!(
+                        "  TwoLines: {:?}({:?}) x {:?}({:?})",
+                        face_a,
+                        surf_a.surface_type(),
+                        face_b,
+                        surf_b.surface_type()
+                    );
+                    debug_bool!(
+                        "    Line1: origin=({:.2},{:.2},{:.2}) dir=({:.2},{:.2},{:.2})",
+                        line1.origin.x,
+                        line1.origin.y,
+                        line1.origin.z,
+                        line1.direction.x,
+                        line1.direction.y,
+                        line1.direction.z
+                    );
+                    debug_bool!(
+                        "    Line2: origin=({:.2},{:.2},{:.2}) dir=({:.2},{:.2},{:.2})",
+                        line2.origin.x,
+                        line2.origin.y,
+                        line2.origin.z,
+                        line2.direction.x,
+                        line2.direction.y,
+                        line2.direction.z
+                    );
+                    vec![
+                        ssi::IntersectionCurve::Line(line1.clone()),
+                        ssi::IntersectionCurve::Line(line2.clone()),
+                    ]
+                }
+                _ => vec![curve.clone()],
+            };
+
+            for single_curve in &curves_to_process {
+                // Trim curve to A's face boundary (for non-circle curves)
+                let segs_a = trim::trim_curve_to_face(single_curve, *face_a, &a, 64);
+                debug_bool!(
+                    "    Trim to face A ({:?}): {} segments",
+                    face_a,
+                    segs_a.len()
+                );
+                for seg in &segs_a {
+                    let entry = evaluate_curve(single_curve, seg.t_start);
+                    let exit = evaluate_curve(single_curve, seg.t_end);
+                    let len = (exit - entry).norm();
+                    debug_bool!(
+                        "      Segment: entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2}) len={:.4}",
+                        entry.x,
+                        entry.y,
+                        entry.z,
+                        exit.x,
+                        exit.y,
+                        exit.z,
+                        len
+                    );
+                    if len > 1e-6 {
+                        results_a.push((single_curve.clone(), entry, exit));
+                    }
+                }
+
+                // Trim curve to B's face boundary (for non-circle curves)
+                let segs_b = trim::trim_curve_to_face(single_curve, *face_b, &b, 64);
+                debug_bool!(
+                    "    Trim to face B ({:?}): {} segments",
+                    face_b,
+                    segs_b.len()
+                );
+                for seg in &segs_b {
+                    let entry = evaluate_curve(single_curve, seg.t_start);
+                    let exit = evaluate_curve(single_curve, seg.t_end);
+                    let len = (exit - entry).norm();
+                    debug_bool!(
+                        "      Segment: entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2}) len={:.4}",
+                        entry.x,
+                        entry.y,
+                        entry.z,
+                        exit.x,
+                        exit.y,
+                        exit.z,
+                        len
+                    );
+                    if len > 1e-6 {
+                        results_b.push((single_curve.clone(), entry, exit));
+                    }
+                }
+            }
+
+            Some((*face_a, results_a, *face_b, results_b))
+        })
+        .collect();
+
+    // Merge parallel results into HashMaps
+    let mut splits_a: HashMap<FaceId, Vec<(ssi::IntersectionCurve, Point3, Point3)>> =
+        HashMap::new();
+    let mut splits_b: HashMap<FaceId, Vec<(ssi::IntersectionCurve, Point3, Point3)>> =
+        HashMap::new();
+
+    for (face_a, results_a, face_b, results_b) in split_results {
+        if !results_a.is_empty() {
+            splits_a.entry(face_a).or_default().extend(results_a);
+        }
+        if !results_b.is_empty() {
+            splits_b.entry(face_b).or_default().extend(results_b);
+        }
+    }
+
+    debug_bool!("\n--- Stage 2: SSI results ---");
+    debug_bool!("Faces of A to split: {}", splits_a.len());
+    debug_bool!("Faces of B to split: {}", splits_b.len());
+
+    // Apply splits to both solids
+    apply_splits_to_solid(&mut a, splits_a, segments, "A");
+    debug_bool!("\n--- Stage 2.5: After splits applied to A ---");
+    debug_bool!("A now has {} faces", a.topology.faces.len());
+
+    apply_splits_to_solid(&mut b, splits_b, segments, "B");
+
+    // 3. Classify all faces (including split sub-faces)
+    debug_bool!("\n--- Stage 3: Classification ---");
+    debug_bool!("Solid A has {} faces after splits", a.topology.faces.len());
+    debug_bool!("Solid B has {} faces after splits", b.topology.faces.len());
+
+    let classes_a = classify::classify_all_faces(&a, &b, segments);
+    let classes_b = classify::classify_all_faces(&b, &a, segments);
+
+    debug_bool!("\nClassification of A faces:");
+    for (fid, class) in &classes_a {
+        let sample = classify::face_sample_point(&a, *fid);
+        let face = &a.topology.faces[*fid];
+        let surf = &a.geometry.surfaces[face.surface_index];
+        debug_bool!(
+            "  {:?}: {:?} sample=({:.2},{:.2},{:.2}) -> {:?}",
+            fid,
+            surf.surface_type(),
+            sample.x,
+            sample.y,
+            sample.z,
+            class
+        );
+    }
+    debug_bool!("\nClassification of B faces:");
+    for (fid, class) in &classes_b {
+        let sample = classify::face_sample_point(&b, *fid);
+        debug_bool!(
+            "  {:?}: sample=({:.2},{:.2},{:.2}) -> {:?}",
+            fid,
+            sample.x,
+            sample.y,
+            sample.z,
+            class
+        );
+    }
+
+    // 4. Select and sew
+    let (keep_a, keep_b, reverse_b) = classify::select_faces(op, &classes_a, &classes_b);
+
+    debug_bool!("\n--- Stage 4: Selection (op={:?}) ---", op);
+    debug_bool!("Keep {} A faces:", keep_a.len());
+    for fid in &keep_a {
+        let face = &a.topology.faces[*fid];
+        let surf = &a.geometry.surfaces[face.surface_index];
+        let sample = classify::face_sample_point(&a, *fid);
+        debug_bool!(
+            "  {:?}: {:?} sample=({:.2},{:.2},{:.2})",
+            fid,
+            surf.surface_type(),
+            sample.x,
+            sample.y,
+            sample.z
+        );
+    }
+    debug_bool!("Keep {} B faces (reverse_b={}):", keep_b.len(), reverse_b);
+    for fid in &keep_b {
+        let face = &b.topology.faces[*fid];
+        let surf = &b.geometry.surfaces[face.surface_index];
+        let sample = classify::face_sample_point(&b, *fid);
+        debug_bool!(
+            "  {:?}: {:?} sample=({:.2},{:.2},{:.2})",
+            fid,
+            surf.surface_type(),
+            sample.x,
+            sample.y,
+            sample.z
+        );
+    }
+
+    let result = sew::sew_faces(&a, &keep_a, &b, &keep_b, reverse_b, 1e-6);
+
+    debug_bool!("\n--- Stage 5: Result ---");
+    debug_bool!("Result solid has {} faces", result.topology.faces.len());
+    debug_bool!("========== BREP BOOLEAN END ==========\n");
+
+    BooleanResult::BRep(Box::new(result))
+}

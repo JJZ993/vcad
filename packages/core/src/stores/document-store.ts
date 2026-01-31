@@ -60,6 +60,7 @@ export interface VcadFile {
 export interface DocumentState {
   document: Document;
   parts: PartInfo[];
+  partIndex: Map<string, PartInfo>; // O(1) lookup by part id
   consumedParts: Record<string, PartInfo>; // Parts consumed by booleans, keyed by id
   nextNodeId: number;
   nextPartNum: number;
@@ -173,6 +174,15 @@ function makeNode(id: NodeId, name: string | null, op: CsgOp): Node {
   return { id, name, op };
 }
 
+/** Build a Map index from parts array for O(1) lookups */
+function buildPartIndex(parts: PartInfo[]): Map<string, PartInfo> {
+  const index = new Map<string, PartInfo>();
+  for (const part of parts) {
+    index.set(part.id, part);
+  }
+  return index;
+}
+
 function snapshot(state: DocumentState, actionName: string): Snapshot {
   return {
     document: JSON.stringify(state.document),
@@ -222,6 +232,7 @@ const KIND_LABELS: Record<PrimitiveKind, string> = {
 export const useDocumentStore = create<DocumentState>((set, get) => ({
   document: createDocument(),
   parts: [],
+  partIndex: new Map(),
   consumedParts: {},
   nextNodeId: 1,
   nextPartNum: 1,
@@ -297,10 +308,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     };
 
     const undoState = pushUndo(state, `Add ${KIND_LABELS[kind]}`);
+    const newParts = [...state.parts, partInfo];
 
     set({
       document: newDoc,
-      parts: [...state.parts, partInfo],
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
       nextNodeId: nid,
       nextPartNum: partNum + 1,
       isDirty: true,
@@ -312,7 +325,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   removePart: (partId) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part) return;
 
     const undoState = pushUndo(state, `Delete ${part.name}`);
@@ -346,10 +359,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
     // Remove scene root
     newDoc.roots = newDoc.roots.filter((r) => r.root !== part.translateNodeId);
+    const newParts = state.parts.filter((p) => p.id !== partId);
 
     set({
       document: newDoc,
-      parts: state.parts.filter((p) => p.id !== partId),
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
       isDirty: true,
       ...undoState,
     });
@@ -357,52 +372,73 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   setTranslation: (partId, offset, skipUndo) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part) return;
 
     const undoState = skipUndo ? {} : pushUndo(state, "Transform");
-    const newDoc = structuredClone(state.document);
-    const node = newDoc.nodes[String(part.translateNodeId)];
-    if (node && node.op.type === "Translate") {
-      node.op.offset = offset;
-    }
+    const nodeKey = String(part.translateNodeId);
+    const oldNode = state.document.nodes[nodeKey];
+    if (!oldNode || oldNode.op.type !== "Translate") return;
+
+    // Shallow clone: only copy the modified node
+    const newDoc: Document = {
+      ...state.document,
+      nodes: {
+        ...state.document.nodes,
+        [nodeKey]: { ...oldNode, op: { ...oldNode.op, offset } },
+      },
+    };
 
     set({ document: newDoc, isDirty: true, ...undoState });
   },
 
   setRotation: (partId, angles, skipUndo) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part) return;
 
     const undoState = skipUndo ? {} : pushUndo(state, "Transform");
-    const newDoc = structuredClone(state.document);
-    const node = newDoc.nodes[String(part.rotateNodeId)];
-    if (node && node.op.type === "Rotate") {
-      node.op.angles = angles;
-    }
+    const nodeKey = String(part.rotateNodeId);
+    const oldNode = state.document.nodes[nodeKey];
+    if (!oldNode || oldNode.op.type !== "Rotate") return;
+
+    // Shallow clone: only copy the modified node
+    const newDoc: Document = {
+      ...state.document,
+      nodes: {
+        ...state.document.nodes,
+        [nodeKey]: { ...oldNode, op: { ...oldNode.op, angles } },
+      },
+    };
 
     set({ document: newDoc, isDirty: true, ...undoState });
   },
 
   setScale: (partId, factor, skipUndo) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part) return;
 
     const undoState = skipUndo ? {} : pushUndo(state, "Transform");
-    const newDoc = structuredClone(state.document);
-    const node = newDoc.nodes[String(part.scaleNodeId)];
-    if (node && node.op.type === "Scale") {
-      node.op.factor = factor;
-    }
+    const nodeKey = String(part.scaleNodeId);
+    const oldNode = state.document.nodes[nodeKey];
+    if (!oldNode || oldNode.op.type !== "Scale") return;
+
+    // Shallow clone: only copy the modified node
+    const newDoc: Document = {
+      ...state.document,
+      nodes: {
+        ...state.document.nodes,
+        [nodeKey]: { ...oldNode, op: { ...oldNode.op, factor } },
+      },
+    };
 
     set({ document: newDoc, isDirty: true, ...undoState });
   },
 
   updatePrimitiveOp: (partId, op, skipUndo) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part || !isPrimitivePart(part)) return;
 
     const undoState = skipUndo ? {} : pushUndo(state, "Edit Properties");
@@ -417,7 +453,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   updateSweepOp: (partId, updates, skipUndo) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part || !isSweepPart(part)) return;
 
     const undoState = skipUndo ? {} : pushUndo(state, "Edit Sweep");
@@ -433,8 +469,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   applyBoolean: (type, partIdA, partIdB) => {
     const state = get();
-    const partA = state.parts.find((p) => p.id === partIdA);
-    const partB = state.parts.find((p) => p.id === partIdB);
+    const partA = state.partIndex.get(partIdA);
+    const partB = state.partIndex.get(partIdB);
     if (!partA || !partB) return null;
 
     let nid = state.nextNodeId;
@@ -527,6 +563,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({
       document: newDoc,
       parts: newParts,
+      partIndex: buildPartIndex(newParts),
       consumedParts: newConsumedParts,
       nextNodeId: nid,
       nextPartNum: partNum + 1,
@@ -539,7 +576,9 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   duplicateParts: (partIds) => {
     const state = get();
-    const partsToClone = state.parts.filter((p) => partIds.includes(p.id));
+    const partsToClone = partIds
+      .map((id) => state.partIndex.get(id))
+      .filter((p): p is PartInfo => p !== undefined);
     if (partsToClone.length === 0) return [];
 
     let nid = state.nextNodeId;
@@ -708,6 +747,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({
       document: newDoc,
       parts: newParts,
+      partIndex: buildPartIndex(newParts),
       nextNodeId: nid,
       nextPartNum: pnum,
       isDirty: true,
@@ -718,9 +758,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   },
 
   loadDocument: (file) => {
+    const parts = file.parts ?? [];
     set({
       document: file.document,
-      parts: file.parts ?? [],
+      parts,
+      partIndex: buildPartIndex(parts),
       consumedParts: file.consumedParts ?? {},
       nextNodeId: file.nextNodeId ?? 1,
       nextPartNum: file.nextPartNum ?? 1,
@@ -812,9 +854,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       translateNodeId: translateId,
     };
 
+    const newParts = [...state.parts, partInfo];
     set({
       document: newDoc,
-      parts: [...state.parts, partInfo],
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
       nextNodeId: nid,
       nextPartNum: partNum + 1,
       isDirty: true,
@@ -908,9 +952,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       translateNodeId: translateId,
     };
 
+    const newParts = [...state.parts, partInfo];
     set({
       document: newDoc,
-      parts: [...state.parts, partInfo],
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
       nextNodeId: nid,
       nextPartNum: partNum + 1,
       isDirty: true,
@@ -1005,9 +1051,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       translateNodeId: translateId,
     };
 
+    const newParts = [...state.parts, partInfo];
     set({
       document: newDoc,
-      parts: [...state.parts, partInfo],
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
       nextNodeId: nid,
       nextPartNum: partNum + 1,
       isDirty: true,
@@ -1114,9 +1162,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       translateNodeId: translateId,
     };
 
+    const newParts = [...state.parts, partInfo];
     set({
       document: newDoc,
-      parts: [...state.parts, partInfo],
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
       nextNodeId: nid,
       nextPartNum: partNum + 1,
       isDirty: true,
@@ -1194,9 +1244,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       source,
     };
 
+    const newParts = [...state.parts, partInfo];
     set({
       document: newDoc,
-      parts: [...state.parts, partInfo],
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
       nextNodeId: nid,
       nextPartNum: partNum + 1,
       isDirty: true,
@@ -1208,7 +1260,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   setPartMaterial: (partId, materialKey) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part) return;
 
     const undoState = pushUndo(state, "Set Material");
@@ -1225,18 +1277,24 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   renamePart: (partId, name) => {
     const state = get();
-    const idx = state.parts.findIndex((p) => p.id === partId);
-    if (idx === -1) return;
+    const part = state.partIndex.get(partId);
+    if (!part) return;
 
     const undoState = pushUndo(state, "Rename");
     const newParts = state.parts.map((p) =>
       p.id === partId ? { ...p, name } : p,
     );
     const newDoc = structuredClone(state.document);
-    const node = newDoc.nodes[String(state.parts[idx]!.translateNodeId)];
+    const node = newDoc.nodes[String(part.translateNodeId)];
     if (node) node.name = name;
 
-    set({ parts: newParts, document: newDoc, isDirty: true, ...undoState });
+    set({
+      parts: newParts,
+      partIndex: buildPartIndex(newParts),
+      document: newDoc,
+      isDirty: true,
+      ...undoState,
+    });
   },
 
   undo: () => {
@@ -1250,6 +1308,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({
       document: JSON.parse(prevSnap.document) as Document,
       parts: prevSnap.parts,
+      partIndex: buildPartIndex(prevSnap.parts),
       consumedParts: prevSnap.consumedParts,
       nextNodeId: prevSnap.nextNodeId,
       nextPartNum: prevSnap.nextPartNum,
@@ -1270,6 +1329,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({
       document: JSON.parse(nextSnap.document) as Document,
       parts: nextSnap.parts,
+      partIndex: buildPartIndex(nextSnap.parts),
       consumedParts: nextSnap.consumedParts,
       nextNodeId: nextSnap.nextNodeId,
       nextPartNum: nextSnap.nextPartNum,
@@ -1331,7 +1391,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   createPartDef: (partId, name) => {
     const state = get();
-    const part = state.parts.find((p) => p.id === partId);
+    const part = state.partIndex.get(partId);
     if (!part) return null;
 
     const undoState = pushUndo(state, "Create Part Definition");
@@ -1537,6 +1597,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({
       document: createDocument(),
       parts: [],
+      partIndex: new Map(),
       consumedParts: {},
       nextNodeId: 1,
       nextPartNum: 1,
