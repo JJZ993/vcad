@@ -32,10 +32,12 @@ export function useEngine() {
 
     let cancelled = false;
     useEngineStore.getState().setLoading(true);
+    performance.mark("engine-init-start");
 
     Engine.init()
       .then(async (engine) => {
         if (cancelled) return;
+        performance.mark("engine-init-complete");
         globalEngine = engine;
         engineRef.current = engine;
         useEngineStore.getState().setEngine(engine);

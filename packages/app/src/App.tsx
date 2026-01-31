@@ -65,19 +65,6 @@ function useThemeSync() {
   }, [theme]);
 }
 
-function LoadingScreen() {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg">
-      <div className="flex flex-col items-center gap-3">
-        <div className="text-sm text-text-muted">initializing engine...</div>
-        <div className="h-0.5 w-32 overflow-hidden rounded bg-border">
-          <div className="h-full w-1/3 animate-pulse rounded bg-accent" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ErrorScreen({ message }: { message: string }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg">
@@ -99,7 +86,6 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const engineReady = useEngineStore((s) => s.engineReady);
-  const loading = useEngineStore((s) => s.loading);
   const error = useEngineStore((s) => s.error);
   const commandPaletteOpen = useUiStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
@@ -411,8 +397,8 @@ export function App() {
     }
   }, [guidedFlowActive, guidedFlowStep, parts, selectedPartIds, selectMultiple]);
 
+  // Only block on fatal error - let viewport render while engine loads
   if (error && !engineReady) return <ErrorScreen message={error} />;
-  if (loading || !engineReady) return <LoadingScreen />;
 
   // Determine if inline onboarding should show (not during guided flow)
   const showOnboarding = !hasParts && !welcomeModalDismissed && !sketchActive && !guidedFlowActive;

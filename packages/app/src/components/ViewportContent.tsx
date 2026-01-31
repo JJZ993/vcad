@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect, useMemo, Suspense } from "react";
 import { Spherical, Vector3, Box3, Raycaster, Vector2 } from "three";
 import { useThree, useFrame } from "@react-three/fiber";
 import {
@@ -7,6 +7,7 @@ import {
   GizmoViewport,
   Environment,
   ContactShadows,
+  Html,
 } from "@react-three/drei";
 import { EffectComposer, N8AO, Vignette } from "@react-three/postprocessing";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -54,6 +55,7 @@ export function ViewportContent() {
   useCameraControls();
   useInputDeviceDetection();
 
+  const engineReady = useEngineStore((s) => s.engineReady);
   const scene = useEngineStore((s) => s.scene);
   const previewMesh = useEngineStore((s) => s.previewMesh);
   const parts = useDocumentStore((s) => s.parts);
@@ -578,9 +580,7 @@ export function ViewportContent() {
 
   return (
     <>
-      {/* Environment lighting - subtle studio setup */}
-      <Environment preset="studio" environmentIntensity={0.4} />
-
+      {/* Engine-independent content - renders immediately */}
       {/* Key light with shadows */}
       <directionalLight
         position={[50, 80, 40]}
@@ -617,79 +617,6 @@ export function ViewportContent() {
       {/* Plane gizmo at origin - click to start sketch */}
       <PlaneGizmo />
 
-      {/* Scene meshes - Assembly mode (instances) */}
-      {scene?.instances?.map((inst: EvaluatedInstance) => {
-        const instanceSelectionId = getInstanceSelectionId(inst);
-        // Create a minimal PartInfo-like object for instance rendering
-        const instancePartInfo: PartInfo = {
-          id: instanceSelectionId,
-          name: inst.name ?? inst.partDefId,
-          kind: "cube", // Placeholder kind for instances
-          primitiveNodeId: 0,
-          scaleNodeId: 0,
-          rotateNodeId: 0,
-          translateNodeId: 0,
-        };
-        return (
-          <SceneMesh
-            key={inst.instanceId}
-            partInfo={instancePartInfo}
-            mesh={inst.mesh}
-            materialKey={inst.material}
-            selected={selectedPartIds.has(instanceSelectionId)}
-            transform={inst.transform}
-          />
-        );
-      })}
-
-      {/* Imported meshes (no PartInfo - direct mesh display) */}
-      {(!scene?.instances || scene.instances.length === 0) &&
-        parts.length === 0 &&
-        scene?.parts.map((evalPart, idx) => (
-          <ImportedMesh
-            key={`imported-${idx}`}
-            mesh={evalPart.mesh}
-            materialKey={evalPart.material}
-          />
-        ))}
-
-      {/* Scene meshes - Legacy mode (parts with PartInfo) */}
-      {(!scene?.instances || scene.instances.length === 0) &&
-        parts.length > 0 &&
-        scene?.parts.map((evalPart, idx) => {
-          const partInfo = parts[idx];
-          if (!partInfo) return null;
-          return (
-            <SceneMesh
-              key={partInfo.id}
-              partInfo={partInfo}
-              mesh={evalPart.mesh}
-              materialKey={evalPart.material}
-              selected={isPartSelected(partInfo.id, idx)}
-            />
-          );
-        })}
-
-      {/* Clash visualization (zebra pattern on intersections) */}
-      {scene?.clashes.map((clashMesh, idx) => (
-        <ClashMesh key={`clash-${idx}`} mesh={clashMesh} />
-      ))}
-
-      {/* Extrusion preview (semi-transparent) */}
-      {previewMesh && <PreviewMesh mesh={previewMesh} />}
-
-      {/* 3D Sketch plane (when sketch mode is active) */}
-      {sketchActive && <SketchPlane3D />}
-
-      {/* Selection bounding box overlay */}
-      <SelectionOverlay />
-
-      {/* Dimension annotations for primitives */}
-      <DimensionOverlay />
-
-      {/* Transform gizmo for selected part */}
-      <TransformGizmo orbitControls={orbitRef} />
-
       {/* Controls - mouse buttons configured by control scheme */}
       <OrbitControls
         ref={orbitRef}
@@ -715,18 +642,112 @@ export function ViewportContent() {
         />
       </GizmoHelper>
 
-      {/* Post-processing effects */}
-      <EffectComposer>
-        {/* N8AO - high quality ambient occlusion */}
-        <N8AO
-          aoRadius={0.5}
-          intensity={isDark ? 2 : 1.5}
-          aoSamples={6}
-          denoiseSamples={4}
-        />
-        {/* Subtle vignette for focus */}
-        <Vignette offset={0.3} darkness={isDark ? 0.5 : 0.3} eskil={false} />
-      </EffectComposer>
+      {/* Subtle loading indicator while engine initializes */}
+      {!engineReady && (
+        <Html position={[0, 0, 0]} center>
+          <div className="text-xs text-text-muted opacity-50">
+            loading engine...
+          </div>
+        </Html>
+      )}
+
+      {/* Environment lighting - wrapped in Suspense to not block initial render */}
+      <Suspense fallback={null}>
+        <Environment preset="studio" environmentIntensity={0.4} />
+      </Suspense>
+
+      {/* Engine-dependent content - renders after engine ready */}
+      {engineReady && (
+        <>
+          {/* Scene meshes - Assembly mode (instances) */}
+          {scene?.instances?.map((inst: EvaluatedInstance) => {
+            const instanceSelectionId = getInstanceSelectionId(inst);
+            // Create a minimal PartInfo-like object for instance rendering
+            const instancePartInfo: PartInfo = {
+              id: instanceSelectionId,
+              name: inst.name ?? inst.partDefId,
+              kind: "cube", // Placeholder kind for instances
+              primitiveNodeId: 0,
+              scaleNodeId: 0,
+              rotateNodeId: 0,
+              translateNodeId: 0,
+            };
+            return (
+              <SceneMesh
+                key={inst.instanceId}
+                partInfo={instancePartInfo}
+                mesh={inst.mesh}
+                materialKey={inst.material}
+                selected={selectedPartIds.has(instanceSelectionId)}
+                transform={inst.transform}
+              />
+            );
+          })}
+
+          {/* Imported meshes (no PartInfo - direct mesh display) */}
+          {(!scene?.instances || scene.instances.length === 0) &&
+            parts.length === 0 &&
+            scene?.parts.map((evalPart, idx) => (
+              <ImportedMesh
+                key={`imported-${idx}`}
+                mesh={evalPart.mesh}
+                materialKey={evalPart.material}
+              />
+            ))}
+
+          {/* Scene meshes - Legacy mode (parts with PartInfo) */}
+          {(!scene?.instances || scene.instances.length === 0) &&
+            parts.length > 0 &&
+            scene?.parts.map((evalPart, idx) => {
+              const partInfo = parts[idx];
+              if (!partInfo) return null;
+              return (
+                <SceneMesh
+                  key={partInfo.id}
+                  partInfo={partInfo}
+                  mesh={evalPart.mesh}
+                  materialKey={evalPart.material}
+                  selected={isPartSelected(partInfo.id, idx)}
+                />
+              );
+            })}
+
+          {/* Clash visualization (zebra pattern on intersections) */}
+          {scene?.clashes.map((clashMesh, idx) => (
+            <ClashMesh key={`clash-${idx}`} mesh={clashMesh} />
+          ))}
+
+          {/* Extrusion preview (semi-transparent) */}
+          {previewMesh && <PreviewMesh mesh={previewMesh} />}
+
+          {/* 3D Sketch plane (when sketch mode is active) */}
+          {sketchActive && <SketchPlane3D />}
+
+          {/* Selection bounding box overlay */}
+          <SelectionOverlay />
+
+          {/* Dimension annotations for primitives */}
+          <DimensionOverlay />
+
+          {/* Transform gizmo for selected part */}
+          <TransformGizmo orbitControls={orbitRef} />
+        </>
+      )}
+
+      {/* Post-processing effects - deferred until engine ready */}
+      {engineReady && (
+        <EffectComposer>
+          {/* N8AO - high quality ambient occlusion */}
+          <N8AO
+            aoRadius={0.5}
+            intensity={isDark ? 2 : 1.5}
+            aoSamples={6}
+            denoiseSamples={4}
+          />
+          {/* Subtle vignette for focus */}
+          <Vignette offset={0.3} darkness={isDark ? 0.5 : 0.3} eskil={false} />
+        </EffectComposer>
+      )}
     </>
   );
 }
