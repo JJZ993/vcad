@@ -94,9 +94,18 @@ struct RayHit {
 @group(0) @binding(5) var<storage, read> inner_loop_descs: array<u32>;
 @group(0) @binding(6) var output: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(7) var<uniform> render_state: RenderState;
-@group(0) @binding(8) var accum_texture: texture_storage_2d<rgba32float, read_write>;
+@group(0) @binding(8) var<storage, read_write> accum_buffer: array<vec4<f32>>;
 @group(0) @binding(9) var<storage, read> materials: array<GpuMaterial>;
-@group(0) @binding(10) var depth_normal_texture: texture_storage_2d<rgba32float, read_write>;
+@group(0) @binding(10) var<storage, read_write> depth_normal_buffer: array<vec4<f32>>;
+
+// Helper functions for buffer indexing (2D coords to 1D index)
+fn pixel_index(coord: vec2<u32>) -> u32 {
+    return coord.y * camera.width + coord.x;
+}
+
+fn pixel_index_i32(coord: vec2<i32>) -> u32 {
+    return u32(coord.y) * camera.width + u32(coord.x);
+}
 
 // Utility functions
 
@@ -1013,7 +1022,7 @@ fn detect_edge(pixel_coord: vec2<i32>, center_depth_normal: vec4<f32>) -> f32 {
             continue;
         }
 
-        let neighbor = textureLoad(depth_normal_texture, neighbor_coord);
+        let neighbor = depth_normal_buffer[pixel_index_i32(neighbor_coord)];
         let neighbor_normal = neighbor.xyz;
         let neighbor_depth = neighbor.w;
 
@@ -1070,7 +1079,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Always store depth/normal on first frame
     if render_state.frame_index <= 1u {
-        textureStore(depth_normal_texture, pixel_coord, depth_normal);
+        depth_normal_buffer[pixel_index_i32(pixel_coord)] = depth_normal;
     }
 
     // Progressive accumulation
@@ -1081,7 +1090,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         accumulated = new_color;
     } else {
         // Blend with previous samples using running average
-        let prev = textureLoad(accum_texture, pixel_coord);
+        let prev = accum_buffer[pixel_index_i32(pixel_coord)];
         let weight = 1.0 / f32(render_state.frame_index);
         accumulated = mix(prev, new_color, weight);
     }
@@ -1089,7 +1098,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Apply edge detection on later frames (when we have stable depth/normal data)
     var final_color = accumulated;
     if render_state.enable_edges == 1u && render_state.frame_index >= 2u {
-        let stored_depth_normal = textureLoad(depth_normal_texture, pixel_coord);
+        let stored_depth_normal = depth_normal_buffer[pixel_index_i32(pixel_coord)];
         let edge = detect_edge(pixel_coord, stored_depth_normal);
         if edge > 0.1 {
             // Darken edges
@@ -1099,6 +1108,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     // Store to accumulation buffer and output
-    textureStore(accum_texture, pixel_coord, accumulated);
+    accum_buffer[pixel_index_i32(pixel_coord)] = accumulated;
     textureStore(output, pixel_coord, final_color);
 }

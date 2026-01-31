@@ -1453,8 +1453,8 @@ pub struct RayTracer {
     scene: Option<vcad_kernel_raytrace::gpu::GpuScene>,
     /// Current frame index for progressive rendering (1-based).
     frame_index: u32,
-    /// Accumulation texture for progressive anti-aliasing.
-    accum_texture: Option<wgpu::Texture>,
+    /// Accumulation buffer for progressive anti-aliasing.
+    accum_buffer: Option<wgpu::Buffer>,
     /// Last camera state for detecting camera changes.
     last_camera_hash: u64,
     /// Last render dimensions.
@@ -1484,7 +1484,7 @@ impl RayTracer {
             pipeline,
             scene: None,
             frame_index: 0,
-            accum_texture: None,
+            accum_buffer: None,
             last_camera_hash: 0,
             last_width: 0,
             last_height: 0,
@@ -1495,7 +1495,7 @@ impl RayTracer {
     #[wasm_bindgen(js_name = resetAccumulation)]
     pub fn reset_accumulation(&mut self) {
         self.frame_index = 0;
-        self.accum_texture = None;
+        self.accum_buffer = None;
     }
 
     /// Get the current frame index for progressive rendering.
@@ -1624,7 +1624,7 @@ impl RayTracer {
         // Reset accumulation if camera changed or dimensions changed
         if camera_hash != self.last_camera_hash || width != self.last_width || height != self.last_height {
             self.frame_index = 0;
-            self.accum_texture = None;
+            self.accum_buffer = None;
             self.last_camera_hash = camera_hash;
             self.last_width = width;
             self.last_height = height;
@@ -1662,13 +1662,13 @@ impl RayTracer {
             width,
             height,
             self.frame_index,
-            self.accum_texture.take(),
+            self.accum_buffer.take(),
         )
             .await
             .map_err(|e| JsError::new(&format!("Render failed: {}", e)))?;
 
         // Store accumulation texture for next frame
-        self.accum_texture = Some(new_accum);
+        self.accum_buffer = Some(new_accum);
 
         Ok(pixels)
     }

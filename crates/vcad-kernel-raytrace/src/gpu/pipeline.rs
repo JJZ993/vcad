@@ -121,14 +121,15 @@ impl RayTracePipeline {
                     },
                     count: None,
                 },
-                // Accumulation texture (for progressive rendering)
+                // Accumulation buffer (for progressive rendering)
+                // Using storage buffer instead of ReadWrite texture for WebGPU compatibility
                 wgpu::BindGroupLayoutEntry {
                     binding: 8,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::ReadWrite,
-                        format: wgpu::TextureFormat::Rgba32Float,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -143,14 +144,15 @@ impl RayTracePipeline {
                     },
                     count: None,
                 },
-                // Depth/normal texture (for edge detection)
+                // Depth/normal buffer (for edge detection)
+                // Using storage buffer instead of ReadWrite texture for WebGPU compatibility
                 wgpu::BindGroupLayoutEntry {
                     binding: 10,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::ReadWrite,
-                        format: wgpu::TextureFormat::Rgba32Float,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -191,10 +193,10 @@ impl RayTracePipeline {
     /// * `width` - Output width in pixels
     /// * `height` - Output height in pixels
     /// * `frame_index` - Frame number for progressive accumulation (1 = first frame/reset)
-    /// * `accum_texture` - Optional accumulation texture from previous frames
+    /// * `accum_buffer` - Optional accumulation buffer from previous frames
     ///
     /// # Returns
-    /// A tuple of (pixels, accumulation_texture) for progressive rendering.
+    /// A tuple of (pixels, accumulation_buffer) for progressive rendering.
     #[allow(clippy::too_many_arguments)]
     pub async fn render_progressive(
         &self,
@@ -204,8 +206,8 @@ impl RayTracePipeline {
         width: u32,
         height: u32,
         frame_index: u32,
-        accum_texture: Option<wgpu::Texture>,
-    ) -> Result<(Vec<u8>, wgpu::Texture), GpuError> {
+        accum_buffer: Option<wgpu::Buffer>,
+    ) -> Result<(Vec<u8>, wgpu::Buffer), GpuError> {
         use wgpu::util::DeviceExt;
 
         // Create camera buffer
@@ -307,41 +309,24 @@ impl RayTracePipeline {
         });
         let output_view = output_texture.create_view(&Default::default());
 
-        // Create or reuse accumulation texture
-        let accum = accum_texture.unwrap_or_else(|| {
-            ctx.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("Accumulation Texture"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba32Float,
-                usage: wgpu::TextureUsages::STORAGE_BINDING,
-                view_formats: &[],
+        // Create or reuse accumulation buffer (4 floats per pixel: r, g, b, count)
+        let accum_buf_size = (width * height * 16) as u64; // 4 * sizeof(f32)
+        let accum = accum_buffer.unwrap_or_else(|| {
+            ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Accumulation Buffer"),
+                size: accum_buf_size,
+                usage: wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
             })
         });
-        let accum_view = accum.create_view(&Default::default());
 
-        // Create depth/normal texture for edge detection
-        let depth_normal_texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Depth Normal Texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba32Float,
-            usage: wgpu::TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
+        // Create depth/normal buffer for edge detection (4 floats per pixel: depth, nx, ny, nz)
+        let depth_normal_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Depth Normal Buffer"),
+            size: accum_buf_size,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
         });
-        let depth_normal_view = depth_normal_texture.create_view(&Default::default());
 
         // Create readback buffer
         let output_size = (width * height * 4) as u64;
@@ -392,7 +377,7 @@ impl RayTracePipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 8,
-                    resource: wgpu::BindingResource::TextureView(&accum_view),
+                    resource: accum.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 9,
@@ -400,7 +385,7 @@ impl RayTracePipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 10,
-                    resource: wgpu::BindingResource::TextureView(&depth_normal_view),
+                    resource: depth_normal_buffer.as_entire_binding(),
                 },
             ],
         });
