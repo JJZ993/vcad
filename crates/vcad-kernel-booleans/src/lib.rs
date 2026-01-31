@@ -25,6 +25,22 @@ use vcad_kernel_math::Point3;
 use vcad_kernel_primitives::BRepSolid;
 use vcad_kernel_tessellate::{tessellate_brep, TriangleMesh};
 
+/// Debug logging macro - only prints when debug-boolean feature is enabled
+#[allow(unused_macros)]
+#[cfg(feature = "debug-boolean")]
+macro_rules! debug_bool {
+    ($($arg:tt)*) => {
+        debug_bool!($($arg)*)
+    };
+}
+
+/// No-op version when debug-boolean feature is disabled
+#[allow(unused_macros)]
+#[cfg(not(feature = "debug-boolean"))]
+macro_rules! debug_bool {
+    ($($arg:tt)*) => {};
+}
+
 /// CSG boolean operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BooleanOp {
@@ -120,9 +136,29 @@ fn non_overlapping_boolean(
     }
 }
 
+/// Snap a value to 0 if it's within epsilon of 0.
+/// This prevents floating point errors like -0.0000001 from affecting classification.
+fn snap_to_zero(v: f64, eps: f64) -> f64 {
+    if v.abs() < eps {
+        0.0
+    } else {
+        v
+    }
+}
+
+/// Snap a point's coordinates to 0 if they're very close to 0.
+fn snap_point(p: Point3) -> Point3 {
+    const EPS: f64 = 1e-9;
+    Point3::new(
+        snap_to_zero(p.x, EPS),
+        snap_to_zero(p.y, EPS),
+        snap_to_zero(p.z, EPS),
+    )
+}
+
 /// Evaluate a point on an intersection curve at parameter t.
 fn evaluate_curve(curve: &ssi::IntersectionCurve, t: f64) -> Point3 {
-    match curve {
+    let p = match curve {
         ssi::IntersectionCurve::Line(line) => line.origin + t * line.direction,
         ssi::IntersectionCurve::TwoLines(line1, _line2) => {
             // For TwoLines, evaluate on the first line by default
@@ -150,7 +186,9 @@ fn evaluate_curve(curve: &ssi::IntersectionCurve, t: f64) -> Point3 {
             )
         }
         ssi::IntersectionCurve::Empty => Point3::origin(),
-    }
+    };
+    // Snap small values to exactly 0 to avoid floating point classification issues
+    snap_point(p)
 }
 
 /// B-rep boolean pipeline for overlapping solids.
@@ -167,12 +205,19 @@ fn brep_boolean(
     op: BooleanOp,
     segments: u32,
 ) -> BooleanResult {
+    debug_bool!("\n========== BREP BOOLEAN START ==========");
+    debug_bool!("Operation: {:?}", op);
+    debug_bool!("Solid A: {} faces", solid_a.topology.faces.len());
+    debug_bool!("Solid B: {} faces", solid_b.topology.faces.len());
+
     // Clone both solids so we can split them
     let mut a = solid_a.clone();
     let mut b = solid_b.clone();
 
     // 1. Find candidate face pairs via AABB filtering
     let pairs = bbox::find_candidate_face_pairs(&a, &b);
+    debug_bool!("\n--- Stage 1: AABB filtering ---");
+    debug_bool!("Candidate face pairs: {}", pairs.len());
 
     // 2. For each face pair, compute SSI and collect splits for both A and B
     // This is the hot path - parallelize with rayon
@@ -212,6 +257,20 @@ fn brep_boolean(
             // Expand TwoLines into individual Line curves for processing
             let curves_to_process: Vec<ssi::IntersectionCurve> = match &curve {
                 ssi::IntersectionCurve::TwoLines(line1, line2) => {
+                    debug_bool!(
+                        "  TwoLines: {:?}({:?}) x {:?}({:?})",
+                        face_a, surf_a.surface_type(), face_b, surf_b.surface_type()
+                    );
+                    debug_bool!(
+                        "    Line1: origin=({:.2},{:.2},{:.2}) dir=({:.2},{:.2},{:.2})",
+                        line1.origin.x, line1.origin.y, line1.origin.z,
+                        line1.direction.x, line1.direction.y, line1.direction.z
+                    );
+                    debug_bool!(
+                        "    Line2: origin=({:.2},{:.2},{:.2}) dir=({:.2},{:.2},{:.2})",
+                        line2.origin.x, line2.origin.y, line2.origin.z,
+                        line2.direction.x, line2.direction.y, line2.direction.z
+                    );
                     vec![
                         ssi::IntersectionCurve::Line(line1.clone()),
                         ssi::IntersectionCurve::Line(line2.clone()),
@@ -223,20 +282,38 @@ fn brep_boolean(
             for single_curve in &curves_to_process {
                 // Trim curve to A's face boundary (for non-circle curves)
                 let segs_a = trim::trim_curve_to_face(single_curve, *face_a, &a, 64);
+                debug_bool!(
+                    "    Trim to face A ({:?}): {} segments",
+                    face_a, segs_a.len()
+                );
                 for seg in &segs_a {
                     let entry = evaluate_curve(single_curve, seg.t_start);
                     let exit = evaluate_curve(single_curve, seg.t_end);
-                    if (exit - entry).norm() > 1e-6 {
+                    let len = (exit - entry).norm();
+                    debug_bool!(
+                        "      Segment: entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2}) len={:.4}",
+                        entry.x, entry.y, entry.z, exit.x, exit.y, exit.z, len
+                    );
+                    if len > 1e-6 {
                         results_a.push((single_curve.clone(), entry, exit));
                     }
                 }
 
                 // Trim curve to B's face boundary (for non-circle curves)
                 let segs_b = trim::trim_curve_to_face(single_curve, *face_b, &b, 64);
+                debug_bool!(
+                    "    Trim to face B ({:?}): {} segments",
+                    face_b, segs_b.len()
+                );
                 for seg in &segs_b {
                     let entry = evaluate_curve(single_curve, seg.t_start);
                     let exit = evaluate_curve(single_curve, seg.t_end);
-                    if (exit - entry).norm() > 1e-6 {
+                    let len = (exit - entry).norm();
+                    debug_bool!(
+                        "      Segment: entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2}) len={:.4}",
+                        entry.x, entry.y, entry.z, exit.x, exit.y, exit.z, len
+                    );
+                    if len > 1e-6 {
                         results_b.push((single_curve.clone(), entry, exit));
                     }
                 }
@@ -264,6 +341,25 @@ fn brep_boolean(
             splits_b.entry(face_b).or_default().extend(results_b);
         }
     }
+
+    debug_bool!("\n--- Stage 2: SSI results ---");
+    debug_bool!("Faces of A to split: {}", splits_a.len());
+    for (fid, curves) in &splits_a {
+        let face = &a.topology.faces[*fid];
+        let surf = &a.geometry.surfaces[face.surface_index];
+        debug_bool!("  {:?} ({:?}): {} curves", fid, surf.surface_type(), curves.len());
+        for (curve, entry, exit) in curves {
+            let curve_type = match curve {
+                ssi::IntersectionCurve::Line(_) => "Line",
+                ssi::IntersectionCurve::Circle(_) => "Circle",
+                ssi::IntersectionCurve::TwoLines(_, _) => "TwoLines",
+                _ => "Other",
+            };
+            debug_bool!("    {} entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2})",
+                curve_type, entry.x, entry.y, entry.z, exit.x, exit.y, exit.z);
+        }
+    }
+    debug_bool!("Faces of B to split: {}", splits_b.len());
 
     // Apply splits to A
     // For each split, we need to re-trim the curve to each sub-face's boundary
@@ -304,7 +400,11 @@ fn brep_boolean(
 
                     // Check if this is a planar face with a circle curve - use specialized split
                     if split::is_planar_face(&a, fid) {
-                        if let ssi::IntersectionCurve::Circle(_) = &curve {
+                        if let ssi::IntersectionCurve::Circle(circle) = &curve {
+                            debug_bool!(
+                                "  Split A face {:?}: planar + Circle at ({:.1},{:.1},{:.1}) r={:.1}",
+                                fid, circle.center.x, circle.center.y, circle.center.z, circle.radius
+                            );
                             let result = split::split_planar_face(
                                 &mut a,
                                 fid,
@@ -312,6 +412,10 @@ fn brep_boolean(
                                 &Point3::origin(),
                                 &Point3::origin(),
                                 segments,
+                            );
+                            debug_bool!(
+                                "    -> Circle split result: {} sub-faces {:?}",
+                                result.sub_faces.len(), result.sub_faces
                             );
                             if result.sub_faces.len() >= 2 {
                                 new_faces.extend(result.sub_faces);
@@ -324,8 +428,10 @@ fn brep_boolean(
 
                     // Re-trim the curve to THIS sub-face's boundary
                     let segs = trim::trim_curve_to_face(&curve, fid, &a, 64);
+                    debug_bool!("  Split A face {:?}: re-trim got {} segs", fid, segs.len());
                     if segs.is_empty() {
                         // Curve doesn't cross this face, keep it unchanged
+                        debug_bool!("    -> empty segs, keeping face unchanged");
                         new_faces.push(fid);
                         continue;
                     }
@@ -333,11 +439,21 @@ fn brep_boolean(
                     let seg = &segs[0];
                     let entry = evaluate_curve(&curve, seg.t_start);
                     let exit = evaluate_curve(&curve, seg.t_end);
-                    if (exit - entry).norm() < 1e-6 {
+                    let len = (exit - entry).norm();
+                    debug_bool!(
+                        "    -> entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2}) len={:.4}",
+                        entry.x, entry.y, entry.z, exit.x, exit.y, exit.z, len
+                    );
+                    if len < 1e-6 {
+                        debug_bool!("    -> too short, keeping face unchanged");
                         new_faces.push(fid);
                         continue;
                     }
                     let result = split::split_face_by_curve(&mut a, fid, &curve, &entry, &exit);
+                    debug_bool!(
+                        "    -> split result: {} sub-faces {:?}",
+                        result.sub_faces.len(), result.sub_faces
+                    );
                     if result.sub_faces.len() >= 2 {
                         new_faces.extend(result.sub_faces);
                     } else {
@@ -351,6 +467,9 @@ fn brep_boolean(
         }
     }
 
+    debug_bool!("\n--- Stage 2.5: After splits applied to A ---");
+    debug_bool!("A now has {} faces", a.topology.faces.len());
+
     // Apply splits to B
     // For each split, we need to re-trim the curve to each sub-face's boundary
     for (face_id, split_list) in splits_b {
@@ -361,7 +480,13 @@ fn brep_boolean(
                 if b.topology.faces.contains_key(fid) {
                     // Check if this is a cylindrical face - use specialized split
                     if split::is_cylindrical_face(&b, fid) {
+                        debug_bool!("  Split B face {:?}: cylindrical face", fid);
                         let result = split::split_cylindrical_face(&mut b, fid, &curve);
+                        debug_bool!(
+                            "    -> split result: {} sub-faces {:?}",
+                            result.sub_faces.len(),
+                            result.sub_faces
+                        );
                         if result.sub_faces.len() >= 2 {
                             new_faces.extend(result.sub_faces);
                         } else {
@@ -372,13 +497,99 @@ fn brep_boolean(
 
                     // Check if this is a circular disk face (cylinder cap) with a line curve
                     if split::is_circular_disk_face(&b, fid) {
-                        if let ssi::IntersectionCurve::Line(_) = &curve {
+                        if let ssi::IntersectionCurve::Line(line) = &curve {
+                            debug_bool!(
+                                "  Split B face {:?}: circular disk with Line dir=({:.2},{:.2},{:.2})",
+                                fid, line.direction.x, line.direction.y, line.direction.z
+                            );
                             let result = split::split_circular_disk_face(
                                 &mut b,
                                 fid,
                                 &curve,
                                 segments,
                             );
+                            debug_bool!(
+                                "    -> split result: {} sub-faces {:?}",
+                                result.sub_faces.len(),
+                                result.sub_faces
+                            );
+                            // Debug: print vertices of resulting faces
+                            for &new_fid in &result.sub_faces {
+                                if b.topology.faces.contains_key(new_fid) {
+                                    let face = &b.topology.faces[new_fid];
+                                    let verts: Vec<Point3> = b
+                                        .topology
+                                        .loop_half_edges(face.outer_loop)
+                                        .map(|he| {
+                                            b.topology.vertices
+                                                [b.topology.half_edges[he].origin]
+                                                .point
+                                        })
+                                        .collect();
+                                    let min_x = verts.iter().map(|v| v.x).fold(f64::INFINITY, f64::min);
+                                    let min_y = verts.iter().map(|v| v.y).fold(f64::INFINITY, f64::min);
+                                    let max_x = verts.iter().map(|v| v.x).fold(f64::NEG_INFINITY, f64::max);
+                                    let max_y = verts.iter().map(|v| v.y).fold(f64::NEG_INFINITY, f64::max);
+                                    debug_bool!(
+                                        "       {:?}: {} verts, x=[{:.2},{:.2}], y=[{:.2},{:.2}]",
+                                        new_fid, verts.len(), min_x, max_x, min_y, max_y
+                                    );
+                                }
+                            }
+                            if result.sub_faces.len() >= 2 {
+                                new_faces.extend(result.sub_faces);
+                            } else {
+                                new_faces.push(fid);
+                            }
+                            continue;
+                        }
+                    }
+
+                    // Check if face is planar (for non-disk planar faces like semicircles)
+                    let is_planar = split::is_planar_face(&b, fid);
+                    if is_planar {
+                        if let ssi::IntersectionCurve::Line(line) = &curve {
+                            // This handles semicircles and other non-disk planar faces
+                            debug_bool!(
+                                "  Split B face {:?}: planar (non-disk) with Line dir=({:.2},{:.2},{:.2})",
+                                fid, line.direction.x, line.direction.y, line.direction.z
+                            );
+                            let result = split::split_planar_face(
+                                &mut b,
+                                fid,
+                                &curve,
+                                &Point3::origin(),
+                                &Point3::origin(),
+                                segments,
+                            );
+                            debug_bool!(
+                                "    -> split result: {} sub-faces {:?}",
+                                result.sub_faces.len(),
+                                result.sub_faces
+                            );
+                            // Debug: print vertices of resulting faces
+                            for &new_fid in &result.sub_faces {
+                                if b.topology.faces.contains_key(new_fid) {
+                                    let face = &b.topology.faces[new_fid];
+                                    let verts: Vec<Point3> = b
+                                        .topology
+                                        .loop_half_edges(face.outer_loop)
+                                        .map(|he| {
+                                            b.topology.vertices
+                                                [b.topology.half_edges[he].origin]
+                                                .point
+                                        })
+                                        .collect();
+                                    let min_x = verts.iter().map(|v| v.x).fold(f64::INFINITY, f64::min);
+                                    let min_y = verts.iter().map(|v| v.y).fold(f64::INFINITY, f64::min);
+                                    let max_x = verts.iter().map(|v| v.x).fold(f64::NEG_INFINITY, f64::max);
+                                    let max_y = verts.iter().map(|v| v.y).fold(f64::NEG_INFINITY, f64::max);
+                                    debug_bool!(
+                                        "       {:?}: {} verts, x=[{:.2},{:.2}], y=[{:.2},{:.2}]",
+                                        new_fid, verts.len(), min_x, max_x, min_y, max_y
+                                    );
+                                }
+                            }
                             if result.sub_faces.len() >= 2 {
                                 new_faces.extend(result.sub_faces);
                             } else {
@@ -389,8 +600,9 @@ fn brep_boolean(
                     }
 
                     // Check if this is a planar face with a circle curve - use specialized split
-                    if split::is_planar_face(&b, fid) {
+                    if is_planar {
                         if let ssi::IntersectionCurve::Circle(_) = &curve {
+                            debug_bool!("  Split B face {:?}: planar with Circle", fid);
                             let result = split::split_planar_face(
                                 &mut b,
                                 fid,
@@ -398,6 +610,11 @@ fn brep_boolean(
                                 &Point3::origin(),
                                 &Point3::origin(),
                                 segments,
+                            );
+                            debug_bool!(
+                                "    -> split result: {} sub-faces {:?}",
+                                result.sub_faces.len(),
+                                result.sub_faces
                             );
                             if result.sub_faces.len() >= 2 {
                                 new_faces.extend(result.sub_faces);
@@ -410,8 +627,10 @@ fn brep_boolean(
 
                     // Re-trim the curve to THIS sub-face's boundary
                     let segs = trim::trim_curve_to_face(&curve, fid, &b, 64);
+                    debug_bool!("  Split B face {:?}: re-trim got {} segs", fid, segs.len());
                     if segs.is_empty() {
                         // Curve doesn't cross this face, keep it unchanged
+                        debug_bool!("    -> empty segs, keeping face unchanged");
                         new_faces.push(fid);
                         continue;
                     }
@@ -419,11 +638,22 @@ fn brep_boolean(
                     let seg = &segs[0];
                     let entry = evaluate_curve(&curve, seg.t_start);
                     let exit = evaluate_curve(&curve, seg.t_end);
-                    if (exit - entry).norm() < 1e-6 {
+                    let len = (exit - entry).norm();
+                    debug_bool!(
+                        "    -> entry=({:.2},{:.2},{:.2}) exit=({:.2},{:.2},{:.2}) len={:.4}",
+                        entry.x, entry.y, entry.z, exit.x, exit.y, exit.z, len
+                    );
+                    if len < 1e-6 {
+                        debug_bool!("    -> too short, keeping face unchanged");
                         new_faces.push(fid);
                         continue;
                     }
                     let result = split::split_face_by_curve(&mut b, fid, &curve, &entry, &exit);
+                    debug_bool!(
+                        "    -> split result: {} sub-faces {:?}",
+                        result.sub_faces.len(),
+                        result.sub_faces
+                    );
                     if result.sub_faces.len() >= 2 {
                         new_faces.extend(result.sub_faces);
                     } else {
@@ -438,13 +668,66 @@ fn brep_boolean(
     }
 
     // 3. Classify all faces (including split sub-faces)
+    debug_bool!("\n--- Stage 3: Classification ---");
+    debug_bool!("Solid A has {} faces after splits", a.topology.faces.len());
+    debug_bool!("Solid B has {} faces after splits", b.topology.faces.len());
+
     let classes_a = classify::classify_all_faces(&a, &b, segments);
     let classes_b = classify::classify_all_faces(&b, &a, segments);
+
+    debug_bool!("\nClassification of A faces:");
+    for (fid, class) in &classes_a {
+        let sample = classify::face_sample_point(&a, *fid);
+        let face = &a.topology.faces[*fid];
+        let surf = &a.geometry.surfaces[face.surface_index];
+        let verts: Vec<_> = a.topology.loop_half_edges(face.outer_loop)
+            .map(|he| a.topology.vertices[a.topology.half_edges[he].origin].point)
+            .collect();
+        debug_bool!(
+            "  {:?}: {:?} sample=({:.2},{:.2},{:.2}) -> {:?}",
+            fid, surf.surface_type(), sample.x, sample.y, sample.z, class
+        );
+        // Show vertices for faces with y=0 or x=0 (the problematic side faces)
+        let is_side_face = verts.iter().all(|v| v.x.abs() < 0.01) || verts.iter().all(|v| v.y.abs() < 0.01);
+        if is_side_face || verts.len() <= 6 {
+            for (i, v) in verts.iter().enumerate() {
+                debug_bool!("    v{}: ({:.2},{:.2},{:.2})", i, v.x, v.y, v.z);
+            }
+        }
+    }
+    debug_bool!("\nClassification of B faces:");
+    for (fid, class) in &classes_b {
+        let sample = classify::face_sample_point(&b, *fid);
+        debug_bool!(
+            "  {:?}: sample=({:.2},{:.2},{:.2}) -> {:?}",
+            fid, sample.x, sample.y, sample.z, class
+        );
+    }
 
     // 4. Select and sew
     let (keep_a, keep_b, reverse_b) = classify::select_faces(op, &classes_a, &classes_b);
 
+    debug_bool!("\n--- Stage 4: Selection (op={:?}) ---", op);
+    debug_bool!("Keep {} A faces:", keep_a.len());
+    for fid in &keep_a {
+        let face = &a.topology.faces[*fid];
+        let surf = &a.geometry.surfaces[face.surface_index];
+        let sample = classify::face_sample_point(&a, *fid);
+        debug_bool!("  {:?}: {:?} sample=({:.2},{:.2},{:.2})", fid, surf.surface_type(), sample.x, sample.y, sample.z);
+    }
+    debug_bool!("Keep {} B faces (reverse_b={}):", keep_b.len(), reverse_b);
+    for fid in &keep_b {
+        let face = &b.topology.faces[*fid];
+        let surf = &b.geometry.surfaces[face.surface_index];
+        let sample = classify::face_sample_point(&b, *fid);
+        debug_bool!("  {:?}: {:?} sample=({:.2},{:.2},{:.2})", fid, surf.surface_type(), sample.x, sample.y, sample.z);
+    }
+
     let result = sew::sew_faces(&a, &keep_a, &b, &keep_b, reverse_b, 1e-6);
+
+    debug_bool!("\n--- Stage 5: Result ---");
+    debug_bool!("Result solid has {} faces", result.topology.faces.len());
+    debug_bool!("========== BREP BOOLEAN END ==========\n");
 
     BooleanResult::BRep(Box::new(result))
 }
@@ -2419,6 +2702,42 @@ mod tests {
         println!("  Triangles: {}", mesh.num_triangles());
         println!("  Vertices: {}", mesh.num_vertices());
 
+        // Check for suspicious triangles - faces that should have been removed
+        let mut suspicious_y0 = 0;
+        let mut suspicious_x0 = 0;
+        for i in (0..mesh.indices.len()).step_by(3) {
+            let idx0 = mesh.indices[i] as usize * 3;
+            let idx1 = mesh.indices[i + 1] as usize * 3;
+            let idx2 = mesh.indices[i + 2] as usize * 3;
+            let v0 = [mesh.vertices[idx0], mesh.vertices[idx0 + 1], mesh.vertices[idx0 + 2]];
+            let v1 = [mesh.vertices[idx1], mesh.vertices[idx1 + 1], mesh.vertices[idx1 + 2]];
+            let v2 = [mesh.vertices[idx2], mesh.vertices[idx2 + 1], mesh.vertices[idx2 + 2]];
+
+            // Check if on y=0 plane with x < 10 (should be removed)
+            let on_y0 = (v0[1] as f64).abs() < 0.01 && (v1[1] as f64).abs() < 0.01 && (v2[1] as f64).abs() < 0.01;
+            let has_small_x = (v0[0] as f64) < 9.9 || (v1[0] as f64) < 9.9 || (v2[0] as f64) < 9.9;
+            if on_y0 && has_small_x {
+                suspicious_y0 += 1;
+                if suspicious_y0 <= 3 {
+                    println!("  SUSPICIOUS y=0 tri: ({:.1},{:.1},{:.1})-({:.1},{:.1},{:.1})-({:.1},{:.1},{:.1})",
+                        v0[0], v0[1], v0[2], v1[0], v1[1], v1[2], v2[0], v2[1], v2[2]);
+                }
+            }
+
+            // Check if on x=0 plane with y < 10 (should be removed)
+            let on_x0 = (v0[0] as f64).abs() < 0.01 && (v1[0] as f64).abs() < 0.01 && (v2[0] as f64).abs() < 0.01;
+            let has_small_y = (v0[1] as f64) < 9.9 || (v1[1] as f64) < 9.9 || (v2[1] as f64) < 9.9;
+            if on_x0 && has_small_y {
+                suspicious_x0 += 1;
+                if suspicious_x0 <= 3 {
+                    println!("  SUSPICIOUS x=0 tri: ({:.1},{:.1},{:.1})-({:.1},{:.1},{:.1})-({:.1},{:.1},{:.1})",
+                        v0[0], v0[1], v0[2], v1[0], v1[1], v1[2], v2[0], v2[1], v2[2]);
+                }
+            }
+        }
+        println!("  Suspicious y=0 triangles: {}", suspicious_y0);
+        println!("  Suspicious x=0 triangles: {}", suspicious_x0);
+
         // Compute volume
         let volume = compute_mesh_volume(&mesh);
         // Expected: cube volume - quarter-cylinder volume
@@ -2469,6 +2788,35 @@ mod tests {
             bbox.1[0] <= 20.1 && bbox.1[1] <= 20.1 && bbox.1[2] <= 20.1,
             "BBox max should be <= 20, got {:?}",
             bbox.1
+        );
+
+        // CRITICAL: Check for "ears" - geometry that extends outside the cube bounds
+        // This was the bug: cylinder cap extending to y=-10, x=-10 created triangular
+        // "ears" on the cube's side faces
+        let mut ear_triangles = 0;
+        for i in (0..mesh.indices.len()).step_by(3) {
+            let idx0 = mesh.indices[i] as usize * 3;
+            let idx1 = mesh.indices[i + 1] as usize * 3;
+            let idx2 = mesh.indices[i + 2] as usize * 3;
+            let vertices = [
+                [mesh.vertices[idx0], mesh.vertices[idx0 + 1], mesh.vertices[idx0 + 2]],
+                [mesh.vertices[idx1], mesh.vertices[idx1 + 1], mesh.vertices[idx1 + 2]],
+                [mesh.vertices[idx2], mesh.vertices[idx2 + 1], mesh.vertices[idx2 + 2]],
+            ];
+
+            // Check if any vertex is significantly outside the cube bounds
+            for v in &vertices {
+                if v[0] < -0.01 || v[1] < -0.01 || v[2] < -0.01 {
+                    ear_triangles += 1;
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            ear_triangles == 0,
+            "Found {} triangles with vertices outside cube bounds (x<0 or y<0 or z<0) - these are 'ears'",
+            ear_triangles
         );
     }
 

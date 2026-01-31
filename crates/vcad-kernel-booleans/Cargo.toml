@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+debug-boolean = []
+
 [dependencies]
 vcad-kernel-math = { path = "../vcad-kernel-math" }
 vcad-kernel-topo = { path = "../vcad-kernel-topo" }

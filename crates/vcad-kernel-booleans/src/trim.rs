@@ -96,7 +96,7 @@ fn point_in_polygon_with_tolerance(point: &Point2, polygon: &[Point2], tolerance
 
 fn polygon_tolerance(polygon: &[Point2]) -> f64 {
     if polygon.len() < 2 {
-        return 1e-9;
+        return 1e-6;
     }
     let mut min = Point2::new(f64::INFINITY, f64::INFINITY);
     let mut max = Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
@@ -107,7 +107,10 @@ fn polygon_tolerance(polygon: &[Point2]) -> f64 {
         max.y = max.y.max(p.y);
     }
     let diag = ((max.x - min.x).powi(2) + (max.y - min.y).powi(2)).sqrt();
-    (diag * 1e-8).max(1e-9)
+    // Use a larger tolerance (1e-6 relative to diagonal) to handle boundary cases
+    // where intersection lines lie exactly on face edges. The previous 1e-8 was
+    // too tight and caused trim to miss valid intersection segments.
+    (diag * 1e-6).max(1e-6)
 }
 
 fn point_segment_distance(point: &Point2, a: &Point2, b: &Point2) -> f64 {
@@ -493,7 +496,7 @@ pub fn trim_curve_to_face(
                 let (t_enter, t_exit) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
                 t_min = t_min.max(t_enter);
                 t_max = t_max.min(t_exit);
-            } else if line.origin.y < aabb.min.y || line.origin.y > aabb.max.y {
+            } else if line.origin.y < aabb.min.y - 1e-9 || line.origin.y > aabb.max.y + 1e-9 {
                 return Vec::new(); // Line parallel to Y but outside Y range
             }
 
@@ -504,7 +507,7 @@ pub fn trim_curve_to_face(
                 let (t_enter, t_exit) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
                 t_min = t_min.max(t_enter);
                 t_max = t_max.min(t_exit);
-            } else if line.origin.z < aabb.min.z || line.origin.z > aabb.max.z {
+            } else if line.origin.z < aabb.min.z - 1e-9 || line.origin.z > aabb.max.z + 1e-9 {
                 return Vec::new(); // Line parallel to Z but outside Z range
             }
 

@@ -108,8 +108,44 @@ pub fn split_face_by_curve(
     }
     loop2_points.push(*entry_point);
 
+    // Remove consecutive duplicate vertices (can happen when split points
+    // coincide with existing vertices)
+    let loop1_points = remove_consecutive_duplicates(&loop1_points, 1e-6);
+    let loop2_points = remove_consecutive_duplicates(&loop2_points, 1e-6);
+
     // Need at least 3 vertices for a valid face
     if loop1_points.len() < 3 || loop2_points.len() < 3 {
+        return SplitResult {
+            sub_faces: vec![face_id],
+        };
+    }
+
+    // Check for degenerate faces (zero or near-zero area)
+    // This can happen when the split line lies along an existing edge
+    fn polygon_area_3d(points: &[Point3]) -> f64 {
+        if points.len() < 3 {
+            return 0.0;
+        }
+        // Sum cross products of triangles from first vertex
+        let mut total = vcad_kernel_math::Vec3::zeros();
+        let p0 = points[0];
+        for i in 1..points.len() - 1 {
+            let e1 = points[i] - p0;
+            let e2 = points[i + 1] - p0;
+            total += e1.cross(&e2);
+        }
+        0.5 * total.norm()
+    }
+
+    let area1 = polygon_area_3d(&loop1_points);
+    let area2 = polygon_area_3d(&loop2_points);
+    // Minimum area threshold - faces smaller than this are considered degenerate
+    // The value 0.001 catches thin strips while allowing legitimate small faces
+    let min_area = 0.001;
+
+    if area1 < min_area || area2 < min_area {
+        // One of the faces is degenerate (near-zero area)
+        // This happens when the split line lies along an existing edge
         return SplitResult {
             sub_faces: vec![face_id],
         };
@@ -168,21 +204,69 @@ fn find_closest_edge_with_dist(polygon: &[Point3], point: &Point3) -> (usize, f6
     (best, best_dist)
 }
 
+/// Snap a coordinate to 0 if it's very close to 0.
+/// This prevents floating point errors like -1e-15 from causing "ear" artifacts.
+/// Using 1e-6 as threshold to catch numerical errors from trig operations.
+fn snap_coord(v: f64) -> f64 {
+    if v.abs() < 1e-6 {
+        0.0
+    } else {
+        v
+    }
+}
+
+/// Snap a point's coordinates to 0 if they're very close to 0.
+fn snap_point(p: Point3) -> Point3 {
+    Point3::new(snap_coord(p.x), snap_coord(p.y), snap_coord(p.z))
+}
+
 /// Find an existing vertex at the given point, or create a new one.
 fn find_or_create_vertex(
     brep: &mut BRepSolid,
     point: &Point3,
     tolerance: f64,
 ) -> vcad_kernel_topo::VertexId {
+    // Snap small values to exactly 0 to avoid floating point artifacts
+    let snapped = snap_point(*point);
+
     // Search for existing vertex within tolerance
     for (vid, vertex) in &brep.topology.vertices {
-        let dist = (vertex.point - point).norm();
+        let dist = (vertex.point - snapped).norm();
         if dist < tolerance {
             return vid;
         }
     }
     // No existing vertex found, create new one
-    brep.topology.add_vertex(*point)
+    brep.topology.add_vertex(snapped)
+}
+
+/// Remove consecutive duplicate points from a loop.
+/// Also removes duplicates between the last and first point (to handle closed loops).
+fn remove_consecutive_duplicates(points: &[Point3], tolerance: f64) -> Vec<Point3> {
+    if points.is_empty() {
+        return Vec::new();
+    }
+
+    let mut result = Vec::with_capacity(points.len());
+    result.push(points[0]);
+
+    for p in points.iter().skip(1) {
+        let last = result.last().unwrap();
+        if (*p - *last).norm() > tolerance {
+            result.push(*p);
+        }
+    }
+
+    // Check if last point duplicates the first (closed loop)
+    if result.len() > 1 {
+        let first = result[0];
+        let last = *result.last().unwrap();
+        if (last - first).norm() <= tolerance {
+            result.pop();
+        }
+    }
+
+    result
 }
 
 /// Distance from a point to a line segment.
@@ -281,8 +365,8 @@ fn find_line_polygon_crossings(
             continue;
         }
 
-        // Compute the 3D intersection point
-        let intersection = line.origin + t * line.direction;
+        // Compute the 3D intersection point and snap to clean values
+        let intersection = snap_point(line.origin + t * line.direction);
 
         // Avoid duplicate crossings at vertices
         let is_duplicate = crossings.iter().any(|c: &Point3| (*c - intersection).norm() < 0.01);
@@ -1071,12 +1155,13 @@ pub fn split_planar_face_by_arc(
     face1_points.push(inside_start.point);
 
     // Add arc points (from inside_start back to inside_end, reversed)
-    for pt in arc_points_3d.iter().skip(1).rev().take(arc_points_3d.len() - 2) {
+    // arc_points_3d goes from inside_start to inside_end, so reverse and skip both ends
+    for pt in arc_points_3d.iter().skip(1).rev().skip(1) {
         face1_points.push(*pt);
     }
 
     // Build Face 2: the outside-circle portion (polygon outside the arc)
-    // Walk polygon from inside_start edge to inside_end edge, then add chord back
+    // Walk polygon from inside_start edge to inside_end edge, then add arc back
     let mut face2_points: Vec<Point3> = Vec::new();
 
     // Start at inside_start intersection
@@ -1089,8 +1174,15 @@ pub fn split_planar_face_by_arc(
         idx = (idx + 1) % n;
     }
 
-    // Add inside_end intersection (chord closes the face)
+    // Add inside_end intersection
     face2_points.push(inside_end.point);
+
+    // Add arc points from inside_end back to inside_start (forward arc direction)
+    // arc_points_3d goes from inside_start → inside_end, so we take interior and reverse
+    // to go from inside_end → inside_start
+    for pt in arc_points_3d.iter().skip(1).rev().skip(1) {
+        face2_points.push(*pt);
+    }
 
     // Validate faces have at least 3 vertices
     if face1_points.len() < 3 || face2_points.len() < 3 {
@@ -1968,27 +2060,27 @@ pub fn split_circular_face_by_line(
 
     // Generate arc 1 vertices (from start to end, counterclockwise)
     let mut arc1_points: Vec<Point3> = Vec::with_capacity((n1 + 1) as usize);
-    arc1_points.push(start_pt);
+    arc1_points.push(snap_point(start_pt));
     for i in 1..n1 {
         let t = i as f64 / n1 as f64;
         let angle = start_angle + t * arc1_span;
         let (sin_a, cos_a) = angle.sin_cos();
         let pt = center + radius * (cos_a * x_axis + sin_a * y_axis);
-        arc1_points.push(pt);
+        arc1_points.push(snap_point(pt));
     }
-    arc1_points.push(end_pt);
+    arc1_points.push(snap_point(end_pt));
 
     // Generate arc 2 vertices (from end to start, counterclockwise, wrapping around)
     let mut arc2_points: Vec<Point3> = Vec::with_capacity((n2 + 1) as usize);
-    arc2_points.push(end_pt);
+    arc2_points.push(snap_point(end_pt));
     for i in 1..n2 {
         let t = i as f64 / n2 as f64;
         let angle = end_angle + t * arc2_span;
         let (sin_a, cos_a) = angle.sin_cos();
         let pt = center + radius * (cos_a * x_axis + sin_a * y_axis);
-        arc2_points.push(pt);
+        arc2_points.push(snap_point(pt));
     }
-    arc2_points.push(start_pt);
+    arc2_points.push(snap_point(start_pt));
 
     // Create Face 1: arc from start to end + chord from end to start
     // Loop: start → arc points → end → chord → back to start
@@ -2188,5 +2280,93 @@ mod tests {
             // Total faces should increase by 1 (original removed, 2 new added: +2 - 1 = +1)
             assert_eq!(brep.topology.faces.len(), initial_face_count + 1);
         }
+    }
+
+    /// Test splitting a cube's z=0 face by a circle centered at its corner.
+    /// This is the exact scenario for cube-cylinder difference at origin.
+    #[test]
+    fn test_split_z0_face_by_corner_circle() {
+        use vcad_kernel_geom::Circle3d;
+
+        let mut brep = make_cube(20.0, 20.0, 20.0);
+        println!("\n=== Test: Split z=0 face by corner circle ===");
+
+        // Find the z=0 face (bottom)
+        let z0_face = brep
+            .topology
+            .faces
+            .iter()
+            .find(|(fid, _)| {
+                let face = &brep.topology.faces[*fid];
+                let verts: Vec<Point3> = brep
+                    .topology
+                    .loop_half_edges(face.outer_loop)
+                    .map(|he| brep.topology.vertices[brep.topology.half_edges[he].origin].point)
+                    .collect();
+                // z=0 face has all vertices with z ≈ 0
+                verts.iter().all(|v| v.z.abs() < 0.01)
+            })
+            .map(|(fid, _)| fid);
+
+        let z0_face_id = z0_face.expect("Should find z=0 face");
+        println!("Found z=0 face: {:?}", z0_face_id);
+
+        // Print face vertices
+        let face = &brep.topology.faces[z0_face_id];
+        let verts: Vec<Point3> = brep
+            .topology
+            .loop_half_edges(face.outer_loop)
+            .map(|he| brep.topology.vertices[brep.topology.half_edges[he].origin].point)
+            .collect();
+        println!("Face vertices ({}):", verts.len());
+        for (i, v) in verts.iter().enumerate() {
+            println!("  v{}: ({:.1}, {:.1}, {:.1})", i, v.x, v.y, v.z);
+        }
+
+        // Create circle centered at corner (0,0,0) with radius 10
+        let circle = Circle3d::with_normal(
+            Point3::new(0.0, 0.0, 0.0),
+            10.0,
+            vcad_kernel_math::Vec3::new(0.0, 0.0, 1.0),
+        );
+        println!("Circle: center=({:.1},{:.1},{:.1}), r={:.1}",
+            circle.center.x, circle.center.y, circle.center.z, circle.radius);
+
+        // Check if circle is partially inside
+        let is_partial = circle_partially_inside_polygon(&verts, &circle);
+        println!("Circle partially inside polygon: {}", is_partial);
+
+        // Try to split
+        let initial_faces = brep.topology.faces.len();
+        let result = split_planar_face_by_circle(&mut brep, z0_face_id, &circle, 32);
+        println!("Split result: {} sub-faces", result.sub_faces.len());
+        println!("Total faces after: {} (was {})", brep.topology.faces.len(), initial_faces);
+
+        // Print result face info
+        for &fid in &result.sub_faces {
+            if brep.topology.faces.contains_key(fid) {
+                let f = &brep.topology.faces[fid];
+                let vs: Vec<Point3> = brep
+                    .topology
+                    .loop_half_edges(f.outer_loop)
+                    .map(|he| brep.topology.vertices[brep.topology.half_edges[he].origin].point)
+                    .collect();
+
+                let min_x = vs.iter().map(|v| v.x).fold(f64::INFINITY, f64::min);
+                let max_x = vs.iter().map(|v| v.x).fold(f64::NEG_INFINITY, f64::max);
+                let min_y = vs.iter().map(|v| v.y).fold(f64::INFINITY, f64::min);
+                let max_y = vs.iter().map(|v| v.y).fold(f64::NEG_INFINITY, f64::max);
+
+                println!("  {:?}: {} verts, x=[{:.1},{:.1}], y=[{:.1},{:.1}]",
+                    fid, vs.len(), min_x, max_x, min_y, max_y);
+            }
+        }
+
+        // The split should produce 2 faces
+        assert!(
+            result.sub_faces.len() >= 2,
+            "Expected at least 2 sub-faces from arc split, got {}",
+            result.sub_faces.len()
+        );
     }
 }
