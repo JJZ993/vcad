@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
 import { ViewportContent } from "./ViewportContent";
 import { DrawingView } from "./DrawingView";
+import { RayTracedViewportOverlay } from "./RayTracedViewport";
 import {
   useUiStore,
   useDocumentStore,
@@ -182,6 +183,8 @@ function BoxSelectHandler({
 export function Viewport() {
   const containerRef = useRef<HTMLDivElement>(null);
   const clearSelection = useUiStore((s) => s.clearSelection);
+  const renderMode = useUiStore((s) => s.renderMode);
+  const raytraceAvailable = useUiStore((s) => s.raytraceAvailable);
   const { isDark } = useTheme();
   const viewMode = useDrawingStore((s) => s.viewMode);
 
@@ -216,6 +219,10 @@ export function Viewport() {
         <ViewportContent />
         <BoxSelectHandler containerRef={containerRef} />
       </Canvas>
+      {/* Ray-traced overlay - rendered outside Canvas to avoid R3F reconciler issues */}
+      {renderMode === "raytrace" && raytraceAvailable && (
+        <RayTracedViewportOverlay />
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import { PlaneGizmo } from "./PlaneGizmo";
 import { TransformGizmo } from "./TransformGizmo";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { DimensionOverlay } from "./DimensionOverlay";
+import { RayTracedViewportSync } from "./RayTracedViewport";
 import {
   useEngineStore,
   useDocumentStore,
@@ -106,6 +107,8 @@ export function ViewportContent() {
   const selectedPartIds = useUiStore((s) => s.selectedPartIds);
   const isDraggingGizmo = useUiStore((s) => s.isDraggingGizmo);
   const setOrbiting = useUiStore((s) => s.setOrbiting);
+  const renderMode = useUiStore((s) => s.renderMode);
+  const raytraceAvailable = useUiStore((s) => s.raytraceAvailable);
   const sketchActive = useSketchStore((s) => s.active);
   const orbitRef = useRef<OrbitControlsImpl>(null);
   const { camera } = useThree();
@@ -743,58 +746,66 @@ export function ViewportContent() {
       {/* Engine-dependent content - renders after engine ready */}
       {engineReady && (
         <>
-          {/* Scene meshes - Assembly mode (instances) */}
-          {scene?.instances?.map((inst: EvaluatedInstance) => {
-            const instanceSelectionId = getInstanceSelectionId(inst);
-            // Create a minimal PartInfo-like object for instance rendering
-            const instancePartInfo: PartInfo = {
-              id: instanceSelectionId,
-              name: inst.name ?? inst.partDefId,
-              kind: "cube", // Placeholder kind for instances
-              primitiveNodeId: 0,
-              scaleNodeId: 0,
-              rotateNodeId: 0,
-              translateNodeId: 0,
-            };
-            return (
-              <SceneMesh
-                key={inst.instanceId}
-                partInfo={instancePartInfo}
-                mesh={inst.mesh}
-                materialKey={inst.material}
-                selected={selectedPartIds.has(instanceSelectionId)}
-                transform={inst.transform}
-              />
-            );
-          })}
+          {/* Ray-traced viewport sync (camera state for overlay) */}
+          {renderMode === "raytrace" && raytraceAvailable && (
+            <RayTracedViewportSync />
+          )}
 
-          {/* Imported meshes (no PartInfo - direct mesh display) */}
-          {(!scene?.instances || scene.instances.length === 0) &&
-            parts.length === 0 &&
-            scene?.parts.map((evalPart, idx) => (
-              <ImportedMesh
-                key={`imported-${idx}`}
-                mesh={evalPart.mesh}
-                materialKey={evalPart.material}
-              />
-            ))}
+          {/* Scene meshes - always render (ray trace overlays on top for BRep parts) */}
+          <>
+            {/* Scene meshes - Assembly mode (instances) */}
+              {scene?.instances?.map((inst: EvaluatedInstance) => {
+                const instanceSelectionId = getInstanceSelectionId(inst);
+                // Create a minimal PartInfo-like object for instance rendering
+                const instancePartInfo: PartInfo = {
+                  id: instanceSelectionId,
+                  name: inst.name ?? inst.partDefId,
+                  kind: "cube", // Placeholder kind for instances
+                  primitiveNodeId: 0,
+                  scaleNodeId: 0,
+                  rotateNodeId: 0,
+                  translateNodeId: 0,
+                };
+                return (
+                  <SceneMesh
+                    key={inst.instanceId}
+                    partInfo={instancePartInfo}
+                    mesh={inst.mesh}
+                    materialKey={inst.material}
+                    selected={selectedPartIds.has(instanceSelectionId)}
+                    transform={inst.transform}
+                  />
+                );
+              })}
 
-          {/* Scene meshes - Legacy mode (parts with PartInfo) */}
-          {(!scene?.instances || scene.instances.length === 0) &&
-            parts.length > 0 &&
-            scene?.parts.map((evalPart, idx) => {
-              const partInfo = parts[idx];
-              if (!partInfo) return null;
-              return (
-                <SceneMesh
-                  key={partInfo.id}
-                  partInfo={partInfo}
-                  mesh={evalPart.mesh}
-                  materialKey={evalPart.material}
-                  selected={isPartSelected(partInfo.id, idx)}
-                />
-              );
-            })}
+              {/* Imported meshes (no PartInfo - direct mesh display) */}
+              {(!scene?.instances || scene.instances.length === 0) &&
+                parts.length === 0 &&
+                scene?.parts.map((evalPart, idx) => (
+                  <ImportedMesh
+                    key={`imported-${idx}`}
+                    mesh={evalPart.mesh}
+                    materialKey={evalPart.material}
+                  />
+                ))}
+
+              {/* Scene meshes - Legacy mode (parts with PartInfo) */}
+              {(!scene?.instances || scene.instances.length === 0) &&
+                parts.length > 0 &&
+                scene?.parts.map((evalPart, idx) => {
+                  const partInfo = parts[idx];
+                  if (!partInfo) return null;
+                  return (
+                    <SceneMesh
+                      key={partInfo.id}
+                      partInfo={partInfo}
+                      mesh={evalPart.mesh}
+                      materialKey={evalPart.material}
+                      selected={isPartSelected(partInfo.id, idx)}
+                    />
+                  );
+                })}
+          </>
 
           {/* Clash visualization (zebra pattern on intersections) */}
           {scene?.clashes.map((clashMesh, idx) => (
