@@ -1613,12 +1613,13 @@ impl RayTracer {
             .ok_or_else(|| JsError::new("No solid uploaded. Call uploadSolid() first."))?;
 
         // Compute camera hash to detect changes
-        // Round to 3 decimal places to avoid floating-point precision issues
-        // causing spurious resets (e.g., 29.659999999 vs 29.660000001)
+        // Round to 1 decimal place (~10cm) to avoid spurious resets from:
+        // 1. Floating-point precision (29.659999999 vs 29.660000001)
+        // 2. OrbitControls damping/easing that slowly settles camera position
         let mut hasher = DefaultHasher::new();
-        for v in &camera { ((v * 1000.0).round() as i64).hash(&mut hasher); }
-        for v in &target { ((v * 1000.0).round() as i64).hash(&mut hasher); }
-        ((fov * 1000.0).round() as i32).hash(&mut hasher);
+        for v in &camera { ((v * 10.0).round() as i64).hash(&mut hasher); }
+        for v in &target { ((v * 10.0).round() as i64).hash(&mut hasher); }
+        ((fov * 100.0).round() as i32).hash(&mut hasher);
         let camera_hash = hasher.finish();
 
         // Reset accumulation if camera changed or dimensions changed
