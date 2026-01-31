@@ -1110,7 +1110,7 @@ mod tests {
 
             // Check for coverage - edges should cover X=[0,34] and X=[46,80]
             // (X=[34,46] is the hole)
-            z24_edges.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            z24_edges.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
             println!("Sorted Z=24 edges: {:?}", z24_edges);
         }
     }
@@ -1496,7 +1496,7 @@ mod tests {
             }
         }
         // Deduplicate
-        z24_verts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        z24_verts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         z24_verts.dedup_by(|a, b| (a.0 - b.0).abs() < 0.01);
         println!("Unique vertices at Z≈24: {:?}", z24_verts);
     }
