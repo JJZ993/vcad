@@ -712,7 +712,7 @@ fn merge_segments(
         return segments.to_vec();
     }
     let mut sorted = segments.to_vec();
-    sorted.sort_by(|a, b| a.t_start.partial_cmp(&b.t_start).unwrap());
+    sorted.sort_by(|a, b| a.t_start.partial_cmp(&b.t_start).unwrap_or(std::cmp::Ordering::Equal));
     let mut merged = Vec::new();
     let mut current = sorted[0].clone();
     for next in sorted.into_iter().skip(1) {
@@ -769,7 +769,7 @@ fn find_seam_cut(loop_uv: &[Point2]) -> f64 {
         return 0.0;
     }
     let mut u_values: Vec<f64> = loop_uv.iter().map(|p| p.x).collect();
-    u_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    u_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mut best_gap = -1.0;
     let mut cut = u_values[0];
     for w in u_values.windows(2) {

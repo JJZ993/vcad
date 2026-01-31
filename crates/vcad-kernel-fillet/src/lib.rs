@@ -489,7 +489,7 @@ fn build_vertex_faces(
                 (i, d.dot(&v_dir).atan2(d.dot(&u_dir)))
             })
             .collect();
-        indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let sorted_positions: Vec<Point3> = indexed
             .iter()

@@ -58,7 +58,7 @@ pub fn intersect_torus(ray: &Ray, torus: &TorusSurface) -> Vec<SurfaceHit> {
         })
         .collect();
 
-    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap());
+    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
     hits
 }
 
@@ -182,7 +182,7 @@ fn solve_quartic(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<f64> {
     }
 
     // Filter out duplicates and invalid roots
-    roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    roots.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     roots.dedup_by(|a, b| (*a - *b).abs() < 1e-10);
     roots
 }

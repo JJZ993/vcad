@@ -81,7 +81,7 @@ impl Bvh {
             self.trace_node(ray, root, &mut hits);
         }
 
-        hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap());
+        hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
         hits
     }
 

@@ -40,7 +40,7 @@ pub fn intersect_sphere(ray: &Ray, sphere: &SphereSurface) -> Vec<SurfaceHit> {
         hits.push(SurfaceHit { t, uv });
     }
 
-    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap());
+    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
     hits
 }
 

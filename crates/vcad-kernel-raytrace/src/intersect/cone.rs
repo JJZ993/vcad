@@ -80,7 +80,7 @@ pub fn intersect_cone(ray: &Ray, cone: &ConeSurface) -> Vec<SurfaceHit> {
         }
     }
 
-    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap());
+    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
     hits
 }
 

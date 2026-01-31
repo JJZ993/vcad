@@ -31,7 +31,7 @@ pub fn intersect_bspline(ray: &Ray, surface: &dyn Surface) -> Vec<SurfaceHit> {
     );
 
     // Remove duplicates
-    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap());
+    hits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
     hits.dedup_by(|a, b| (a.t - b.t).abs() < 1e-8);
 
     hits
