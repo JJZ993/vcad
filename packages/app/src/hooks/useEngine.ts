@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
-import { Engine, useDocumentStore, useEngineStore } from "@vcad/core";
-import { initializeGpu } from "@vcad/engine";
+import { Engine, useDocumentStore, useEngineStore, useUiStore } from "@vcad/core";
+import { initializeGpu, initializeRayTracer } from "@vcad/engine";
 
 // Module-level engine instance to survive HMR
 let globalEngine: Engine | null = null;
+// Guard against concurrent init (React StrictMode calls effect twice)
+let engineInitPromise: Promise<Engine> | null = null;
 
 export function useEngine() {
   const engineRef = useRef<Engine | null>(globalEngine);
@@ -34,7 +36,12 @@ export function useEngine() {
     useEngineStore.getState().setLoading(true);
     performance.mark("engine-init-start");
 
-    Engine.init()
+    // If init is already in progress (React StrictMode), reuse the existing promise
+    if (!engineInitPromise) {
+      engineInitPromise = Engine.init();
+    }
+
+    engineInitPromise
       .then(async (engine) => {
         if (cancelled) return;
         performance.mark("engine-init-complete");
@@ -45,9 +52,20 @@ export function useEngine() {
         useEngineStore.getState().setLoading(false);
 
         // Initialize GPU for accelerated geometry processing (non-blocking)
-        initializeGpu().catch((e) => {
-          console.warn("[GPU] Failed to initialize:", e);
-        });
+        initializeGpu()
+          .then((gpuAvailable) => {
+            // After GPU init, try to initialize ray tracer
+            if (gpuAvailable) {
+              return initializeRayTracer();
+            }
+            return false;
+          })
+          .then((raytraceAvailable) => {
+            useUiStore.getState().setRaytraceAvailable(raytraceAvailable);
+          })
+          .catch((e) => {
+            console.warn("[GPU] Failed to initialize:", e);
+          });
 
         // Evaluate initial document
         const doc = useDocumentStore.getState().document;
