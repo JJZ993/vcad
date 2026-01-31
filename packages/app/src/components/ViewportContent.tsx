@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo } from "react";
-import { MOUSE, Spherical, Vector3, Box3 } from "three";
+import { Spherical, Vector3, Box3, Raycaster, Vector2 } from "three";
 import { useThree, useFrame } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -28,6 +28,17 @@ import {
 import type { PartInfo } from "@vcad/core";
 import { useCameraControls } from "@/hooks/useCameraControls";
 import { useTheme } from "@/hooks/useTheme";
+import { useInputDeviceDetection } from "@/hooks/useInputDeviceDetection";
+import {
+  useCameraSettingsStore,
+  getEffectiveInputDevice,
+  getActiveControlScheme,
+} from "@/stores/camera-settings-store";
+import {
+  matchScrollBinding,
+  getModifiersFromEvent,
+  getOrbitControlsMouseButtons,
+} from "@/lib/camera-controls";
 import type { EvaluatedInstance } from "@vcad/engine";
 
 function getInstanceSelectionId(inst: EvaluatedInstance): string {
@@ -41,6 +52,8 @@ function getInstanceSelectionId(inst: EvaluatedInstance): string {
 
 export function ViewportContent() {
   useCameraControls();
+  useInputDeviceDetection();
+
   const scene = useEngineStore((s) => s.scene);
   const previewMesh = useEngineStore((s) => s.previewMesh);
   const parts = useDocumentStore((s) => s.parts);
@@ -51,6 +64,16 @@ export function ViewportContent() {
   const orbitRef = useRef<OrbitControlsImpl>(null);
   const { camera } = useThree();
   const { isDark } = useTheme();
+
+  // Camera settings from store
+  const cameraSettings = useCameraSettingsStore();
+  const controlScheme = getActiveControlScheme(cameraSettings);
+  const effectiveDevice = getEffectiveInputDevice(cameraSettings);
+  const { zoomBehavior, orbitMomentum } = cameraSettings;
+
+  // Raycaster for zoom-to-cursor
+  const raycasterRef = useRef(new Raycaster());
+  const mouseRef = useRef(new Vector2());
 
   // Debug: log scene/parts alignment
   useEffect(() => {
@@ -242,7 +265,7 @@ export function ViewportContent() {
     }
   });
 
-  // Wheel-to-orbit: two-finger trackpad drag → orbit with momentum
+  // Wheel handler with configurable control schemes
   useEffect(() => {
     const controls = orbitRef.current;
     const domElement = controls?.domElement;
@@ -252,6 +275,14 @@ export function ViewportContent() {
     const friction = 0.92; // velocity decay per frame
 
     const animate = () => {
+      // Check if momentum is enabled
+      if (!orbitMomentum) {
+        animatingRef.current = false;
+        velocityRef.current.theta = 0;
+        velocityRef.current.phi = 0;
+        return;
+      }
+
       const vel = velocityRef.current;
       // Stop animating when velocity is negligible
       if (Math.abs(vel.theta) < 0.0001 && Math.abs(vel.phi) < 0.0001) {
@@ -285,6 +316,99 @@ export function ViewportContent() {
       requestAnimationFrame(animate);
     };
 
+    // Zoom implementation with zoom-to-cursor support
+    const performZoom = (e: WheelEvent, dx: number, dy: number) => {
+      const baseSpeed = 0.002 * zoomBehavior.sensitivity;
+      let delta = -(Math.abs(dy) > Math.abs(dx) ? dy : dx) * baseSpeed;
+
+      if (zoomBehavior.invertDirection) {
+        delta = -delta;
+      }
+
+      const target = controls.target;
+      const offset = offsetRef.current.subVectors(camera.position, target);
+      const distance = offset.length();
+      const newDistance = Math.max(1, distance * (1 + delta));
+
+      if (zoomBehavior.zoomTowardsCursor) {
+        // Zoom toward cursor position
+        const rect = domElement.getBoundingClientRect();
+        mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouseRef.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycasterRef.current.setFromCamera(mouseRef.current, camera);
+
+        // Project cursor to a plane at the current target distance
+        const cursorPoint = new Vector3();
+        raycasterRef.current.ray.at(distance, cursorPoint);
+
+        // Interpolate target toward cursor based on zoom amount
+        const zoomFactor = 1 - newDistance / distance;
+        target.lerp(cursorPoint, zoomFactor * 0.5);
+      }
+
+      offset.normalize().multiplyScalar(newDistance);
+      camera.position.copy(target).add(offset);
+      controls.update();
+    };
+
+    // Pan implementation
+    const performPan = (dx: number, dy: number) => {
+      const target = controls.target;
+      const offset = offsetRef.current.subVectors(camera.position, target);
+      const distance = offset.length();
+
+      // Scale pan speed by distance so it feels consistent at any zoom
+      const panSpeed = distance * 0.002;
+
+      // Get camera's right and up vectors in world space
+      const right = new Vector3();
+      const up = new Vector3();
+      camera.matrix.extractBasis(right, up, new Vector3());
+
+      // Calculate pan offset: drag to pull the view
+      const panOffset = right
+        .multiplyScalar(dx * panSpeed)
+        .add(up.multiplyScalar(-dy * panSpeed));
+
+      // Move both camera and target by the same amount
+      camera.position.add(panOffset);
+      target.add(panOffset);
+      controls.update();
+    };
+
+    // Orbit implementation
+    const performOrbit = (dx: number, dy: number, withMomentum: boolean) => {
+      // OrbitControls formula: viewport height = 2π radians
+      const rotateSpeed = (2 * Math.PI) / domElement.clientHeight;
+
+      if (withMomentum && orbitMomentum) {
+        // Accumulate velocity for momentum animation
+        velocityRef.current.theta += dx * rotateSpeed;
+        velocityRef.current.phi += dy * rotateSpeed;
+
+        // Start animation loop if not already running
+        if (!animatingRef.current) {
+          animatingRef.current = true;
+          requestAnimationFrame(animate);
+        }
+      } else {
+        // Immediate orbit without momentum
+        const target = controls.target;
+        const offset = offsetRef.current.subVectors(camera.position, target);
+        const spherical = sphericalRef.current.setFromVector3(offset);
+
+        spherical.theta += dx * rotateSpeed;
+        spherical.phi += dy * rotateSpeed;
+        spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, spherical.phi));
+
+        offset.setFromSpherical(spherical);
+        camera.position.copy(target).add(offset);
+        camera.lookAt(target);
+        controls.update();
+      }
+    };
+
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -301,63 +425,33 @@ export function ViewportContent() {
         dy *= 100;
       } // pages → pixels
 
-      // Shift + scroll = zoom
-      if (e.shiftKey) {
-        const zoomSpeed = 0.002;
-        const delta = -(Math.abs(dy) > Math.abs(dx) ? dy : dx) * zoomSpeed;
-        const target = controls.target;
-        const offset = offsetRef.current.subVectors(camera.position, target);
-        const distance = offset.length();
-        const newDistance = Math.max(1, distance * (1 + delta));
-        offset.normalize().multiplyScalar(newDistance);
-        camera.position.copy(target).add(offset);
-        controls.update();
-        return;
-      }
+      // Get modifiers and match to action
+      const modifiers = getModifiersFromEvent(e);
+      const action = matchScrollBinding(controlScheme.scrollBindings, modifiers);
 
-      // Cmd + scroll = pan (push camera and target in screen space)
-      if (e.metaKey) {
-        const target = controls.target;
-        const offset = offsetRef.current.subVectors(camera.position, target);
-        const distance = offset.length();
+      // Check if trackpad orbit is enabled for this scheme
+      const useTrackpadOrbit =
+        controlScheme.trackpadOrbitEnabled && effectiveDevice === "trackpad";
 
-        // Scale pan speed by distance so it feels consistent at any zoom
-        const panSpeed = distance * 0.002;
-
-        // Get camera's right and up vectors in world space
-        const right = new Vector3();
-        const up = new Vector3();
-        camera.matrix.extractBasis(right, up, new Vector3());
-
-        // Calculate pan offset: drag to pull the view
-        const panOffset = right
-          .multiplyScalar(dx * panSpeed)
-          .add(up.multiplyScalar(-dy * panSpeed));
-
-        // Move both camera and target by the same amount
-        camera.position.add(panOffset);
-        target.add(panOffset);
-        controls.update();
-        return;
-      }
-
-      // OrbitControls formula: viewport height = 2π radians
-      const rotateSpeed = (2 * Math.PI) / domElement.clientHeight;
-
-      // Accumulate velocity: deltaX → azimuthal (theta), deltaY → polar (phi)
-      velocityRef.current.theta += dx * rotateSpeed;
-      velocityRef.current.phi += dy * rotateSpeed;
-
-      // Start animation loop if not already running
-      if (!animatingRef.current) {
-        animatingRef.current = true;
-        requestAnimationFrame(animate);
+      switch (action) {
+        case "zoom":
+          performZoom(e, dx, dy);
+          break;
+        case "pan":
+          performPan(dx, dy);
+          break;
+        case "orbit":
+          performOrbit(dx, dy, useTrackpadOrbit);
+          break;
+        default:
+          // No action configured for this modifier combination
+          break;
       }
     };
 
     domElement.addEventListener("wheel", handleWheel, { passive: false });
     return () => domElement.removeEventListener("wheel", handleWheel);
-  }, [camera]);
+  }, [camera, controlScheme, effectiveDevice, zoomBehavior, orbitMomentum]);
 
   // Double-click on empty canvas resets camera to initial position
   useEffect(() => {
@@ -582,18 +676,21 @@ export function ViewportContent() {
       {/* Transform gizmo for selected part */}
       <TransformGizmo orbitControls={orbitRef} />
 
-      {/* Controls */}
+      {/* Controls - mouse buttons configured by control scheme */}
       <OrbitControls
         ref={orbitRef}
         makeDefault
         enableDamping
         dampingFactor={0.1}
         enableZoom={false}
-        mouseButtons={{
-          LEFT: undefined, // LMB reserved for selection
-          MIDDLE: MOUSE.PAN, // MMB = pan
-          RIGHT: MOUSE.PAN, // RMB = pan (fallback for mouse users)
-        }}
+        mouseButtons={(() => {
+          const schemeButtons = getOrbitControlsMouseButtons(controlScheme);
+          return {
+            LEFT: undefined, // LMB reserved for selection
+            MIDDLE: schemeButtons.MIDDLE,
+            RIGHT: schemeButtons.RIGHT,
+          };
+        })()}
       />
 
       {/* Orientation gizmo - RGB axes, click to snap view */}

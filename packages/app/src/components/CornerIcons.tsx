@@ -15,6 +15,7 @@ import {
   ArrowsOutCardinal,
   GithubLogo,
   DiscordLogo,
+  Mouse,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -26,6 +27,9 @@ import { FloppyDisk, FolderOpen } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { examples } from "@/data/examples";
 import { OutputButton } from "./OutputButton";
+import { CameraSettingsPanel } from "./CameraSettingsPanel";
+import { useCameraSettingsStore } from "@/stores/camera-settings-store";
+import { CONTROL_PRESETS } from "@/types/camera-controls";
 
 interface CornerIconsProps {
   onAboutOpen: () => void;
@@ -94,6 +98,10 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
   const toggleGridSnap = useUiStore((s) => s.toggleGridSnap);
   const snapIncrement = useUiStore((s) => s.snapIncrement);
   const setSnapIncrement = useUiStore((s) => s.setSnapIncrement);
+
+  // Camera settings
+  const controlSchemeId = useCameraSettingsStore((s) => s.controlSchemeId);
+  const currentSchemeName = CONTROL_PRESETS[controlSchemeId]?.name ?? "vcad";
 
   // Featured examples shown by default
   const featuredExamples = examples.slice(0, 3);
@@ -257,6 +265,29 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
                     </button>
                   ))}
                 </div>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+
+          {/* Camera Controls with submenu */}
+          <Popover.Root>
+            <Popover.Trigger asChild>
+              <button className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover">
+                <Mouse size={14} />
+                <span>Controls</span>
+                <span className="ml-auto text-text-muted">
+                  {currentSchemeName} &rsaquo;
+                </span>
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                className="z-50 w-64 border border-border bg-surface p-2 shadow-xl max-h-[80vh] overflow-y-auto"
+                side="right"
+                sideOffset={4}
+                align="start"
+              >
+                <CameraSettingsPanel />
               </Popover.Content>
             </Popover.Portal>
           </Popover.Root>
