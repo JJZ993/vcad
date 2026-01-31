@@ -163,72 +163,86 @@ impl<'a> StepWriter<'a> {
         let geom = &self.solid.geometry;
 
         for (idx, surface) in geom.surfaces.iter().enumerate() {
-            // Write axis placement first
-            let placement = match surface.surface_type() {
+            let surf_id = self.alloc_id();
+
+            // Handle each surface type, extracting placement and entity in one pass
+            let (placement, entity) = match surface.surface_type() {
                 SurfaceKind::Plane => {
-                    let plane = surface.as_any().downcast_ref::<Plane>().unwrap();
-                    plane_to_placement(plane)
+                    let plane = surface.as_any().downcast_ref::<Plane>().ok_or_else(|| {
+                        StepError::InvalidGeometry("failed to downcast Plane surface".into())
+                    })?;
+                    let placement_id = self.write_axis_placement(&plane_to_placement(plane))?;
+                    (placement_id, write_plane("", placement_id))
                 }
                 SurfaceKind::Cylinder => {
-                    let cyl = surface.as_any().downcast_ref::<CylinderSurface>().unwrap();
-                    cylinder_to_placement(cyl)
+                    let cyl = surface
+                        .as_any()
+                        .downcast_ref::<CylinderSurface>()
+                        .ok_or_else(|| {
+                            StepError::InvalidGeometry("failed to downcast Cylinder surface".into())
+                        })?;
+                    let placement_id = self.write_axis_placement(&cylinder_to_placement(cyl))?;
+                    (
+                        placement_id,
+                        write_cylindrical_surface(cyl.radius, "", placement_id),
+                    )
                 }
                 SurfaceKind::Sphere => {
-                    let sphere = surface.as_any().downcast_ref::<SphereSurface>().unwrap();
-                    sphere_to_placement(sphere)
+                    let sphere = surface
+                        .as_any()
+                        .downcast_ref::<SphereSurface>()
+                        .ok_or_else(|| {
+                            StepError::InvalidGeometry("failed to downcast Sphere surface".into())
+                        })?;
+                    let placement_id = self.write_axis_placement(&sphere_to_placement(sphere))?;
+                    (
+                        placement_id,
+                        write_spherical_surface(sphere.radius, "", placement_id),
+                    )
                 }
                 SurfaceKind::Cone => {
-                    let cone = surface.as_any().downcast_ref::<ConeSurface>().unwrap();
-                    AxisPlacement {
+                    let cone = surface.as_any().downcast_ref::<ConeSurface>().ok_or_else(|| {
+                        StepError::InvalidGeometry("failed to downcast Cone surface".into())
+                    })?;
+                    let placement = AxisPlacement {
                         location: cone.apex,
                         axis: Some(cone.axis),
                         ref_direction: Some(cone.ref_dir),
-                    }
-                }
-                SurfaceKind::Torus => {
-                    let torus = surface.as_any().downcast_ref::<TorusSurface>().unwrap();
-                    torus_to_placement(torus)
-                }
-                _ => {
-                    // Unsupported surface type
-                    AxisPlacement {
-                        location: vcad_kernel_math::Point3::origin(),
-                        axis: None,
-                        ref_direction: None,
-                    }
-                }
-            };
-
-            let placement_id = self.write_axis_placement(&placement)?;
-
-            // Write surface
-            let surf_id = self.alloc_id();
-            let entity = match surface.surface_type() {
-                SurfaceKind::Plane => write_plane("", placement_id),
-                SurfaceKind::Cylinder => {
-                    let cyl = surface.as_any().downcast_ref::<CylinderSurface>().unwrap();
-                    write_cylindrical_surface(cyl.radius, "", placement_id)
-                }
-                SurfaceKind::Sphere => {
-                    let sphere = surface.as_any().downcast_ref::<SphereSurface>().unwrap();
-                    write_spherical_surface(sphere.radius, "", placement_id)
-                }
-                SurfaceKind::Cone => {
-                    let cone = surface.as_any().downcast_ref::<ConeSurface>().unwrap();
+                    };
+                    let placement_id = self.write_axis_placement(&placement)?;
                     // For STEP, we need the radius at the reference position
                     // Since apex is at the placement location, radius is 0 there
-                    // We need to compute radius at a reference distance
-                    write_conical_surface(0.0, cone.half_angle, "", placement_id)
+                    (
+                        placement_id,
+                        write_conical_surface(0.0, cone.half_angle, "", placement_id),
+                    )
                 }
                 SurfaceKind::Torus => {
-                    let torus = surface.as_any().downcast_ref::<TorusSurface>().unwrap();
-                    write_toroidal_surface(torus.major_radius, torus.minor_radius, "", placement_id)
+                    let torus = surface
+                        .as_any()
+                        .downcast_ref::<TorusSurface>()
+                        .ok_or_else(|| {
+                            StepError::InvalidGeometry("failed to downcast Torus surface".into())
+                        })?;
+                    let placement_id = self.write_axis_placement(&torus_to_placement(torus))?;
+                    (
+                        placement_id,
+                        write_toroidal_surface(torus.major_radius, torus.minor_radius, "", placement_id),
+                    )
                 }
                 _ => {
                     // Unsupported surface type - write as plane placeholder
-                    write_plane("", placement_id)
+                    let placement = AxisPlacement {
+                        location: vcad_kernel_math::Point3::origin(),
+                        axis: None,
+                        ref_direction: None,
+                    };
+                    let placement_id = self.write_axis_placement(&placement)?;
+                    (placement_id, write_plane("", placement_id))
                 }
             };
+
+            let _ = placement; // placement_id already used in entity construction
             self.emit(surf_id, &entity);
             self.surface_map.insert(idx, surf_id);
         }
