@@ -131,6 +131,12 @@ export function RayTracedViewportOverlay() {
   const progressiveTimerRef = useRef<number | null>(null);
   const maxSamples = raytraceQuality === "draft" ? 16 : raytraceQuality === "high" ? 256 : 64;
 
+  // Camera settling detection - only start progressive refinement when camera is still
+  const cameraHistoryRef = useRef<Array<[number, number, number]>>([]);
+  const cameraSettledRef = useRef(false);
+  const SETTLE_THRESHOLD = 0.01; // 1cm movement threshold
+  const SETTLE_FRAMES = 3; // Must be still for 3 frames before progressive starts
+
   // Quality multiplier for render resolution
   const qualityScale =
     raytraceQuality === "draft" ? 0.5 : raytraceQuality === "high" ? 2 : 1;
@@ -173,9 +179,42 @@ export function RayTracedViewportOverlay() {
     [qualityScale]
   );
 
+  // Check if camera has settled (not moving for SETTLE_FRAMES)
+  const checkCameraSettled = useCallback((state: CameraState): boolean => {
+    const pos = state.position;
+    const history = cameraHistoryRef.current;
+
+    // Add current position to history
+    history.push([pos[0], pos[1], pos[2]]);
+
+    // Keep only last SETTLE_FRAMES + 1 positions
+    while (history.length > SETTLE_FRAMES + 1) {
+      history.shift();
+    }
+
+    // Need enough history to determine if settled
+    if (history.length < SETTLE_FRAMES + 1) {
+      return false;
+    }
+
+    // Check if all positions in history are within threshold
+    const first = history[0]!;
+    for (let i = 1; i < history.length; i++) {
+      const p = history[i]!;
+      const dx = Math.abs(p[0] - first[0]);
+      const dy = Math.abs(p[1] - first[1]);
+      const dz = Math.abs(p[2] - first[2]);
+      if (dx > SETTLE_THRESHOLD || dy > SETTLE_THRESHOLD || dz > SETTLE_THRESHOLD) {
+        return false;
+      }
+    }
+
+    return true;
+  }, []);
+
   // Schedule progressive refinement renders
   const scheduleProgressiveRender = useCallback(
-    (_state: CameraState) => {
+    (state: CameraState) => {
       // Cancel any pending progressive render
       if (progressiveTimerRef.current !== null) {
         cancelAnimationFrame(progressiveTimerRef.current);
@@ -188,6 +227,21 @@ export function RayTracedViewportOverlay() {
         return; // Already converged
       }
 
+      // Only continue progressive refinement if camera has settled
+      const settled = checkCameraSettled(state);
+      if (!settled && !cameraSettledRef.current) {
+        // Camera still moving - schedule another check after a short delay
+        progressiveTimerRef.current = requestAnimationFrame(() => {
+          progressiveTimerRef.current = null;
+          if (lastCameraStateRef.current) {
+            scheduleProgressiveRender(lastCameraStateRef.current);
+          }
+        });
+        return;
+      }
+
+      cameraSettledRef.current = settled;
+
       // Schedule next frame after a short delay (16ms = ~60fps)
       progressiveTimerRef.current = requestAnimationFrame(() => {
         progressiveTimerRef.current = null;
@@ -197,7 +251,7 @@ export function RayTracedViewportOverlay() {
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rayTracer, maxSamples]
+    [rayTracer, maxSamples, checkCameraSettled]
   );
 
   // Internal render function
@@ -305,6 +359,9 @@ export function RayTracedViewportOverlay() {
         cancelAnimationFrame(progressiveTimerRef.current);
         progressiveTimerRef.current = null;
       }
+      // Reset settling state when new camera position arrives
+      cameraSettledRef.current = false;
+      cameraHistoryRef.current = [];
       doRenderInternal(state, true);
     },
     [doRenderInternal]

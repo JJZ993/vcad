@@ -1613,12 +1613,12 @@ impl RayTracer {
             .ok_or_else(|| JsError::new("No solid uploaded. Call uploadSolid() first."))?;
 
         // Compute camera hash to detect changes
-        // Round to 1 decimal place (~10cm) to avoid spurious resets from:
-        // 1. Floating-point precision (29.659999999 vs 29.660000001)
-        // 2. OrbitControls damping/easing that slowly settles camera position
+        // Round to 2 decimal places (~1cm) to avoid floating-point precision issues
+        // (e.g., 29.659999999 vs 29.660000001 should hash the same)
+        // The React side handles settling detection to avoid spurious renders during damping
         let mut hasher = DefaultHasher::new();
-        for v in &camera { ((v * 10.0).round() as i64).hash(&mut hasher); }
-        for v in &target { ((v * 10.0).round() as i64).hash(&mut hasher); }
+        for v in &camera { ((v * 100.0).round() as i64).hash(&mut hasher); }
+        for v in &target { ((v * 100.0).round() as i64).hash(&mut hasher); }
         ((fov * 100.0).round() as i32).hash(&mut hasher);
         let camera_hash = hasher.finish();
 
