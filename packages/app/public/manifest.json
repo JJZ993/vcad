@@ -1,0 +1,20 @@
+{
+  "name": "vcad",
+  "short_name": "vcad",
+  "description": "Free parametric CAD for everyone",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#00b4d8",
+  "icons": [
+    {
+      "src": "/assets/mascot.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["productivity", "design", "utilities"],
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr"
+}

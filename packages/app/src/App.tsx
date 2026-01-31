@@ -22,6 +22,8 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { SketchToolbar } from "@/components/SketchToolbar";
 import { FaceSelectionOverlay } from "@/components/FaceSelectionOverlay";
 import { QuotePanel } from "@/components/QuotePanel";
+import { DocumentPicker } from "@/components/DocumentPicker";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
 import {
   useSketchStore,
   useEngineStore,
@@ -33,7 +35,13 @@ import {
 } from "@vcad/core";
 import { useEngine } from "@/hooks/useEngine";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useAutoSave } from "@/hooks/useAutoSave";
 import { saveDocument } from "@/lib/save-load";
+import {
+  getMostRecentDocument,
+  loadDocument as loadDocumentFromDb,
+  generateDocumentName,
+} from "@/lib/storage";
 import {
   isGpuAvailable,
   processGeometryGpu,
@@ -80,9 +88,12 @@ export function App() {
   useEngine();
   useKeyboardShortcuts();
   useThemeSync();
+  useAutoSave();
 
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const engineReady = useEngineStore((s) => s.engineReady);
@@ -288,17 +299,24 @@ export function App() {
     [processFile],
   );
 
-  // Listen for save/open custom events from keyboard shortcuts
+  const handleOpenDocuments = useCallback(() => {
+    setDocumentPickerOpen(true);
+  }, []);
+
+  // Listen for save/open/documents custom events from keyboard shortcuts
   useEffect(() => {
     const onSave = () => handleSave();
     const onOpen = () => handleOpen();
+    const onDocuments = () => handleOpenDocuments();
     window.addEventListener("vcad:save", onSave);
     window.addEventListener("vcad:open", onOpen);
+    window.addEventListener("vcad:documents", onDocuments);
     return () => {
       window.removeEventListener("vcad:save", onSave);
       window.removeEventListener("vcad:open", onOpen);
+      window.removeEventListener("vcad:documents", onDocuments);
     };
-  }, [handleSave, handleOpen]);
+  }, [handleSave, handleOpen, handleOpenDocuments]);
 
   // Listen for load-example events from the menu
   useEffect(() => {
@@ -341,6 +359,40 @@ export function App() {
   useEffect(() => {
     incrementSessions();
   }, [incrementSessions]);
+
+  // Initialize document on app load
+  useEffect(() => {
+    if (initialized) return;
+
+    async function initDocument() {
+      try {
+        // Try to restore most recent document
+        const recent = await getMostRecentDocument();
+        if (recent) {
+          const stored = await loadDocumentFromDb(recent.id);
+          if (stored) {
+            useDocumentStore.getState().loadDocument(stored.document);
+            useDocumentStore.getState().setDocumentMeta(stored.id, stored.name);
+            setInitialized(true);
+            return;
+          }
+        }
+
+        // No recent document, create a new one
+        const name = await generateDocumentName();
+        const id = crypto.randomUUID();
+        useDocumentStore.getState().newDocument(id, name);
+      } catch (err) {
+        console.error("Failed to initialize document:", err);
+        // Fallback: create new document
+        const id = crypto.randomUUID();
+        useDocumentStore.getState().newDocument(id, "Untitled");
+      }
+      setInitialized(true);
+    }
+
+    initDocument();
+  }, [initialized]);
 
   // Track cylinder position for "position-cylinder" guided flow step
   const document = useDocumentStore((s) => s.document);
@@ -449,8 +501,15 @@ export function App() {
           )}
         </AppShell>
 
+        {/* Offline indicator */}
+        <OfflineIndicator />
+
         {/* Modals */}
         <AboutModal open={aboutOpen} onOpenChange={setAboutOpen} />
+        <DocumentPicker
+          open={documentPickerOpen}
+          onOpenChange={setDocumentPickerOpen}
+        />
         <CommandPalette
           open={commandPaletteOpen}
           onOpenChange={setCommandPaletteOpen}

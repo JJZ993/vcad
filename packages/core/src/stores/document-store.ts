@@ -65,6 +65,11 @@ export interface DocumentState {
   nextPartNum: number;
   isDirty: boolean;
 
+  // Document persistence metadata
+  documentId: string | null;
+  documentName: string;
+  lastSavedAt: number | null;
+
   // undo/redo
   undoStack: Snapshot[];
   redoStack: Snapshot[];
@@ -127,6 +132,9 @@ export interface DocumentState {
   undo: () => void;
   redo: () => void;
   markSaved: () => void;
+  setDocumentMeta: (id: string, name: string) => void;
+  setDocumentName: (name: string) => void;
+  newDocument: (id: string, name: string) => void;
   // Assembly operations
   setInstanceTransform: (
     instanceId: string,
@@ -218,6 +226,9 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   nextNodeId: 1,
   nextPartNum: 1,
   isDirty: false,
+  documentId: null,
+  documentName: "Untitled",
+  lastSavedAt: null,
   undoStack: [],
   redoStack: [],
 
@@ -1269,7 +1280,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   },
 
   markSaved: () => {
-    set({ isDirty: false });
+    set({ isDirty: false, lastSavedAt: Date.now() });
   },
 
   // Assembly operations
@@ -1512,5 +1523,29 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     newDoc.instances![idx] = { ...instance, name };
 
     set({ document: newDoc, isDirty: true, ...undoState });
+  },
+
+  setDocumentMeta: (id, name) => {
+    set({ documentId: id, documentName: name });
+  },
+
+  setDocumentName: (name) => {
+    set({ documentName: name, isDirty: true });
+  },
+
+  newDocument: (id, name) => {
+    set({
+      document: createDocument(),
+      parts: [],
+      consumedParts: {},
+      nextNodeId: 1,
+      nextPartNum: 1,
+      isDirty: false,
+      documentId: id,
+      documentName: name,
+      lastSavedAt: null,
+      undoStack: [],
+      redoStack: [],
+    });
   },
 }));

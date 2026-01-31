@@ -107,10 +107,17 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Open: Ctrl/Cmd+O
+      // Open file: Ctrl/Cmd+O
       if (mod && !e.shiftKey && e.key === "o") {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("vcad:open"));
+        return;
+      }
+
+      // Document picker: Alt+O or Ctrl/Cmd+Shift+O
+      if ((e.altKey && e.key === "o") || (mod && e.shiftKey && e.key === "o")) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("vcad:documents"));
         return;
       }
 
@@ -155,6 +162,16 @@ export function useKeyboardShortcuts() {
       // Toggle wireframe
       if (e.key === "x" || e.key === "X") {
         toggleWireframe();
+        return;
+      }
+
+      // Toggle ray tracing: Alt+R
+      if (e.altKey && (e.key === "r" || e.key === "R")) {
+        e.preventDefault();
+        const { raytraceAvailable, toggleRenderMode } = useUiStore.getState();
+        if (raytraceAvailable) {
+          toggleRenderMode();
+        }
         return;
       }
 
