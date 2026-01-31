@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, Suspense } from "react";
-import { Spherical, Vector3, Box3, Raycaster, Vector2 } from "three";
+import { Spherical, Vector3, Box3, Raycaster, Vector2, Quaternion, Matrix4 } from "three";
 import { useThree, useFrame } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -51,6 +51,45 @@ function getInstanceSelectionId(inst: EvaluatedInstance): string {
   return instance.id ?? instance.instanceId ?? instance.partDefId ?? "";
 }
 
+// Compute a "level" quaternion (zero roll) for a camera at `eye` looking at `target`
+const _tempMatrix = new Matrix4();
+const _tempForward = new Vector3();
+const _tempRight = new Vector3();
+const _tempUp = new Vector3();
+const _tempBack = new Vector3();
+function computeLevelQuaternion(
+  eye: Vector3,
+  target: Vector3,
+  out: Quaternion,
+): Quaternion {
+  // Forward direction (camera looks down -Z in its local space)
+  _tempForward.subVectors(target, eye).normalize();
+
+  // Use world Y as reference up, unless looking nearly straight up/down
+  const worldUp = new Vector3(0, 1, 0);
+  const dot = Math.abs(_tempForward.dot(worldUp));
+
+  if (dot > 0.999) {
+    // Looking straight up or down - use world Z as the reference
+    _tempRight.crossVectors(new Vector3(0, 0, 1), _tempForward).normalize();
+  } else {
+    // Normal case: right = forward × worldUp
+    _tempRight.crossVectors(_tempForward, worldUp).normalize();
+  }
+
+  // Compute up for right-handed system: up = right × forward
+  _tempUp.crossVectors(_tempRight, _tempForward);
+
+  // Back direction (camera +Z) = -forward
+  _tempBack.copy(_tempForward).negate();
+
+  // Build rotation matrix (camera convention: +X right, +Y up, +Z back)
+  _tempMatrix.makeBasis(_tempRight, _tempUp, _tempBack);
+  out.setFromRotationMatrix(_tempMatrix);
+
+  return out;
+}
+
 export function ViewportContent() {
   useCameraControls();
   useInputDeviceDetection();
@@ -92,6 +131,9 @@ export function ViewportContent() {
 
   // Camera position goal for face-aligned view
   const cameraPositionGoalRef = useRef<Vector3 | null>(null);
+
+  // Quaternion ref for smooth orientation interpolation
+  const goalQuatRef = useRef(new Quaternion());
 
   // Initial camera state for reset
   const INITIAL_POSITION = new Vector3(50, 50, 50);
@@ -218,8 +260,10 @@ export function ViewportContent() {
     // Animate camera position if we have a specific goal (face-aligned view)
     if (cameraPositionGoal !== null) {
       camera.position.lerp(cameraPositionGoal, lerpFactor);
-      camera.lookAt(target);
-      orbitRef.current.update();
+      // Use quaternion slerp for smooth orientation (avoids lookAt roll jumps)
+      camera.quaternion.slerp(goalQuatRef.current, lerpFactor);
+      // Sync target for when OrbitControls resumes
+      target.copy(targetGoal);
     } else if (distanceGoal !== null) {
       // Animate camera distance only (keep current direction)
       const offset = offsetRef.current.subVectors(camera.position, target);
@@ -245,8 +289,10 @@ export function ViewportContent() {
       target.copy(targetGoal);
       if (cameraPositionGoal) {
         camera.position.copy(cameraPositionGoal);
-        camera.lookAt(target);
+        camera.quaternion.copy(goalQuatRef.current);
       }
+      // Re-enable OrbitControls now that animation is complete
+      if (orbitRef.current) orbitRef.current.enabled = true;
       isAnimatingTargetRef.current = false;
       distanceGoalRef.current = null;
       cameraPositionGoalRef.current = null;
@@ -513,6 +559,13 @@ export function ViewportContent() {
       );
       cameraPositionGoalRef.current = cameraPos;
       distanceGoalRef.current = viewDistance;
+
+      // Compute goal quaternion for smooth orientation interpolation (zero roll)
+      const targetVec = new Vector3(centroid.x, centroid.y, centroid.z);
+      computeLevelQuaternion(cameraPos, targetVec, goalQuatRef.current);
+
+      // Disable OrbitControls during animation so it doesn't fight with our quaternion
+      if (orbitRef.current) orbitRef.current.enabled = false;
       isAnimatingTargetRef.current = true;
     };
 
@@ -547,9 +600,17 @@ export function ViewportContent() {
       if (!pos) return;
 
       // Animate to the new position
-      targetGoalRef.current.set(0, 0, 0);
-      cameraPositionGoalRef.current = new Vector3(pos[0], pos[1], pos[2]);
+      const cameraPos = new Vector3(pos[0], pos[1], pos[2]);
+      const targetVec = new Vector3(0, 0, 0);
+      targetGoalRef.current.copy(targetVec);
+      cameraPositionGoalRef.current = cameraPos;
       distanceGoalRef.current = null; // Don't override distance when we have explicit position
+
+      // Compute goal quaternion for smooth orientation interpolation (zero roll)
+      computeLevelQuaternion(cameraPos, targetVec, goalQuatRef.current);
+
+      // Disable OrbitControls during animation
+      if (orbitRef.current) orbitRef.current.enabled = false;
       isAnimatingTargetRef.current = true;
     };
 
@@ -566,11 +627,18 @@ export function ViewportContent() {
     const handleHeroView = () => {
       // Hero angle: 45deg azimuth, 30deg elevation - dramatic presentation angle
       const heroPos = new Vector3(60, 45, 60);
+      const targetVec = new Vector3(0, 0, 0);
 
       // Animate to hero position
-      targetGoalRef.current.set(0, 0, 0);
+      targetGoalRef.current.copy(targetVec);
       cameraPositionGoalRef.current = heroPos;
       distanceGoalRef.current = null;
+
+      // Compute goal quaternion for smooth orientation interpolation (zero roll)
+      computeLevelQuaternion(heroPos, targetVec, goalQuatRef.current);
+
+      // Disable OrbitControls during animation
+      if (orbitRef.current) orbitRef.current.enabled = false;
       isAnimatingTargetRef.current = true;
     };
 
