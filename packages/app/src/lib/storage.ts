@@ -14,6 +14,7 @@ export interface StoredDocument {
   modifiedAt: number;
   version: number;
   syncStatus: "local" | "synced" | "pending";
+  cloudId?: string;
   thumbnail?: Blob;
 }
 
@@ -117,6 +118,41 @@ export async function renameDocument(id: string, name: string): Promise<void> {
 
   doc.name = name;
   doc.modifiedAt = Date.now();
+  await db.put(DOCUMENTS_STORE, doc);
+}
+
+/**
+ * Update a document with partial data.
+ * Used by sync service to update sync status, cloudId, etc.
+ */
+export async function updateDocument(
+  id: string,
+  updates: Partial<Omit<StoredDocument, "id">>
+): Promise<void> {
+  const db = await getDb();
+  const doc = await db.get(DOCUMENTS_STORE, id);
+  if (!doc) return;
+
+  const updated = { ...doc, ...updates };
+  await db.put(DOCUMENTS_STORE, updated);
+}
+
+/**
+ * Get all documents with full data.
+ * Used by sync service to find pending uploads.
+ */
+export async function getAllDocuments(): Promise<StoredDocument[]> {
+  const db = await getDb();
+  const docs = await db.getAll(DOCUMENTS_STORE);
+  return docs;
+}
+
+/**
+ * Save a complete document object.
+ * Used by sync service when creating documents from cloud.
+ */
+export async function saveCompleteDocument(doc: StoredDocument): Promise<void> {
+  const db = await getDb();
   await db.put(DOCUMENTS_STORE, doc);
 }
 

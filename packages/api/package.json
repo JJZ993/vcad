@@ -1,0 +1,17 @@
+{
+  "name": "@vcad/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "ai": "^3.4.0",
+    "@ai-sdk/anthropic": "^0.0.50",
+    "@ai-sdk/openai": "^0.0.60",
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vercel/node": "^3.2.0",
+    "typescript": "^5.7.0"
+  }
+}

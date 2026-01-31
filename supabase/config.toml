@@ -1,0 +1,27 @@
+# Supabase CLI configuration
+# See: https://supabase.com/docs/guides/cli/config
+
+[project]
+# Project ID (set by Supabase dashboard)
+# id = "your-project-ref"
+
+[db]
+# Port to use for local database
+port = 5432
+
+[auth]
+# Enable/disable email auth
+enabled = true
+
+# Enable OAuth providers
+[auth.external.google]
+enabled = true
+
+[auth.external.github]
+enabled = true
+
+[auth.email]
+# Enable magic link sign in
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true

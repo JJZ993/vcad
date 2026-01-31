@@ -16,6 +16,7 @@ import {
   GithubLogo,
   DiscordLogo,
   Mouse,
+  Sparkle,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -30,6 +31,7 @@ import { OutputButton } from "./OutputButton";
 import { CameraSettingsPanel } from "./CameraSettingsPanel";
 import { useCameraSettingsStore } from "@/stores/camera-settings-store";
 import { CONTROL_PRESETS } from "@/types/camera-controls";
+import { SignInButton, UserMenu, triggerSync } from "@vcad/auth";
 
 interface CornerIconsProps {
   onAboutOpen: () => void;
@@ -98,6 +100,11 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
   const toggleGridSnap = useUiStore((s) => s.toggleGridSnap);
   const snapIncrement = useUiStore((s) => s.snapIncrement);
   const setSnapIncrement = useUiStore((s) => s.setSnapIncrement);
+  const renderMode = useUiStore((s) => s.renderMode);
+  const raytraceQuality = useUiStore((s) => s.raytraceQuality);
+  const raytraceAvailable = useUiStore((s) => s.raytraceAvailable);
+  const toggleRenderMode = useUiStore((s) => s.toggleRenderMode);
+  const setRaytraceQuality = useUiStore((s) => s.setRaytraceQuality);
 
   // Camera settings
   const controlSchemeId = useCameraSettingsStore((s) => s.controlSchemeId);
@@ -220,6 +227,64 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
             <span>Wireframe</span>
             <span className="ml-auto text-text-muted">X</span>
           </button>
+
+          {/* Ray Tracing toggle with quality submenu */}
+          {raytraceAvailable && (
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover">
+                  <Sparkle
+                    size={14}
+                    className={renderMode === "raytrace" ? "text-accent" : ""}
+                  />
+                  <span>Ray Tracing</span>
+                  <span className="ml-auto text-text-muted">
+                    {renderMode === "raytrace" ? raytraceQuality : "Off"} &rsaquo;
+                  </span>
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  className="z-50 border border-border bg-surface p-1.5 shadow-xl"
+                  side="right"
+                  sideOffset={4}
+                  align="start"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      onClick={toggleRenderMode}
+                      className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-hover"
+                    >
+                      <span className={renderMode === "standard" ? "text-accent" : ""}>Off</span>
+                    </button>
+                    {(["draft", "standard", "high"] as const).map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => {
+                          if (renderMode !== "raytrace") {
+                            toggleRenderMode();
+                          }
+                          setRaytraceQuality(q);
+                        }}
+                        className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-hover"
+                      >
+                        <span
+                          className={
+                            renderMode === "raytrace" && raytraceQuality === q ? "text-accent" : ""
+                          }
+                        >
+                          {q.charAt(0).toUpperCase() + q.slice(1)}
+                          {q === "draft" && " (0.5x)"}
+                          {q === "standard" && " (1x)"}
+                          {q === "high" && " (2x)"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          )}
 
           {/* Grid Snap with submenu */}
           <Popover.Root>
@@ -423,6 +488,13 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
         </div>
 
         <SettingsMenu onAboutOpen={onAboutOpen} />
+
+        {/* Auth: Sign in button or user menu */}
+        <SignInButton className={cn(
+          "hidden sm:flex items-center gap-1 px-2 py-1 text-xs font-medium",
+          "text-text-muted hover:text-text hover:bg-hover rounded",
+        )} />
+        <UserMenu onSyncNow={() => triggerSync()} />
 
         {/* BUILD - primary CTA at the end */}
         <OutputButton />

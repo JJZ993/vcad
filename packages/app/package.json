@@ -19,6 +19,7 @@
     "@react-three/drei": "^10.0.0",
     "@react-three/fiber": "^9.0.0",
     "@react-three/postprocessing": "^3.0.4",
+    "@vcad/auth": "^0.1.0",
     "@vcad/core": "^0.1.0",
     "@vcad/engine": "^0.1.0",
     "@vcad/ir": "^0.1.0",
