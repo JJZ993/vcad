@@ -1,0 +1,22 @@
+[package]
+name = "vcad-kernel-raytrace"
+description = "Direct BRep ray tracing for the vcad kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vcad-kernel-math = { workspace = true }
+vcad-kernel-topo = { path = "../vcad-kernel-topo" }
+vcad-kernel-geom = { path = "../vcad-kernel-geom" }
+vcad-kernel-primitives = { path = "../vcad-kernel-primitives" }
+vcad-kernel-booleans = { path = "../vcad-kernel-booleans" }
+vcad-kernel-gpu = { path = "../vcad-kernel-gpu", optional = true }
+wgpu = { version = "23", features = ["webgpu", "wgsl"], optional = true }
+bytemuck = { version = "1.14", features = ["derive"] }
+thiserror.workspace = true
+
+[features]
+default = []
+gpu = ["dep:vcad-kernel-gpu", "dep:wgpu"]

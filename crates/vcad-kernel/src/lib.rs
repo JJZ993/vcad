@@ -772,6 +772,26 @@ impl Solid {
     pub fn can_export_step(&self) -> bool {
         matches!(&self.repr, SolidRepr::BRep(_))
     }
+
+    /// Get a reference to the underlying B-rep solid, if available.
+    ///
+    /// Returns `None` if the solid is mesh-only (e.g., after boolean operations)
+    /// or empty. This is useful for operations that require the full B-rep
+    /// representation, such as ray tracing.
+    pub fn brep(&self) -> Option<&BRepSolid> {
+        match &self.repr {
+            SolidRepr::BRep(brep) => Some(brep.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Check if this solid can be ray traced.
+    ///
+    /// Returns `true` if the solid has B-rep data (required for direct ray tracing).
+    /// Returns `false` for mesh-only or empty solids.
+    pub fn can_raytrace(&self) -> bool {
+        matches!(&self.repr, SolidRepr::BRep(_))
+    }
 }
 
 // =============================================================================

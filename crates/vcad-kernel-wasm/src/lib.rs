@@ -1437,3 +1437,210 @@ pub async fn decimate_mesh_gpu(
 ) -> Result<JsValue, JsError> {
     Err(JsError::new("GPU feature not enabled"))
 }
+
+// =========================================================================
+// GPU Ray Tracing (Direct BRep Rendering)
+// =========================================================================
+
+/// GPU-accelerated ray tracer for direct BRep rendering.
+///
+/// This ray tracer renders BRep surfaces directly without tessellation,
+/// achieving pixel-perfect silhouettes at any zoom level.
+#[cfg(feature = "raytrace")]
+#[wasm_bindgen]
+pub struct RayTracer {
+    pipeline: vcad_kernel_raytrace::gpu::RayTracePipeline,
+    scene: Option<vcad_kernel_raytrace::gpu::GpuScene>,
+}
+
+#[cfg(feature = "raytrace")]
+#[wasm_bindgen]
+impl RayTracer {
+    /// Create a new ray tracer.
+    ///
+    /// Requires WebGPU to be available and initialized.
+    /// Call `initGpu()` before calling this method.
+    #[wasm_bindgen(js_name = create)]
+    pub fn create() -> Result<RayTracer, JsError> {
+        // Ensure GPU context is initialized
+        let ctx = vcad_kernel_gpu::GpuContext::get()
+            .ok_or_else(|| JsError::new("GPU not initialized. Call initGpu() first."))?;
+
+        let pipeline = vcad_kernel_raytrace::gpu::RayTracePipeline::new(&ctx)
+            .map_err(|e| JsError::new(&format!("Failed to create ray trace pipeline: {}", e)))?;
+
+        web_sys::console::log_1(&"[WASM] RayTracer created".into());
+
+        Ok(RayTracer {
+            pipeline,
+            scene: None,
+        })
+    }
+
+    /// Upload a solid's BRep representation for ray tracing.
+    ///
+    /// This extracts the BRep surfaces and builds the GPU scene data.
+    #[wasm_bindgen(js_name = uploadSolid)]
+    pub fn upload_solid(&mut self, solid: &Solid) -> Result<(), JsError> {
+        use vcad_kernel_raytrace::gpu::GpuScene;
+
+        // Get the BRep from the solid
+        let brep = solid.inner.brep()
+            .ok_or_else(|| JsError::new("Solid has no BRep representation (mesh-only)"))?;
+
+        // Build GPU scene from BRep
+        let scene = GpuScene::from_brep(brep)
+            .map_err(|e| JsError::new(&format!("Failed to build GPU scene: {}", e)))?;
+
+        let num_faces = scene.faces.len();
+        let num_surfaces = scene.surfaces.len();
+        let num_bvh_nodes = scene.bvh_nodes.len();
+
+        self.scene = Some(scene);
+
+        web_sys::console::log_1(&format!(
+            "[WASM] Uploaded solid: {} faces, {} surfaces, {} BVH nodes",
+            num_faces, num_surfaces, num_bvh_nodes
+        ).into());
+
+        Ok(())
+    }
+
+    /// Render the scene to an RGBA image.
+    ///
+    /// # Arguments
+    /// * `camera` - Camera position [x, y, z]
+    /// * `target` - Look-at target [x, y, z]
+    /// * `up` - Up vector [x, y, z]
+    /// * `width` - Image width in pixels
+    /// * `height` - Image height in pixels
+    /// * `fov` - Field of view in radians
+    ///
+    /// # Returns
+    /// RGBA pixel data as a byte array (width * height * 4 bytes).
+    pub fn render(
+        &self,
+        camera: Vec<f64>,
+        target: Vec<f64>,
+        up: Vec<f64>,
+        width: u32,
+        height: u32,
+        fov: f32,
+    ) -> Result<Vec<u8>, JsError> {
+        use vcad_kernel_raytrace::gpu::GpuCamera;
+
+        if camera.len() != 3 || target.len() != 3 || up.len() != 3 {
+            return Err(JsError::new("camera, target, and up must each have 3 components"));
+        }
+
+        let scene = self.scene.as_ref()
+            .ok_or_else(|| JsError::new("No solid uploaded. Call uploadSolid() first."))?;
+
+        let gpu_camera = GpuCamera::new(
+            [camera[0] as f32, camera[1] as f32, camera[2] as f32],
+            [target[0] as f32, target[1] as f32, target[2] as f32],
+            [up[0] as f32, up[1] as f32, up[2] as f32],
+            fov,
+            width,
+            height,
+        );
+
+        let ctx = vcad_kernel_gpu::GpuContext::get()
+            .ok_or_else(|| JsError::new("GPU context lost"))?;
+
+        let pixels = self.pipeline.render(&ctx, scene, &gpu_camera, width, height)
+            .map_err(|e| JsError::new(&format!("Render failed: {}", e)))?;
+
+        Ok(pixels)
+    }
+
+    /// Pick a face at the given pixel coordinates.
+    ///
+    /// # Arguments
+    /// * `camera`, `target`, `up` - Camera parameters
+    /// * `width`, `height`, `fov` - View parameters
+    /// * `pixel_x`, `pixel_y` - Pixel coordinates to pick
+    ///
+    /// # Returns
+    /// Face index if a face was hit, or -1 if background was hit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn pick(
+        &self,
+        camera: Vec<f64>,
+        target: Vec<f64>,
+        up: Vec<f64>,
+        width: u32,
+        height: u32,
+        fov: f32,
+        pixel_x: u32,
+        pixel_y: u32,
+    ) -> Result<i32, JsError> {
+        use vcad_kernel_raytrace::Ray;
+        use vcad_kernel_math::{Point3, Vec3};
+
+        if camera.len() != 3 || target.len() != 3 || up.len() != 3 {
+            return Err(JsError::new("camera, target, and up must each have 3 components"));
+        }
+
+        let scene = self.scene.as_ref()
+            .ok_or_else(|| JsError::new("No solid uploaded. Call uploadSolid() first."))?;
+
+        // Compute ray from camera through pixel
+        let cam_pos = Point3::new(camera[0], camera[1], camera[2]);
+        let tgt = Point3::new(target[0], target[1], target[2]);
+        let up_vec = Vec3::new(up[0], up[1], up[2]);
+
+        let forward = (tgt - cam_pos).normalize();
+        let right = forward.cross(&up_vec).normalize();
+        let up_normalized = right.cross(&forward);
+
+        let aspect = width as f64 / height as f64;
+        let fov_tan = (fov as f64 * 0.5).tan();
+
+        // NDC for pixel center
+        let ndc_x = (pixel_x as f64 + 0.5) / width as f64 * 2.0 - 1.0;
+        let ndc_y = 1.0 - (pixel_y as f64 + 0.5) / height as f64 * 2.0;
+
+        let ray_dir = (forward + right * ndc_x * fov_tan * aspect + up_normalized * ndc_y * fov_tan).normalize();
+
+        let ray = Ray::new(cam_pos, ray_dir);
+
+        // Use CPU BVH for picking (more accurate than GPU render)
+        // For now, return -1 as we don't have a CPU trace path in GpuScene
+        // The full implementation would trace against the BRep directly
+
+        // TODO: Implement CPU picking path
+        // For now, this is a stub that always returns -1
+        let _ = (ray, scene);
+        Ok(-1)
+    }
+
+    /// Check if a solid can be ray traced.
+    ///
+    /// Returns true if the solid has a BRep representation.
+    #[wasm_bindgen(js_name = canRaytrace)]
+    pub fn can_raytrace(solid: &Solid) -> bool {
+        solid.inner.brep().is_some()
+    }
+
+    /// Check if the ray tracer has a scene loaded.
+    #[wasm_bindgen(js_name = hasScene)]
+    pub fn has_scene(&self) -> bool {
+        self.scene.is_some()
+    }
+}
+
+/// Stub RayTracer when raytrace feature is not enabled.
+#[cfg(not(feature = "raytrace"))]
+#[wasm_bindgen]
+pub struct RayTracer;
+
+#[cfg(not(feature = "raytrace"))]
+#[wasm_bindgen]
+impl RayTracer {
+    /// Returns an error when raytrace feature is not enabled.
+    #[wasm_bindgen(js_name = create)]
+    pub fn create() -> Result<RayTracer, JsError> {
+        Err(JsError::new("Ray tracing feature not enabled. Compile with --features raytrace"))
+    }
+}

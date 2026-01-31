@@ -1973,6 +1973,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "vcad-kernel-raytrace"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "thiserror 2.0.18",
+ "vcad-kernel-booleans",
+ "vcad-kernel-geom",
+ "vcad-kernel-gpu",
+ "vcad-kernel-math",
+ "vcad-kernel-primitives",
+ "vcad-kernel-topo",
+ "wgpu",
+]
+
+[[package]]
 name = "vcad-kernel-shell"
 version = "0.1.0"
 dependencies = [
@@ -2049,8 +2064,12 @@ dependencies = [
  "serde_json",
  "vcad-kernel",
  "vcad-kernel-drafting",
+ "vcad-kernel-geom",
  "vcad-kernel-gpu",
+ "vcad-kernel-math",
+ "vcad-kernel-raytrace",
  "vcad-kernel-tessellate",
+ "vcad-kernel-topo",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

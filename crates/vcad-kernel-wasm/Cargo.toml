@@ -25,6 +25,7 @@ serde-wasm-bindgen = "0.6"
 default = ["console_error_panic_hook"]
 console_error_panic_hook = ["dep:console_error_panic_hook"]
 gpu = ["dep:vcad-kernel-gpu"]
+raytrace = ["dep:vcad-kernel-raytrace", "dep:vcad-kernel-topo", "dep:vcad-kernel-geom", "dep:vcad-kernel-math", "gpu", "vcad-kernel-raytrace/gpu"]
 
 [dependencies.console_error_panic_hook]
 version = "0.1"
@@ -32,4 +33,20 @@ optional = true
 
 [dependencies.vcad-kernel-gpu]
 path = "../vcad-kernel-gpu"
+optional = true
+
+[dependencies.vcad-kernel-raytrace]
+path = "../vcad-kernel-raytrace"
+optional = true
+
+[dependencies.vcad-kernel-topo]
+path = "../vcad-kernel-topo"
+optional = true
+
+[dependencies.vcad-kernel-geom]
+path = "../vcad-kernel-geom"
+optional = true
+
+[dependencies.vcad-kernel-math]
+path = "../vcad-kernel-math"
 optional = true
