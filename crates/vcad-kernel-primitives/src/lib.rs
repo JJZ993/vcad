@@ -52,43 +52,44 @@ pub fn make_cube(sx: f64, sy: f64, sz: f64) -> BRepSolid {
     let mut all_faces = Vec::new();
 
     // Face helpers: for each face, define the 4 vertices in CCW order (viewed from outside)
+    // Plane normal = x_dir × y_dir, so we choose x_dir/y_dir to produce outward normals
     let face_defs: [([vcad_kernel_topo::VertexId; 4], Point3, Vec3, Vec3); 6] = [
-        // Bottom face (z=0): normal -Z, vertices CCW from outside = CW from above
+        // Bottom face (z=0): normal -Z = (0,1,0) × (1,0,0)
         (
             [v0, v3, v2, v1],
             Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(1.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
         ),
-        // Top face (z=sz): normal +Z, vertices CCW from above
+        // Top face (z=sz): normal +Z = (1,0,0) × (0,1,0)
         (
             [v4, v5, v6, v7],
             Point3::new(0.0, 0.0, sz),
             Vec3::new(1.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
         ),
-        // Front face (y=0): normal -Y
+        // Front face (y=0): normal -Y = (0,0,1) × (1,0,0)
         (
             [v0, v1, v5, v4],
             Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(1.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(1.0, 0.0, 0.0),
         ),
-        // Back face (y=sy): normal +Y
+        // Back face (y=sy): normal +Y = (1,0,0) × (0,0,1)
         (
             [v2, v3, v7, v6],
             Point3::new(0.0, sy, 0.0),
             Vec3::new(1.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 1.0),
         ),
-        // Left face (x=0): normal -X
+        // Left face (x=0): normal -X = (0,0,1) × (0,1,0)
         (
             [v0, v4, v7, v3],
             Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
             Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 1.0, 0.0),
         ),
-        // Right face (x=sx): normal +X
+        // Right face (x=sx): normal +X = (0,1,0) × (0,0,1)
         (
             [v1, v2, v6, v5],
             Point3::new(sx, 0.0, 0.0),
