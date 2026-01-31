@@ -70,6 +70,38 @@ Product management source of truth for vcad features. See [CONTRIBUTING.md](./CO
 
 ---
 
+## Foundation (Critical)
+
+Technical debt and infrastructure that must be addressed before major features.
+
+| Feature | Status | Priority | Effort | Spec |
+|---------|--------|----------|--------|------|
+| [Technical Debt Cleanup](./technical-debt.md) | `in-progress` | p0 | s | Safety fixes, module refactoring |
+| [Compact IR Format](./compact-ir.md) | `proposed` | p0 | xs | Terse text format for AI/compression |
+
+---
+
+## AI-Native Features (Proposed)
+
+Category-defining AI capabilities that no competitor offers.
+
+| Feature | Status | Priority | Effort | Spec |
+|---------|--------|----------|--------|------|
+| [Text-to-CAD (cad0)](./text-to-cad.md) | `proposed` | p0 | xl | Natural language → parametric CAD |
+
+---
+
+## Robotics & Simulation (Planned)
+
+Robotics interoperability and physics simulation.
+
+| Feature | Status | Priority | Effort | Spec |
+|---------|--------|----------|--------|------|
+| [URDF Import/Export](./urdf-support.md) | `proposed` | p1 | s | Standard robotics format |
+| [Physics Simulation & Gym](./physics-simulation.md) | `planned` | p2 | l | Rapier physics, RL training |
+
+---
+
 ## Feature Tree UX Improvements (Proposed)
 
 Make vcad's feature tree legendary — better than SolidWorks, Fusion, Onshape.
@@ -118,20 +150,26 @@ Make vcad's feature tree legendary — better than SolidWorks, Fusion, Onshape.
 
 ## Implementation Priority
 
-### Now (Partial Features to Complete)
+### Now (Week 1-2)
 
-1. **Fillets & Chamfers UI** — Kernel is done, just needs property panel
+1. **[Technical Debt Cleanup](./technical-debt.md)** — Safety fixes, boolean refactor (BLOCKING)
+2. **[Compact IR Format](./compact-ir.md)** — Parser/serializer for cad0 (2-3 days)
 
-### Next (Feature Tree UX)
+### Next (Week 3-9)
 
-1. **Hover Preview** — Quick win, massive "wow" factor
-2. **Smart Auto-Names** — One day, feels magical
-3. **Timeline Scrubber** — Unique differentiator
+3. **[URDF Import/Export](./urdf-support.md)** — Opens robotics market (1 week)
+4. **[Text-to-CAD (cad0)](./text-to-cad.md)** — THE hero feature (7 weeks)
 
-### Later (From ROADMAP.md)
+### Later (After cad0)
+
+5. **[Fillets & Chamfers UI](./fillets-chamfers.md)** — Kernel done, needs UI
+6. **Feature Tree UX** — Hover preview, smart names, timeline scrubber
+7. **[Physics Simulation](./physics-simulation.md)** — Wait for user demand
+
+### Future (From ROADMAP.md)
 
 See [ROADMAP.md](./ROADMAP.md) for:
-- AI-Native Features (Text-to-CAD, Point Cloud → CAD)
+- Point Cloud → CAD
 - PCB Integration
 - Real-time Collaboration (CRDT)
 - Topology Optimization
@@ -140,16 +178,19 @@ See [ROADMAP.md](./ROADMAP.md) for:
 
 ## Quick Stats
 
-| Category | Shipped | Partial | Proposed |
-|----------|---------|---------|----------|
-| Core Modeling | 5 | 0 | 0 |
-| Sketch System | 2 | 0 | 0 |
-| Surface Ops | 0 | 1 | 0 |
-| Assembly | 1 | 0 | 0 |
-| Drafting | 1 | 0 | 0 |
-| Import/Export | 2 | 0 | 0 |
-| Visualization | 3 | 0 | 0 |
-| UI/Interaction | 3 | 0 | 0 |
-| Data/Storage | 1 | 0 | 0 |
-| Feature Tree UX | 0 | 0 | 10 |
-| **Total** | **18** | **1** | **10** |
+| Category | Shipped | In Progress | Proposed | Planned |
+|----------|---------|-------------|----------|---------|
+| Core Modeling | 5 | 0 | 0 | 0 |
+| Sketch System | 2 | 0 | 0 | 0 |
+| Surface Ops | 0 | 0 | 1 | 0 |
+| Assembly | 1 | 0 | 0 | 0 |
+| Drafting | 1 | 0 | 0 | 0 |
+| Import/Export | 2 | 0 | 0 | 0 |
+| Visualization | 3 | 0 | 0 | 0 |
+| UI/Interaction | 3 | 0 | 0 | 0 |
+| Data/Storage | 1 | 0 | 0 | 0 |
+| Foundation | 0 | 1 | 1 | 0 |
+| AI-Native | 0 | 0 | 1 | 0 |
+| Feature Tree UX | 0 | 0 | 10 | 0 |
+| Robotics | 0 | 0 | 1 | 1 |
+| **Total** | **18** | **1** | **14** | **1** |
