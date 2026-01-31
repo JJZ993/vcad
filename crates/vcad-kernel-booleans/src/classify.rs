@@ -81,6 +81,11 @@ pub fn face_sample_point(brep: &BRepSolid, face_id: FaceId) -> Point3 {
     let cz = vertices.iter().map(|v| v.z).sum::<f64>() / n;
     let centroid = Point3::new(cx, cy, cz);
 
+    // Snap small values to 0 to avoid floating point classification issues
+    // at solid boundaries (e.g., -0.0 being treated as outside when it should be on-boundary)
+    let snap = |v: f64| if v.abs() < 1e-9 { 0.0 } else { v };
+    let centroid = Point3::new(snap(centroid.x), snap(centroid.y), snap(centroid.z));
+
     // For planar faces, the centroid is already on the surface.
     // For curved faces, project back to the surface using the closest UV.
     let surface = &brep.geometry.surfaces[face.surface_index];
@@ -112,40 +117,39 @@ pub fn classify_face(
     let face = &brep.topology.faces[face_id];
     let surface = &brep.geometry.surfaces[face.surface_index];
 
-    // For planar faces, use the surface normal directly (more reliable than
-    // computing from boundary vertices, especially for circular boundaries)
-    let normal_estimate = if surface.surface_type() == SurfaceKind::Plane {
-        let sn = surface.normal(vcad_kernel_math::Point2::origin());
-        *sn.as_ref()
-    } else {
-        // For curved faces, estimate normal from boundary vertices
-        let outer_verts: Vec<Point3> = brep
-            .topology
-            .loop_half_edges(face.outer_loop)
-            .map(|he_id| brep.topology.vertices[brep.topology.half_edges[he_id].origin].point)
-            .collect();
+    // Compute the outward normal from the loop vertex winding.
+    // By B-rep convention, loop vertices are ordered so that (v1-v0) × (v2-v0)
+    // points outward from the solid. This is more reliable than using the
+    // surface normal + orientation, which may not correctly indicate outward.
+    let outer_verts: Vec<Point3> = brep
+        .topology
+        .loop_half_edges(face.outer_loop)
+        .map(|he_id| brep.topology.vertices[brep.topology.half_edges[he_id].origin].point)
+        .collect();
 
-        if outer_verts.len() >= 3 {
-            let e1 = outer_verts[1] - outer_verts[0];
-            let e2 = outer_verts[2] - outer_verts[0];
-            let n = e1.cross(&e2);
-            if n.norm() > 1e-15 {
-                n.normalize()
-            } else {
-                // Degenerate — fall back to surface normal
-                let sn = surface.normal(vcad_kernel_math::Point2::origin());
-                *sn.as_ref()
-            }
+    let oriented_normal = if outer_verts.len() >= 3 {
+        let e1 = outer_verts[1] - outer_verts[0];
+        let e2 = outer_verts[2] - outer_verts[0];
+        let n = e1.cross(&e2);
+        if n.norm() > 1e-15 {
+            n.normalize()
         } else {
+            // Degenerate polygon — fall back to surface normal with orientation
             let sn = surface.normal(vcad_kernel_math::Point2::origin());
-            *sn.as_ref()
+            let normal = *sn.as_ref();
+            match face.orientation {
+                vcad_kernel_topo::Orientation::Forward => normal,
+                vcad_kernel_topo::Orientation::Reversed => -normal,
+            }
         }
-    };
-
-    // Apply face orientation
-    let oriented_normal = match face.orientation {
-        vcad_kernel_topo::Orientation::Forward => normal_estimate,
-        vcad_kernel_topo::Orientation::Reversed => -normal_estimate,
+    } else {
+        // Too few vertices — fall back to surface normal with orientation
+        let sn = surface.normal(vcad_kernel_math::Point2::origin());
+        let normal = *sn.as_ref();
+        match face.orientation {
+            vcad_kernel_topo::Orientation::Forward => normal,
+            vcad_kernel_topo::Orientation::Reversed => -normal,
+        }
     };
 
     // Test the sample point offset slightly inward (negative normal)
