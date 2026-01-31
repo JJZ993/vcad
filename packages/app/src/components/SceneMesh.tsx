@@ -183,6 +183,7 @@ interface ImportedMeshProps {
 export function ImportedMesh({ mesh, materialKey }: ImportedMeshProps) {
   const geoRef = useRef<THREE.BufferGeometry>(null);
   const meshRef = useRef<THREE.Mesh>(null);
+  const [geoReady, setGeoReady] = useState(false);
   const showWireframe = useUiStore((s) => s.showWireframe);
   const isOrbiting = useUiStore((s) => s.isOrbiting);
   const document = useDocumentStore((s) => s.document);
@@ -204,6 +205,7 @@ export function ImportedMesh({ mesh, materialKey }: ImportedMeshProps) {
   }, [materialDef]);
 
   useEffect(() => {
+    setGeoReady(false);
     const geo = geoRef.current;
     if (!geo) return;
 
@@ -227,6 +229,7 @@ export function ImportedMesh({ mesh, materialKey }: ImportedMeshProps) {
     }
     geo.computeBoundingSphere();
     geo.computeBoundingBox();
+    setGeoReady(true);
 
     // Cleanup temp geometry
     tempGeo.dispose();
@@ -265,7 +268,7 @@ export function ImportedMesh({ mesh, materialKey }: ImportedMeshProps) {
         flatShading={false}
         side={THREE.DoubleSide}
       />
-      {showWireframe && <Edges threshold={15} color="#666" />}
+      {showWireframe && geoReady && <Edges threshold={15} color="#666" />}
     </mesh>
   );
 }
@@ -280,6 +283,7 @@ export function SceneMesh({
 }: SceneMeshProps) {
   const geoRef = useRef<THREE.BufferGeometry>(null);
   const meshRef = useRef<THREE.Mesh>(null);
+  const [geoReady, setGeoReady] = useState(false);
   const select = useUiStore((s) => s.select);
   const toggleSelect = useUiStore((s) => s.toggleSelect);
   const showWireframe = useUiStore((s) => s.showWireframe);
@@ -437,6 +441,7 @@ export function SceneMesh({
   }, [isRenaming]);
 
   useEffect(() => {
+    setGeoReady(false);
     const geo = geoRef.current;
     if (!geo) return;
 
@@ -455,6 +460,7 @@ export function SceneMesh({
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
     geo.computeBoundingBox();
+    setGeoReady(true);
 
     tempGeo.dispose();
 
@@ -633,7 +639,7 @@ export function SceneMesh({
           side={THREE.DoubleSide}
         />
       )}
-      {showWireframe && <Edges threshold={15} color="#666" />}
+      {showWireframe && geoReady && <Edges threshold={15} color="#666" />}
       {/* Face highlight overlay for individual face selection */}
       {faceHighlightGeo && (
         <mesh geometry={faceHighlightGeo} renderOrder={1}>
