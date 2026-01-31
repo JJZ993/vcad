@@ -20,6 +20,7 @@ members = [
     "crates/vcad-kernel-wasm",
     "crates/vcad-kernel-drafting",
     "crates/vcad-cli",
+    "crates/vcad-kernel-gpu",
 ]
 
 [workspace.package]
@@ -55,3 +56,4 @@ vcad-kernel-shell = { path = "crates/vcad-kernel-shell" }
 vcad-kernel-step = { path = "crates/vcad-kernel-step" }
 vcad-kernel-constraints = { path = "crates/vcad-kernel-constraints" }
 vcad-kernel-drafting = { path = "crates/vcad-kernel-drafting" }
+vcad-kernel-gpu = { path = "crates/vcad-kernel-gpu" }

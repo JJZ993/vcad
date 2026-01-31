@@ -34,7 +34,11 @@ import {
 import { useEngine } from "@/hooks/useEngine";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { saveDocument } from "@/lib/save-load";
-import { mergeMeshes } from "@/lib/mesh-utils";
+import {
+  isGpuAvailable,
+  processGeometryGpu,
+  mergeMeshes,
+} from "@vcad/engine";
 import { useToastStore } from "@/stores/toast-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 
@@ -162,9 +166,40 @@ export function App() {
         const mergedMesh = mergeMeshes(rawMeshes);
         console.log(`[STEP] Merged into 1 mesh with ${mergedMesh.indices.length / 3} triangles`);
 
-        // Create an evaluated scene with the merged mesh
+        // Process geometry with GPU if available (computes creased normals)
+        let finalMesh: { positions: Float32Array; indices: Uint32Array; normals?: Float32Array } = mergedMesh;
+        if (isGpuAvailable()) {
+          try {
+            console.log("[STEP] Processing geometry on GPU...");
+            const startTime = performance.now();
+            const processed = await processGeometryGpu(
+              mergedMesh.positions,
+              mergedMesh.indices,
+              Math.PI / 6, // 30 degree crease angle
+              false // don't generate LOD for now
+            );
+            const gpuTime = performance.now() - startTime;
+            console.log(`[STEP] GPU processing complete in ${gpuTime.toFixed(0)}ms`);
+
+            // Use GPU-processed mesh with normals
+            const firstMesh = processed[0];
+            if (firstMesh) {
+              finalMesh = {
+                positions: firstMesh.positions,
+                indices: firstMesh.indices,
+                normals: firstMesh.normals,
+              };
+            }
+          } catch (gpuErr) {
+            console.warn("[STEP] GPU processing failed, using CPU fallback:", gpuErr);
+          }
+        } else {
+          console.log("[STEP] GPU not available, using CPU processing");
+        }
+
+        // Create an evaluated scene with the processed mesh
         const scene = {
-          parts: [{ mesh: mergedMesh, material: "default" }],
+          parts: [{ mesh: finalMesh, material: "default" }],
           clashes: [],
         };
 

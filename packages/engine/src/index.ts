@@ -16,6 +16,17 @@ export {
   applyForwardKinematics,
 } from "./kinematics.js";
 
+export {
+  initializeGpu,
+  isGpuAvailable,
+  processGeometryGpu,
+  computeCreasedNormalsGpu,
+  decimateMeshGpu,
+  mergeMeshes,
+} from "./gpu.js";
+
+export type { GpuGeometryResult } from "./gpu.js";
+
 /** Re-export Solid class for direct use */
 export type { Solid, WasmAnnotationLayer } from "@vcad/kernel-wasm";
 

@@ -1239,3 +1239,201 @@ pub fn import_step_buffer(data: &[u8]) -> Result<JsValue, JsError> {
 
     serde_wasm_bindgen::to_value(&meshes).map_err(|e| JsError::new(&e.to_string()))
 }
+
+// =========================================================================
+// GPU-Accelerated Geometry Processing
+// =========================================================================
+
+/// GPU geometry processing result.
+#[derive(Serialize, Deserialize)]
+pub struct GpuGeometryResult {
+    /// Vertex positions (flat array: x, y, z, ...).
+    pub positions: Vec<f32>,
+    /// Triangle indices.
+    pub indices: Vec<u32>,
+    /// Vertex normals (flat array: nx, ny, nz, ...).
+    pub normals: Vec<f32>,
+}
+
+/// Initialize the GPU context for accelerated geometry processing.
+///
+/// Returns `true` if WebGPU is available and initialized, `false` otherwise.
+/// This should be called once at application startup.
+#[cfg(feature = "gpu")]
+#[wasm_bindgen(js_name = initGpu)]
+pub async fn init_gpu() -> Result<bool, JsError> {
+    match vcad_kernel_gpu::GpuContext::init().await {
+        Ok(_) => {
+            web_sys::console::log_1(&"[WASM] GPU context initialized successfully".into());
+            Ok(true)
+        }
+        Err(e) => {
+            web_sys::console::warn_1(&format!("[WASM] GPU init failed: {}", e).into());
+            Ok(false)
+        }
+    }
+}
+
+/// Initialize the GPU context (stub when GPU feature is disabled).
+#[cfg(not(feature = "gpu"))]
+#[wasm_bindgen(js_name = initGpu)]
+pub async fn init_gpu() -> Result<bool, JsError> {
+    web_sys::console::log_1(&"[WASM] GPU feature not enabled".into());
+    Ok(false)
+}
+
+/// Check if GPU processing is available.
+#[wasm_bindgen(js_name = isGpuAvailable)]
+pub fn is_gpu_available() -> bool {
+    #[cfg(feature = "gpu")]
+    {
+        vcad_kernel_gpu::GpuContext::get().is_some()
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        false
+    }
+}
+
+/// Process geometry with GPU acceleration.
+///
+/// Computes creased normals and optionally generates LOD meshes.
+///
+/// # Arguments
+/// * `positions` - Flat array of vertex positions (x, y, z, ...)
+/// * `indices` - Triangle indices
+/// * `crease_angle` - Angle in radians for creased normal computation
+/// * `generate_lod` - If true, returns multiple LOD levels
+///
+/// # Returns
+/// A JS array of geometry results. If `generate_lod` is true, returns
+/// [full, 50%, 25%] detail levels. Otherwise returns a single mesh.
+#[cfg(feature = "gpu")]
+#[wasm_bindgen(js_name = processGeometryGpu)]
+pub async fn process_geometry_gpu(
+    positions: Vec<f32>,
+    indices: Vec<u32>,
+    crease_angle: f32,
+    generate_lod: bool,
+) -> Result<JsValue, JsError> {
+    use vcad_kernel_gpu::{compute_creased_normals, decimate_mesh};
+
+    // Compute normals for full-resolution mesh
+    let normals = compute_creased_normals(&positions, &indices, crease_angle)
+        .await
+        .map_err(|e| JsError::new(&format!("Normal computation failed: {}", e)))?;
+
+    let mut results = vec![GpuGeometryResult {
+        positions: positions.clone(),
+        indices: indices.clone(),
+        normals,
+    }];
+
+    if generate_lod {
+        // Generate 50% LOD
+        let lod1 = decimate_mesh(&positions, &indices, 0.5)
+            .await
+            .map_err(|e| JsError::new(&format!("Decimation (50%) failed: {}", e)))?;
+        results.push(GpuGeometryResult {
+            positions: lod1.positions,
+            indices: lod1.indices,
+            normals: lod1.normals,
+        });
+
+        // Generate 25% LOD
+        let lod2 = decimate_mesh(&positions, &indices, 0.25)
+            .await
+            .map_err(|e| JsError::new(&format!("Decimation (25%) failed: {}", e)))?;
+        results.push(GpuGeometryResult {
+            positions: lod2.positions,
+            indices: lod2.indices,
+            normals: lod2.normals,
+        });
+    }
+
+    serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Process geometry (CPU fallback when GPU feature is disabled).
+#[cfg(not(feature = "gpu"))]
+#[wasm_bindgen(js_name = processGeometryGpu)]
+pub async fn process_geometry_gpu(
+    _positions: Vec<f32>,
+    _indices: Vec<u32>,
+    _crease_angle: f32,
+    _generate_lod: bool,
+) -> Result<JsValue, JsError> {
+    Err(JsError::new("GPU feature not enabled"))
+}
+
+/// Compute creased normals using GPU acceleration.
+///
+/// # Arguments
+/// * `positions` - Flat array of vertex positions (x, y, z, ...)
+/// * `indices` - Triangle indices
+/// * `crease_angle` - Angle in radians; faces meeting at sharper angles get hard edges
+///
+/// # Returns
+/// Flat array of normals (nx, ny, nz, ...), same length as positions.
+#[cfg(feature = "gpu")]
+#[wasm_bindgen(js_name = computeCreasedNormalsGpu)]
+pub async fn compute_creased_normals_gpu(
+    positions: Vec<f32>,
+    indices: Vec<u32>,
+    crease_angle: f32,
+) -> Result<Vec<f32>, JsError> {
+    vcad_kernel_gpu::compute_creased_normals(&positions, &indices, crease_angle)
+        .await
+        .map_err(|e| JsError::new(&format!("Normal computation failed: {}", e)))
+}
+
+/// Compute creased normals (CPU fallback when GPU feature is disabled).
+#[cfg(not(feature = "gpu"))]
+#[wasm_bindgen(js_name = computeCreasedNormalsGpu)]
+pub async fn compute_creased_normals_gpu(
+    _positions: Vec<f32>,
+    _indices: Vec<u32>,
+    _crease_angle: f32,
+) -> Result<Vec<f32>, JsError> {
+    Err(JsError::new("GPU feature not enabled"))
+}
+
+/// Decimate a mesh to reduce triangle count.
+///
+/// # Arguments
+/// * `positions` - Flat array of vertex positions
+/// * `indices` - Triangle indices
+/// * `target_ratio` - Target ratio of triangles to keep (0.5 = 50%)
+///
+/// # Returns
+/// A JS object with decimated positions, indices, and normals.
+#[cfg(feature = "gpu")]
+#[wasm_bindgen(js_name = decimateMeshGpu)]
+pub async fn decimate_mesh_gpu(
+    positions: Vec<f32>,
+    indices: Vec<u32>,
+    target_ratio: f32,
+) -> Result<JsValue, JsError> {
+    let result = vcad_kernel_gpu::decimate_mesh(&positions, &indices, target_ratio)
+        .await
+        .map_err(|e| JsError::new(&format!("Decimation failed: {}", e)))?;
+
+    let gpu_result = GpuGeometryResult {
+        positions: result.positions,
+        indices: result.indices,
+        normals: result.normals,
+    };
+
+    serde_wasm_bindgen::to_value(&gpu_result).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Decimate a mesh (CPU fallback when GPU feature is disabled).
+#[cfg(not(feature = "gpu"))]
+#[wasm_bindgen(js_name = decimateMeshGpu)]
+pub async fn decimate_mesh_gpu(
+    _positions: Vec<f32>,
+    _indices: Vec<u32>,
+    _target_ratio: f32,
+) -> Result<JsValue, JsError> {
+    Err(JsError::new("GPU feature not enabled"))
+}

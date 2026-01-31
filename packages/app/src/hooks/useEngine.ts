@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Engine, useDocumentStore, useEngineStore } from "@vcad/core";
+import { initializeGpu } from "@vcad/engine";
 
 // Module-level engine instance to survive HMR
 let globalEngine: Engine | null = null;
@@ -33,13 +34,18 @@ export function useEngine() {
     useEngineStore.getState().setLoading(true);
 
     Engine.init()
-      .then((engine) => {
+      .then(async (engine) => {
         if (cancelled) return;
         globalEngine = engine;
         engineRef.current = engine;
         useEngineStore.getState().setEngine(engine);
         useEngineStore.getState().setEngineReady(true);
         useEngineStore.getState().setLoading(false);
+
+        // Initialize GPU for accelerated geometry processing (non-blocking)
+        initializeGpu().catch((e) => {
+          console.warn("[GPU] Failed to initialize:", e);
+        });
 
         // Evaluate initial document
         const doc = useDocumentStore.getState().document;
