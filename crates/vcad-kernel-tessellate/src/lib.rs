@@ -147,17 +147,25 @@ fn tessellate_planar_face(topo: &Topology, face_id: FaceId, reversed: bool) -> T
         return tessellate_planar_face_with_holes(topo, face_id, reversed);
     }
 
+    // Find the best fan center vertex index.
+    // For faces with curved boundaries (like quarter disks), we need to pick a vertex
+    // that's at the junction of straight edges, not on the curved portion.
+    // Heuristic: find a vertex where consecutive edges form a significant angle (corner vertex).
+    let fan_center = find_best_fan_center(&outer_verts);
+
     let mut mesh = TriangleMesh::new();
 
-    // Add all vertices
-    for v in &outer_verts {
+    // Add all vertices (rotated so fan_center is at index 0)
+    let n = outer_verts.len();
+    for i in 0..n {
+        let v = &outer_verts[(fan_center + i) % n];
         mesh.vertices.push(v.x as f32);
         mesh.vertices.push(v.y as f32);
         mesh.vertices.push(v.z as f32);
     }
 
-    // Fan triangulation (valid for convex polygons — all our planar primitives are convex)
-    for i in 1..(outer_verts.len() - 1) {
+    // Fan triangulation from vertex 0 (which is now the best fan center)
+    for i in 1..(n - 1) {
         if reversed {
             mesh.indices.push(0);
             mesh.indices.push((i + 1) as u32);
@@ -170,6 +178,60 @@ fn tessellate_planar_face(topo: &Topology, face_id: FaceId, reversed: bool) -> T
     }
 
     mesh
+}
+
+/// Find the best vertex to use as a fan triangulation center.
+/// Returns the index of the best vertex.
+///
+/// For simple convex polygons, any vertex works. But for polygons with curved
+/// sections (like quarter disks), we should pick a "corner" vertex where two
+/// straight edges meet, not a vertex on the curved portion.
+fn find_best_fan_center(verts: &[Point3]) -> usize {
+    let n = verts.len();
+    if n <= 4 {
+        return 0; // Simple polygons are fine with vertex 0
+    }
+
+    // Compute the interior angle at each vertex.
+    // Prefer vertices with smaller angles (sharper corners).
+    let mut best_idx = 0;
+    let mut best_score = f64::MAX;
+
+    for i in 0..n {
+        let prev = &verts[(i + n - 1) % n];
+        let curr = &verts[i];
+        let next = &verts[(i + 1) % n];
+
+        // Vectors from current to neighbors
+        let to_prev = *prev - *curr;
+        let to_next = *next - *curr;
+
+        let len_prev = to_prev.norm();
+        let len_next = to_next.norm();
+
+        if len_prev < 1e-10 || len_next < 1e-10 {
+            continue;
+        }
+
+        // Compute angle using dot product
+        let cos_angle = to_prev.dot(&to_next) / (len_prev * len_next);
+        let angle = cos_angle.clamp(-1.0, 1.0).acos();
+
+        // Also consider edge lengths - prefer vertices adjacent to longer edges
+        // (curved portions tend to have many short edges)
+        let edge_factor = 1.0 / (len_prev + len_next + 0.001);
+
+        // Score: lower is better. Prefer sharp angles with longer adjacent edges.
+        // Sharp angle = small angle value, so we want to minimize (angle * edge_factor).
+        let score = angle * edge_factor;
+
+        if score < best_score {
+            best_score = score;
+            best_idx = i;
+        }
+    }
+
+    best_idx
 }
 
 /// Tessellate a bilinear surface face using the surface's normal method.
