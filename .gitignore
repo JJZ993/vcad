@@ -6,3 +6,4 @@ packages/*/dist/
 .next/
 out/
 .env
+__pycache__/
