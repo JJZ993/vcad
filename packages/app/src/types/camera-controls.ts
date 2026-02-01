@@ -17,11 +17,15 @@ export interface MouseBinding {
   button: "left" | "middle" | "right";
   modifiers?: ModifierKeys;
   action: CameraAction;
+  /** Device-specific binding. Omit for universal (applies to both). */
+  device?: "mouse" | "trackpad";
 }
 
 export interface ScrollBinding {
   modifiers?: ModifierKeys;
   action: CameraAction;
+  /** Device-specific binding. Omit for universal (applies to both). */
+  device?: "mouse" | "trackpad";
 }
 
 export interface ControlScheme {
@@ -69,14 +73,17 @@ export const CONTROL_PRESETS: Record<string, ControlScheme> = {
   vcad: {
     id: "vcad",
     name: "vcad (Default)",
-    description: "Scroll to orbit, Shift+scroll to zoom, Cmd+scroll to pan",
+    description: "Mouse: scroll zoom, MMB orbit. Trackpad: scroll orbit with momentum.",
     mouseBindings: [
-      { button: "middle", action: "pan" },
-      { button: "right", action: "pan" },
+      { button: "middle", action: "orbit", device: "mouse" },
+      { button: "middle", action: "pan", device: "trackpad" },
+      { button: "right", action: "orbit", device: "mouse" },
+      { button: "right", action: "pan", device: "trackpad" },
     ],
     scrollBindings: [
-      { action: "orbit" }, // Default scroll = orbit
-      { modifiers: { shift: true }, action: "zoom" },
+      { action: "zoom", device: "mouse" },
+      { action: "orbit", device: "trackpad" },
+      { modifiers: { shift: true }, action: "zoom", device: "trackpad" },
       { modifiers: { meta: true }, action: "pan" },
     ],
     trackpadOrbitEnabled: true,

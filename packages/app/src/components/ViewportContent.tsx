@@ -31,6 +31,7 @@ import type { PartInfo } from "@vcad/core";
 import { useCameraControls } from "@/hooks/useCameraControls";
 import { useTheme } from "@/hooks/useTheme";
 import { useInputDeviceDetection } from "@/hooks/useInputDeviceDetection";
+import { usePhysicsSimulation } from "@/hooks/usePhysicsSimulation";
 import {
   useCameraSettingsStore,
   getEffectiveInputDevice,
@@ -94,6 +95,7 @@ function computeLevelQuaternion(
 export function ViewportContent() {
   useCameraControls();
   useInputDeviceDetection();
+  usePhysicsSimulation();
 
   // Track camera motion to disable expensive effects during animation/orbit
   const [isCameraMoving, setIsCameraMoving] = useState(false);
@@ -483,7 +485,11 @@ export function ViewportContent() {
 
       // Get modifiers and match to action
       const modifiers = getModifiersFromEvent(e);
-      const action = matchScrollBinding(controlScheme.scrollBindings, modifiers);
+      const action = matchScrollBinding(
+        controlScheme.scrollBindings,
+        modifiers,
+        effectiveDevice,
+      );
 
       // Check if trackpad orbit is enabled for this scheme
       const useTrackpadOrbit =
@@ -712,7 +718,10 @@ export function ViewportContent() {
         dampingFactor={0.1}
         enableZoom={false}
         mouseButtons={(() => {
-          const schemeButtons = getOrbitControlsMouseButtons(controlScheme);
+          const schemeButtons = getOrbitControlsMouseButtons(
+            controlScheme,
+            effectiveDevice,
+          );
           return {
             LEFT: undefined, // LMB reserved for selection
             MIDDLE: schemeButtons.MIDDLE,

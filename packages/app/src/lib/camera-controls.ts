@@ -63,15 +63,19 @@ function buttonFromNumber(button: number): MouseBinding["button"] | null {
  * Find the camera action for a scroll event.
  * Returns the action from the first matching binding, or 'none' if no match.
  *
- * Bindings are checked in order - more specific bindings (with modifiers)
- * should be listed before less specific ones.
+ * Bindings are filtered by device (device-specific or universal), then
+ * checked in order of specificity - more modifiers = higher priority.
  */
 export function matchScrollBinding(
   bindings: ScrollBinding[],
   modifiers: ModifierKeys,
+  device: "mouse" | "trackpad",
 ): CameraAction {
-  // Sort bindings by specificity: more modifiers = higher priority
-  const sortedBindings = [...bindings].sort((a, b) => {
+  // Filter to applicable bindings (device-specific or universal)
+  const applicable = bindings.filter((b) => !b.device || b.device === device);
+
+  // Sort by specificity: more modifiers = higher priority
+  const sortedBindings = [...applicable].sort((a, b) => {
     const countMods = (m: ModifierKeys | undefined) =>
       Object.values(m ?? {}).filter(Boolean).length;
     return countMods(b.modifiers) - countMods(a.modifiers);
@@ -88,17 +92,24 @@ export function matchScrollBinding(
 /**
  * Find the camera action for a mouse button event.
  * Returns the action from the first matching binding, or 'none' if no match.
+ *
+ * Bindings are filtered by device (device-specific or universal), then
+ * checked in order of specificity - more modifiers = higher priority.
  */
 export function matchMouseBinding(
   bindings: MouseBinding[],
   button: number,
   modifiers: ModifierKeys,
+  device: "mouse" | "trackpad",
 ): CameraAction {
   const buttonName = buttonFromNumber(button);
   if (!buttonName) return "none";
 
-  // Sort bindings by specificity: more modifiers = higher priority
-  const sortedBindings = [...bindings].sort((a, b) => {
+  // Filter to applicable bindings (device-specific or universal)
+  const applicable = bindings.filter((b) => !b.device || b.device === device);
+
+  // Sort by specificity: more modifiers = higher priority
+  const sortedBindings = [...applicable].sort((a, b) => {
     const countMods = (m: ModifierKeys | undefined) =>
       Object.values(m ?? {}).filter(Boolean).length;
     return countMods(b.modifiers) - countMods(a.modifiers);
@@ -118,9 +129,12 @@ export function matchMouseBinding(
 /**
  * Convert control scheme mouse bindings to Three.js OrbitControls mouseButtons config.
  * Returns the MOUSE enum values for LEFT, MIDDLE, RIGHT buttons.
+ *
+ * Bindings are filtered by device (device-specific or universal).
  */
 export function getOrbitControlsMouseButtons(
   scheme: ControlScheme,
+  device: "mouse" | "trackpad",
 ): {
   LEFT: number | undefined;
   MIDDLE: number | undefined;
@@ -142,9 +156,14 @@ export function getOrbitControlsMouseButtons(
     }
   };
 
+  // Filter to applicable bindings (device-specific or universal)
+  const applicable = scheme.mouseBindings.filter(
+    (b) => !b.device || b.device === device,
+  );
+
   // Find actions for each button (without modifiers)
   const getButtonAction = (button: "left" | "middle" | "right") => {
-    const binding = scheme.mouseBindings.find(
+    const binding = applicable.find(
       (b) =>
         b.button === button &&
         !b.modifiers?.shift &&
