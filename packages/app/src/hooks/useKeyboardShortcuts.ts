@@ -53,6 +53,13 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // AI panel: Cmd+J
+      if (mod && e.key === "j") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("vcad:ai-panel"));
+        return;
+      }
+
       // Undo: Ctrl/Cmd+Z
       if (mod && !e.shiftKey && e.key === "z") {
         e.preventDefault();

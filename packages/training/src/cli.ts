@@ -18,13 +18,27 @@ import {
   annotate,
   generateSyntheticExamples,
   createAnthropicModel,
+  createOllamaModel,
+  createGatewayModel,
   DEFAULT_MODEL,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_GATEWAY_MODEL,
 } from "./annotate.js";
 import {
   validateExamples,
   computeValidationStats,
   filterValidExamples,
 } from "./validate.js";
+import {
+  infer,
+  inferStreaming,
+  validateCompactIR,
+  createAnthropicInferModel,
+  createOllamaInferModel,
+  createGatewayInferModel,
+  createHuggingFaceInferModel,
+  DEFAULT_MODELS,
+} from "./infer.js";
 
 const program = new Command();
 
@@ -96,6 +110,8 @@ program
   .option("-i, --input <path>", "Input JSONL file", "data/raw/output.jsonl")
   .option("-o, --output <path>", "Output JSONL file", "data/annotated/output.jsonl")
   .option("--synthetic", "Use synthetic descriptions instead of API", false)
+  .option("--ollama [model]", "Use local Ollama model")
+  .option("--gateway [model]", "Use Vercel AI Gateway (e.g., anthropic/claude-3-5-haiku-latest)")
   .option("--prompts <count>", "Number of prompts per part (1-5)", "5")
   .option(
     "-m, --model <model>",
@@ -118,7 +134,74 @@ program
     if (options.synthetic) {
       console.log("Generating synthetic descriptions...");
       examples = generateSyntheticExamples(parts);
+    } else if (options.ollama !== undefined) {
+      // Use Ollama (local model)
+      const modelId = typeof options.ollama === "string" ? options.ollama : DEFAULT_OLLAMA_MODEL;
+
+      try {
+        const model = createOllamaModel(modelId);
+        console.log(`Annotating with Ollama ${modelId}...`);
+
+        const promptsPerPart = Math.min(
+          5,
+          Math.max(1, parseInt(options.prompts, 10)),
+        );
+
+        // Open file for incremental writes
+        const output = fs.createWriteStream(outputPath);
+
+        examples = await annotate(parts, {
+          model,
+          promptsPerPart,
+          onProgress: (completed, total) => {
+            process.stdout.write(`\r  Progress: ${completed}/${total}`);
+          },
+          onExample: (example) => {
+            output.write(JSON.stringify(example) + "\n");
+          },
+        });
+        output.end();
+        console.log("");
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        console.error("Make sure Ollama is running: ollama serve");
+        process.exit(1);
+      }
+    } else if (options.gateway !== undefined) {
+      // Use Vercel AI Gateway
+      const modelId = typeof options.gateway === "string" ? options.gateway : DEFAULT_GATEWAY_MODEL;
+
+      try {
+        const model = createGatewayModel(modelId);
+        console.log(`Annotating with Gateway ${modelId}...`);
+
+        const promptsPerPart = Math.min(
+          5,
+          Math.max(1, parseInt(options.prompts, 10)),
+        );
+
+        // Open file for incremental writes
+        const output = fs.createWriteStream(outputPath);
+
+        examples = await annotate(parts, {
+          model,
+          promptsPerPart,
+          onProgress: (completed, total) => {
+            process.stdout.write(`\r  Progress: ${completed}/${total}`);
+          },
+          onExample: (example) => {
+            output.write(JSON.stringify(example) + "\n");
+          },
+        });
+        output.end();
+        console.log("");
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        console.error("Check AI_GATEWAY_API_KEY env var");
+        process.exit(1);
+      }
     } else {
+      // Use Anthropic API
       const modelId = options.model as string;
 
       try {
@@ -130,27 +213,27 @@ program
           Math.max(1, parseInt(options.prompts, 10)),
         );
 
+        // Open file for incremental writes
+        const output = fs.createWriteStream(outputPath);
+
         examples = await annotate(parts, {
           model,
           promptsPerPart,
           onProgress: (completed, total) => {
             process.stdout.write(`\r  Progress: ${completed}/${total}`);
           },
+          onExample: (example) => {
+            output.write(JSON.stringify(example) + "\n");
+          },
         });
+        output.end();
         console.log("");
       } catch (error) {
         console.error(`Error: ${(error as Error).message}`);
-        console.error("Use --synthetic flag for testing without API");
+        console.error("Use --synthetic or --ollama for local generation");
         process.exit(1);
       }
     }
-
-    // Write output
-    const output = fs.createWriteStream(outputPath);
-    for (const example of examples) {
-      output.write(JSON.stringify(example) + "\n");
-    }
-    output.end();
 
     console.log(`Wrote ${examples.length} examples to ${outputPath}`);
   });
@@ -327,6 +410,87 @@ program
   });
 
 /**
+ * Split command - split annotated data into train/val/test sets.
+ */
+program
+  .command("split")
+  .description("Split annotated data into train/val/test sets")
+  .option("-i, --input <path>", "Input JSONL file", "data/annotated/all.jsonl")
+  .option("-o, --output <dir>", "Output directory", "data")
+  .option("--train <ratio>", "Training set ratio", "0.9")
+  .option("--val <ratio>", "Validation set ratio", "0.05")
+  .option("--seed <seed>", "Random seed for reproducibility", "42")
+  .option("--stratify", "Stratify split by family for balanced distribution", false)
+  .action(async (options) => {
+    const inputPath = path.resolve(options.input);
+    const outputDir = path.resolve(options.output);
+    const trainRatio = parseFloat(options.train);
+    const valRatio = parseFloat(options.val);
+    const testRatio = 1 - trainRatio - valRatio;
+    const seed = parseInt(options.seed, 10);
+
+    if (trainRatio + valRatio >= 1) {
+      console.error("Error: train + val ratios must be less than 1");
+      process.exit(1);
+    }
+
+    if (testRatio < 0) {
+      console.error("Error: invalid ratios (train + val > 1)");
+      process.exit(1);
+    }
+
+    // Read input
+    const examples = await readJsonlFile<TrainingExample>(inputPath);
+    console.log(`Read ${examples.length} examples from ${inputPath}`);
+    console.log(`Split ratios: train=${trainRatio}, val=${valRatio}, test=${testRatio.toFixed(2)}`);
+    console.log(`Random seed: ${seed}`);
+
+    // Ensure output directory exists
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    let train: TrainingExample[];
+    let val: TrainingExample[];
+    let test: TrainingExample[];
+
+    if (options.stratify) {
+      console.log("Using stratified split by family...");
+      const result = stratifiedSplit(examples, trainRatio, valRatio, seed);
+      train = result.train;
+      val = result.val;
+      test = result.test;
+    } else {
+      // Simple random split
+      const shuffled = seededShuffle(examples, seed);
+      const trainEnd = Math.floor(shuffled.length * trainRatio);
+      const valEnd = Math.floor(shuffled.length * (trainRatio + valRatio));
+
+      train = shuffled.slice(0, trainEnd);
+      val = shuffled.slice(trainEnd, valEnd);
+      test = shuffled.slice(valEnd);
+    }
+
+    // Write output files
+    const trainPath = path.join(outputDir, "train.jsonl");
+    const valPath = path.join(outputDir, "val.jsonl");
+    const testPath = path.join(outputDir, "test.jsonl");
+
+    writeJsonlFile(trainPath, train);
+    writeJsonlFile(valPath, val);
+    writeJsonlFile(testPath, test);
+
+    console.log(`\nOutput files:`);
+    console.log(`  ${trainPath}: ${train.length} examples`);
+    console.log(`  ${valPath}: ${val.length} examples`);
+    console.log(`  ${testPath}: ${test.length} examples`);
+
+    // Print distribution stats
+    console.log("\n=== Distribution Statistics ===");
+    printSplitStats("Train", train);
+    printSplitStats("Val", val);
+    printSplitStats("Test", test);
+  });
+
+/**
  * Stats command - show statistics about generated data.
  */
 program
@@ -433,5 +597,240 @@ function shuffle<T>(array: T[]): T[] {
   }
   return result;
 }
+
+/**
+ * Seeded random number generator (mulberry32).
+ */
+function createSeededRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Shuffle array with a seeded random number generator.
+ */
+function seededShuffle<T>(array: T[], seed: number): T[] {
+  const result = [...array];
+  const random = createSeededRandom(seed);
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/**
+ * Stratified split that maintains family distribution across splits.
+ */
+function stratifiedSplit(
+  examples: TrainingExample[],
+  trainRatio: number,
+  valRatio: number,
+  seed: number,
+): { train: TrainingExample[]; val: TrainingExample[]; test: TrainingExample[] } {
+  // Group by family
+  const byFamily: Record<string, TrainingExample[]> = {};
+  for (const ex of examples) {
+    if (!byFamily[ex.family]) {
+      byFamily[ex.family] = [];
+    }
+    byFamily[ex.family].push(ex);
+  }
+
+  const train: TrainingExample[] = [];
+  const val: TrainingExample[] = [];
+  const test: TrainingExample[] = [];
+
+  // Split each family proportionally
+  let familySeed = seed;
+  for (const family of Object.keys(byFamily).sort()) {
+    const familyExamples = seededShuffle(byFamily[family], familySeed++);
+    const trainEnd = Math.floor(familyExamples.length * trainRatio);
+    const valEnd = Math.floor(familyExamples.length * (trainRatio + valRatio));
+
+    train.push(...familyExamples.slice(0, trainEnd));
+    val.push(...familyExamples.slice(trainEnd, valEnd));
+    test.push(...familyExamples.slice(valEnd));
+  }
+
+  // Shuffle the final arrays to mix families
+  return {
+    train: seededShuffle(train, seed),
+    val: seededShuffle(val, seed + 1),
+    test: seededShuffle(test, seed + 2),
+  };
+}
+
+/**
+ * Print distribution statistics for a split.
+ */
+function printSplitStats(name: string, examples: TrainingExample[]): void {
+  if (examples.length === 0) {
+    console.log(`\n${name}: 0 examples`);
+    return;
+  }
+
+  console.log(`\n${name} (${examples.length} examples):`);
+
+  // By family
+  const byFamily: Record<string, number> = {};
+  const byComplexity: Record<number, number> = {};
+
+  for (const ex of examples) {
+    byFamily[ex.family] = (byFamily[ex.family] || 0) + 1;
+    byComplexity[ex.complexity] = (byComplexity[ex.complexity] || 0) + 1;
+  }
+
+  console.log("  By family:");
+  for (const [family, count] of Object.entries(byFamily).sort((a, b) => b[1] - a[1])) {
+    console.log(`    ${family}: ${count} (${((count / examples.length) * 100).toFixed(1)}%)`);
+  }
+
+  console.log("  By complexity:");
+  for (const [complexity, count] of Object.entries(byComplexity).sort()) {
+    console.log(`    ${complexity}: ${count} (${((count / examples.length) * 100).toFixed(1)}%)`);
+  }
+}
+
+/**
+ * Infer command - generate Compact IR from a text prompt.
+ */
+program
+  .command("infer")
+  .description("Generate Compact IR from a text prompt")
+  .requiredOption("-p, --prompt <prompt>", "Text description of the CAD part")
+  .option("--ollama [model]", "Use local Ollama model")
+  .option("--gateway [model]", "Use Vercel AI Gateway")
+  .option("--huggingface [model]", "Use HuggingFace Inference API")
+  .option("-m, --model <model>", "Anthropic model ID", DEFAULT_MODELS.anthropic)
+  .option("--stream", "Stream output tokens", false)
+  .option("--validate", "Validate the generated IR", false)
+  .option("--json", "Output as JSON", false)
+  .option("-o, --output <path>", "Write IR to file")
+  .action(async (options) => {
+    const prompt = options.prompt as string;
+
+    // Select backend and create model
+    let model;
+    let backendName: string;
+
+    if (options.ollama !== undefined) {
+      const modelId = typeof options.ollama === "string" ? options.ollama : DEFAULT_MODELS.ollama;
+      backendName = `ollama/${modelId}`;
+      try {
+        model = createOllamaInferModel(modelId);
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        console.error("Make sure Ollama is running: ollama serve");
+        process.exit(1);
+      }
+    } else if (options.gateway !== undefined) {
+      const modelId = typeof options.gateway === "string" ? options.gateway : DEFAULT_MODELS.gateway;
+      backendName = `gateway/${modelId}`;
+      try {
+        model = createGatewayInferModel(modelId);
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        process.exit(1);
+      }
+    } else if (options.huggingface !== undefined) {
+      const modelId = typeof options.huggingface === "string" ? options.huggingface : DEFAULT_MODELS.huggingface;
+      backendName = `huggingface/${modelId}`;
+      try {
+        model = createHuggingFaceInferModel(modelId);
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        console.error("Set HF_TOKEN environment variable");
+        process.exit(1);
+      }
+    } else {
+      const modelId = options.model as string;
+      backendName = `anthropic/${modelId}`;
+      try {
+        model = createAnthropicInferModel(modelId);
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        console.error("Set ANTHROPIC_API_KEY or use --ollama for local inference");
+        process.exit(1);
+      }
+    }
+
+    if (!options.json) {
+      console.log(`Using ${backendName}`);
+      console.log(`Prompt: "${prompt}"`);
+      console.log("");
+    }
+
+    try {
+      let result;
+
+      if (options.stream && !options.json) {
+        // Streaming mode - show tokens as they arrive
+        process.stdout.write("Generated IR:\n");
+        result = await inferStreaming(model, prompt, {
+          onToken: (token) => {
+            process.stdout.write(token);
+          },
+        });
+        console.log("\n");
+      } else {
+        // Non-streaming mode
+        result = await infer(model, prompt);
+        if (!options.json) {
+          console.log("Generated IR:");
+          console.log(result.ir);
+          console.log("");
+        }
+      }
+
+      // Validate if requested
+      let validationError: string | null = null;
+      if (options.validate) {
+        validationError = validateCompactIR(result.ir);
+        if (!options.json) {
+          if (validationError) {
+            console.log(`Validation: FAILED - ${validationError}`);
+          } else {
+            console.log("Validation: PASSED");
+          }
+        }
+      }
+
+      // Output as JSON if requested
+      if (options.json) {
+        const output = {
+          prompt,
+          ir: result.ir,
+          model: backendName,
+          durationMs: result.durationMs,
+          outputTokens: result.outputTokens,
+          ...(options.validate && { valid: validationError === null, validationError }),
+        };
+        console.log(JSON.stringify(output, null, 2));
+      } else {
+        console.log(`Duration: ${result.durationMs.toFixed(0)}ms`);
+        if (result.outputTokens) {
+          console.log(`Output tokens: ${result.outputTokens}`);
+        }
+      }
+
+      // Write to file if requested
+      if (options.output) {
+        fs.writeFileSync(options.output, result.ir);
+        if (!options.json) {
+          console.log(`\nWrote IR to ${options.output}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Inference failed: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
 
 program.parse();

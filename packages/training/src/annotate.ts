@@ -1,10 +1,12 @@
 /**
- * Annotation pipeline - uses Anthropic API to generate diverse text descriptions.
- * Default: Claude 3.5 Haiku for speed and cost efficiency.
+ * Annotation pipeline - uses LLM to generate diverse text descriptions.
+ * Supports Anthropic API and local Ollama models.
  */
 
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import { gateway } from "@ai-sdk/gateway";
 import type { GeneratedPart, TrainingExample } from "./generators/types.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,6 +14,12 @@ type LanguageModel = any;
 
 /** Default Anthropic model. */
 export const DEFAULT_MODEL = "claude-3-5-haiku-20241022";
+
+/** Default Ollama model. */
+export const DEFAULT_OLLAMA_MODEL = "qwen2.5:3b";
+
+/** Default gateway model - fast and cheap. */
+export const DEFAULT_GATEWAY_MODEL = "anthropic/claude-3-5-haiku-latest";
 
 /** System prompt explaining the Compact IR format. */
 const SYSTEM_PROMPT = `You are describing CAD (Computer-Aided Design) mechanical parts.
@@ -37,10 +45,10 @@ const ANNOTATION_PROMPTS = [
 ];
 
 /** Rate limit delay between batches (ms). */
-const RATE_LIMIT_DELAY = 300;
+const RATE_LIMIT_DELAY = 20;
 
 /** Batch size for parallel API calls. */
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 100;
 
 /** Max retries per request. */
 const MAX_RETRIES = 5;
@@ -82,6 +90,35 @@ export function createAnthropicModel(
   return anthropic(modelId);
 }
 
+/**
+ * Create an Ollama language model (local).
+ *
+ * @param modelId - Model ID (e.g., "qwen2.5:3b", "llama3.2:3b")
+ * @param baseURL - Ollama API URL (defaults to http://localhost:11434/v1)
+ */
+export function createOllamaModel(
+  modelId: string = DEFAULT_OLLAMA_MODEL,
+  baseURL: string = "http://localhost:11434/v1",
+): LanguageModel {
+  // Ollama exposes an OpenAI-compatible API
+  const ollama = createOpenAI({
+    baseURL,
+    apiKey: "ollama", // Ollama doesn't need a real key
+  });
+  return ollama(modelId);
+}
+
+/**
+ * Create a Vercel AI Gateway model.
+ *
+ * @param modelId - Model ID (e.g., "anthropic/claude-3-5-haiku-latest", "openai/gpt-4o-mini")
+ */
+export function createGatewayModel(
+  modelId: string = DEFAULT_GATEWAY_MODEL,
+): LanguageModel {
+  return gateway(modelId);
+}
+
 /** Options for annotation. */
 export interface AnnotateOptions {
   /** Language model to use. */
@@ -90,6 +127,8 @@ export interface AnnotateOptions {
   promptsPerPart?: number;
   /** Callback for progress updates. */
   onProgress?: (completed: number, total: number) => void;
+  /** Callback for each generated example (for incremental writes). */
+  onExample?: (example: TrainingExample) => void;
 }
 
 /**
@@ -103,7 +142,7 @@ export async function annotate(
   parts: GeneratedPart[],
   options: AnnotateOptions,
 ): Promise<TrainingExample[]> {
-  const { model, promptsPerPart = 5, onProgress } = options;
+  const { model, promptsPerPart = 5, onProgress, onExample } = options;
 
   const examples: TrainingExample[] = [];
   const prompts = ANNOTATION_PROMPTS.slice(0, promptsPerPart);
@@ -160,12 +199,14 @@ export async function annotate(
     // Process responses
     for (const { task, text, error } of responses) {
       if (text && !error) {
-        examples.push({
+        const example: TrainingExample = {
           text,
           ir: task.part.compact,
           family: task.part.family,
           complexity: task.part.complexity,
-        });
+        };
+        examples.push(example);
+        onExample?.(example);
       }
       completed++;
       onProgress?.(completed, totalTasks);

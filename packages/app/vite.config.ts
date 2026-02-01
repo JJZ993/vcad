@@ -24,17 +24,20 @@ export default defineConfig({
       includeAssets: ["fonts/**/*", "assets/**/*"],
       manifest: false, // Use public/manifest.json
       workbox: {
-        globPatterns: ["**/*.{js,css,html,wasm,woff,woff2,otf}"],
+        globPatterns: ["**/*.{js,css,html,woff,woff2,otf}"],
+        // Exclude large ONNX runtime WASM from precaching (will be runtime cached)
+        globIgnores: ["**/ort-*.wasm"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB for WASM
         runtimeCaching: [
           {
-            // WASM module - cache first (immutable)
+            // WASM modules - cache first (immutable)
+            // Includes large ONNX runtime WASM files for AI inference
             urlPattern: /\.wasm$/,
             handler: "CacheFirst",
             options: {
               cacheName: "wasm-cache",
               expiration: {
-                maxEntries: 10,
+                maxEntries: 20,
                 maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
               },
             },

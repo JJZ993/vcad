@@ -18,6 +18,7 @@ import { GuidedFlowOverlay } from "@/components/GuidedFlowOverlay";
 import { GhostPromptController } from "@/components/GhostPromptController";
 import { CelebrationOverlay } from "@/components/CelebrationOverlay";
 import { AboutModal } from "@/components/AboutModal";
+import { AIPanel } from "@/components/AIPanel";
 import { CommandPalette } from "@/components/CommandPalette";
 import { SketchToolbar } from "@/components/SketchToolbar";
 import { FaceSelectionOverlay } from "@/components/FaceSelectionOverlay";
@@ -93,6 +94,7 @@ export function App() {
   useAutoSave();
 
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -305,20 +307,27 @@ export function App() {
     setDocumentPickerOpen(true);
   }, []);
 
-  // Listen for save/open/documents custom events from keyboard shortcuts
+  const handleOpenAiPanel = useCallback(() => {
+    setAiPanelOpen(true);
+  }, []);
+
+  // Listen for save/open/documents/ai-panel custom events from keyboard shortcuts
   useEffect(() => {
     const onSave = () => handleSave();
     const onOpen = () => handleOpen();
     const onDocuments = () => handleOpenDocuments();
+    const onAiPanel = () => handleOpenAiPanel();
     window.addEventListener("vcad:save", onSave);
     window.addEventListener("vcad:open", onOpen);
     window.addEventListener("vcad:documents", onDocuments);
+    window.addEventListener("vcad:ai-panel", onAiPanel);
     return () => {
       window.removeEventListener("vcad:save", onSave);
       window.removeEventListener("vcad:open", onOpen);
       window.removeEventListener("vcad:documents", onDocuments);
+      window.removeEventListener("vcad:ai-panel", onAiPanel);
     };
-  }, [handleSave, handleOpen, handleOpenDocuments]);
+  }, [handleSave, handleOpen, handleOpenDocuments, handleOpenAiPanel]);
 
   // Listen for load-example events from the menu
   useEffect(() => {
@@ -520,6 +529,7 @@ export function App() {
           onOpenChange={setCommandPaletteOpen}
           onAboutOpen={() => setAboutOpen(true)}
         />
+        <AIPanel open={aiPanelOpen} onOpenChange={setAiPanelOpen} />
         <input
           ref={fileInputRef}
           type="file"
