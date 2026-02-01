@@ -64,21 +64,21 @@ image = (
 
 @app.function(
     image=image,
-    gpu="A100-80GB",
+    gpu="H100",  # 1x H100 is optimal: 2.3s/step 🔥
     volumes={"/data": volume},
         secrets=[
         modal.Secret.from_name("huggingface-secret"),
         modal.Secret.from_name("wandb-secret"),
     ],
-    timeout=60 * 60 * 8,  # 8 hours
+    timeout=60 * 60 * 6,  # 6 hours
 )
 def train(
     model_name: str = "Qwen/Qwen2.5-Coder-7B",
     lora_r: int = 64,
     lora_alpha: int = 128,
-    num_epochs: int = 3,
-    batch_size: int = 4,
-    grad_accum: int = 8,
+    num_epochs: int = 1,
+    batch_size: int = 16,
+    grad_accum: int = 4,
     learning_rate: float = 2e-4,
     max_seq_length: int = 1024,
     max_samples: int | None = None,
@@ -101,6 +101,9 @@ def train(
     """
     from config import Config, ModelConfig, TrainingConfig, DataConfig
     from train import train_model
+
+    # Force reload volume to get latest data
+    volume.reload()
 
     # Build config
     config = Config(
@@ -296,6 +299,35 @@ def upload_data(
     volume.commit()
 
     return "Data uploaded successfully"
+
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    timeout=60,
+)
+def debug_volume():
+    """Debug function to check volume contents."""
+    import os
+    import subprocess
+
+    # Force reload
+    volume.reload()
+
+    # List files
+    print("Files in /data:")
+    result = subprocess.run(["ls", "-la", "/data"], capture_output=True, text=True)
+    print(result.stdout)
+
+    # Check train.jsonl line count
+    result = subprocess.run(["wc", "-l", "/data/train.jsonl"], capture_output=True, text=True)
+    print(f"train.jsonl lines: {result.stdout.strip()}")
+
+    # First line
+    with open("/data/train.jsonl", "r") as f:
+        first_line = f.readline()
+        print(f"First line length: {len(first_line)}")
+        print(f"First 100 chars: {first_line[:100]}")
 
 
 @app.local_entrypoint()

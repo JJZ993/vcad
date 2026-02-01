@@ -70,7 +70,7 @@ class TrainingConfig:
     # Logging
     logging_steps: int = 10
     eval_strategy: str = "steps"
-    eval_steps: int = 100
+    eval_steps: int = 2000  # Reduced eval frequency for faster training
     save_strategy: str = "steps"
     save_steps: int = 500
     save_total_limit: int = 3
