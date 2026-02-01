@@ -228,6 +228,35 @@ impl RayTracePipeline {
         accum_buffer: Option<wgpu::Buffer>,
         debug_mode: u32,
     ) -> Result<(Vec<u8>, wgpu::Buffer), GpuError> {
+        // Delegate to full settings with default edge parameters
+        self.render_with_full_settings(
+            ctx, scene, camera, width, height, frame_index, accum_buffer,
+            debug_mode, true, 0.1, 30.0
+        ).await
+    }
+
+    /// Render a scene with full control over all settings.
+    ///
+    /// # Arguments
+    /// * Same as render_progressive_with_debug, plus:
+    /// * `enable_edges` - Whether to show edge detection overlay
+    /// * `edge_depth_threshold` - Depth discontinuity threshold for edges
+    /// * `edge_normal_threshold` - Normal angle threshold (degrees) for edges
+    #[allow(clippy::too_many_arguments)]
+    pub async fn render_with_full_settings(
+        &self,
+        ctx: &GpuContext,
+        scene: &GpuScene,
+        camera: &GpuCamera,
+        width: u32,
+        height: u32,
+        frame_index: u32,
+        accum_buffer: Option<wgpu::Buffer>,
+        debug_mode: u32,
+        enable_edges: bool,
+        edge_depth_threshold: f32,
+        edge_normal_threshold: f32,
+    ) -> Result<(Vec<u8>, wgpu::Buffer), GpuError> {
         use wgpu::util::DeviceExt;
 
         // Create camera buffer
@@ -238,7 +267,9 @@ impl RayTracePipeline {
         });
 
         // Create render state buffer
-        let render_state = GpuRenderState::with_debug_mode(frame_index, debug_mode);
+        let render_state = GpuRenderState::with_edge_settings(
+            frame_index, debug_mode, enable_edges, edge_depth_threshold, edge_normal_threshold
+        );
         let render_state_buffer = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Render State Buffer"),
             contents: bytemuck::bytes_of(&render_state),

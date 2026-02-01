@@ -35,6 +35,9 @@ export interface UiState {
   raytraceQuality: RaytraceQuality;
   raytraceDebugMode: RaytraceDebugMode;
   raytraceAvailable: boolean;
+  raytraceEdgesEnabled: boolean;
+  raytraceEdgeDepthThreshold: number;
+  raytraceEdgeNormalThreshold: number;
 
   select: (partId: string | null) => void;
   toggleSelect: (partId: string) => void;
@@ -68,6 +71,9 @@ export interface UiState {
   setRaytraceQuality: (quality: RaytraceQuality) => void;
   setRaytraceDebugMode: (mode: RaytraceDebugMode) => void;
   setRaytraceAvailable: (available: boolean) => void;
+  setRaytraceEdgesEnabled: (enabled: boolean) => void;
+  setRaytraceEdgeDepthThreshold: (threshold: number) => void;
+  setRaytraceEdgeNormalThreshold: (threshold: number) => void;
 }
 
 // Load persisted material preferences from localStorage
@@ -112,6 +118,9 @@ export const useUiStore = create<UiState>((set) => ({
   raytraceQuality: "draft",
   raytraceDebugMode: "off",
   raytraceAvailable: false,
+  raytraceEdgesEnabled: true,
+  raytraceEdgeDepthThreshold: 0.1,
+  raytraceEdgeNormalThreshold: 30.0,
 
   select: (partId) =>
     set({ selectedPartIds: partId ? new Set([partId]) : new Set() }),
@@ -220,4 +229,10 @@ export const useUiStore = create<UiState>((set) => ({
   setRaytraceDebugMode: (mode) => set({ raytraceDebugMode: mode }),
 
   setRaytraceAvailable: (available) => set({ raytraceAvailable: available }),
+
+  setRaytraceEdgesEnabled: (enabled) => set({ raytraceEdgesEnabled: enabled }),
+
+  setRaytraceEdgeDepthThreshold: (threshold) => set({ raytraceEdgeDepthThreshold: threshold }),
+
+  setRaytraceEdgeNormalThreshold: (threshold) => set({ raytraceEdgeNormalThreshold: threshold }),
 }));

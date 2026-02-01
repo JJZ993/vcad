@@ -1,6 +1,43 @@
 /* @ts-self-types="./vcad_kernel_wasm.d.ts" */
 
 /**
+ * Stub PhysicsSim when physics feature is not enabled.
+ */
+export class PhysicsSim {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhysicsSimFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_physicssim_free(ptr, 0);
+    }
+    /**
+     * Returns an error when physics feature is not enabled.
+     * @param {string} _doc_json
+     * @param {string[]} _end_effector_ids
+     * @param {number | null} [_dt]
+     * @param {number | null} [_substeps]
+     */
+    constructor(_doc_json, _end_effector_ids, _dt, _substeps) {
+        const ptr0 = passStringToWasm0(_doc_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayJsValueToWasm0(_end_effector_ids, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.physicssim_new(ptr0, len0, ptr1, len1, isLikeNone(_dt) ? 0x100000001 : Math.fround(_dt), isLikeNone(_substeps) ? 0x100000001 : (_substeps) >>> 0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        PhysicsSimFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) PhysicsSim.prototype[Symbol.dispose] = PhysicsSim.prototype.free;
+
+/**
  * GPU-accelerated ray tracer for direct BRep rendering.
  *
  * This ray tracer renders BRep surfaces directly without tessellation,
@@ -57,6 +94,14 @@ export class RayTracer {
     getDebugMode() {
         const ret = wasm.raytracer_getDebugMode(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Get whether edge detection is enabled.
+     * @returns {boolean}
+     */
+    getEdgeDetectionEnabled() {
+        const ret = wasm.raytracer_getEdgeDetectionEnabled(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Get the current frame index for progressive rendering.
@@ -164,6 +209,39 @@ export class RayTracer {
         wasm.raytracer_setDebugMode(this.__wbg_ptr, mode);
     }
     /**
+     * Set edge detection settings.
+     *
+     * # Arguments
+     * * `enabled` - Whether to show edge detection overlay
+     * * `depth_threshold` - Depth discontinuity threshold (default: 0.1)
+     * * `normal_threshold` - Normal angle threshold in degrees (default: 30.0)
+     * @param {boolean} enabled
+     * @param {number} depth_threshold
+     * @param {number} normal_threshold
+     */
+    setEdgeDetection(enabled, depth_threshold, normal_threshold) {
+        wasm.raytracer_setEdgeDetection(this.__wbg_ptr, enabled, depth_threshold, normal_threshold);
+    }
+    /**
+     * Set the material for all faces in the scene.
+     *
+     * # Arguments
+     * * `r`, `g`, `b` - RGB color components (0-1 range, linear)
+     * * `metallic` - Metallic factor (0 = dielectric, 1 = metal)
+     * * `roughness` - Roughness factor (0 = smooth/mirror, 1 = rough/diffuse)
+     * @param {number} r
+     * @param {number} g
+     * @param {number} b
+     * @param {number} metallic
+     * @param {number} roughness
+     */
+    setMaterial(r, g, b, metallic, roughness) {
+        const ret = wasm.raytracer_setMaterial(this.__wbg_ptr, r, g, b, metallic, roughness);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * Upload a solid's BRep representation for ray tracing.
      *
      * This extracts the BRep surfaces and builds the GPU scene data.
@@ -229,7 +307,7 @@ export class Solid {
      * @returns {Solid}
      */
     chamfer(distance) {
-        const ret = wasm.solid_chamfer(this.__wbg_ptr, distance);
+        const ret = wasm.op_chamfer(this.__wbg_ptr, distance);
         return Solid.__wrap(ret);
     }
     /**
@@ -252,7 +330,7 @@ export class Solid {
      * @returns {Solid}
      */
     circularPattern(axis_origin_x, axis_origin_y, axis_origin_z, axis_dir_x, axis_dir_y, axis_dir_z, count, angle_deg) {
-        const ret = wasm.solid_circularPattern(this.__wbg_ptr, axis_origin_x, axis_origin_y, axis_origin_z, axis_dir_x, axis_dir_y, axis_dir_z, count, angle_deg);
+        const ret = wasm.op_circular_pattern(this.__wbg_ptr, axis_origin_x, axis_origin_y, axis_origin_z, axis_dir_x, axis_dir_y, axis_dir_z, count, angle_deg);
         return Solid.__wrap(ret);
     }
     /**
@@ -330,7 +408,7 @@ export class Solid {
      * @returns {Solid}
      */
     fillet(radius) {
-        const ret = wasm.solid_fillet(this.__wbg_ptr, radius);
+        const ret = wasm.op_fillet(this.__wbg_ptr, radius);
         return Solid.__wrap(ret);
     }
     /**
@@ -392,7 +470,7 @@ export class Solid {
      * @returns {Solid}
      */
     linearPattern(dir_x, dir_y, dir_z, count, spacing) {
-        const ret = wasm.solid_linearPattern(this.__wbg_ptr, dir_x, dir_y, dir_z, count, spacing);
+        const ret = wasm.op_linear_pattern(this.__wbg_ptr, dir_x, dir_y, dir_z, count, spacing);
         return Solid.__wrap(ret);
     }
     /**
@@ -509,7 +587,7 @@ export class Solid {
      * @returns {Solid}
      */
     shell(thickness) {
-        const ret = wasm.solid_shell(this.__wbg_ptr, thickness);
+        const ret = wasm.op_shell(this.__wbg_ptr, thickness);
         return Solid.__wrap(ret);
     }
     /**
@@ -965,6 +1043,182 @@ export function initGpu() {
 export function isGpuAvailable() {
     const ret = wasm.isGpuAvailable();
     return ret !== 0;
+}
+
+/**
+ * Check if physics simulation is available.
+ * @returns {boolean}
+ */
+export function isPhysicsAvailable() {
+    const ret = wasm.isPhysicsAvailable();
+    return ret !== 0;
+}
+
+/**
+ * Chamfer all edges of a solid by the given distance.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {Solid} solid
+ * @param {number} distance
+ * @returns {Solid}
+ */
+export function op_chamfer(solid, distance) {
+    _assertClass(solid, Solid);
+    const ret = wasm.op_chamfer(solid.__wbg_ptr, distance);
+    return Solid.__wrap(ret);
+}
+
+/**
+ * Create a circular pattern of a solid around an axis.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {Solid} solid
+ * @param {number} axis_origin_x
+ * @param {number} axis_origin_y
+ * @param {number} axis_origin_z
+ * @param {number} axis_dir_x
+ * @param {number} axis_dir_y
+ * @param {number} axis_dir_z
+ * @param {number} count
+ * @param {number} angle_deg
+ * @returns {Solid}
+ */
+export function op_circular_pattern(solid, axis_origin_x, axis_origin_y, axis_origin_z, axis_dir_x, axis_dir_y, axis_dir_z, count, angle_deg) {
+    _assertClass(solid, Solid);
+    const ret = wasm.op_circular_pattern(solid.__wbg_ptr, axis_origin_x, axis_origin_y, axis_origin_z, axis_dir_x, axis_dir_y, axis_dir_z, count, angle_deg);
+    return Solid.__wrap(ret);
+}
+
+/**
+ * Fillet all edges of a solid with the given radius.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {Solid} solid
+ * @param {number} radius
+ * @returns {Solid}
+ */
+export function op_fillet(solid, radius) {
+    _assertClass(solid, Solid);
+    const ret = wasm.op_fillet(solid.__wbg_ptr, radius);
+    return Solid.__wrap(ret);
+}
+
+/**
+ * Create a linear pattern of a solid along a direction.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {Solid} solid
+ * @param {number} dir_x
+ * @param {number} dir_y
+ * @param {number} dir_z
+ * @param {number} count
+ * @param {number} spacing
+ * @returns {Solid}
+ */
+export function op_linear_pattern(solid, dir_x, dir_y, dir_z, count, spacing) {
+    _assertClass(solid, Solid);
+    const ret = wasm.op_linear_pattern(solid.__wbg_ptr, dir_x, dir_y, dir_z, count, spacing);
+    return Solid.__wrap(ret);
+}
+
+/**
+ * Create a solid by lofting between multiple profiles.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {any} profiles_js
+ * @param {boolean | null} [closed]
+ * @returns {Solid}
+ */
+export function op_loft(profiles_js, closed) {
+    const ret = wasm.op_loft(profiles_js, isLikeNone(closed) ? 0xFFFFFF : closed ? 1 : 0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return Solid.__wrap(ret[0]);
+}
+
+/**
+ * Create a solid by revolving a 2D sketch profile around an axis.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {any} profile_js
+ * @param {Float64Array} axis_origin
+ * @param {Float64Array} axis_dir
+ * @param {number} angle_deg
+ * @returns {Solid}
+ */
+export function op_revolve(profile_js, axis_origin, axis_dir, angle_deg) {
+    const ptr0 = passArrayF64ToWasm0(axis_origin, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF64ToWasm0(axis_dir, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.op_revolve(profile_js, ptr0, len0, ptr1, len1, angle_deg);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return Solid.__wrap(ret[0]);
+}
+
+/**
+ * Shell (hollow) a solid by offsetting all faces inward.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {Solid} solid
+ * @param {number} thickness
+ * @returns {Solid}
+ */
+export function op_shell(solid, thickness) {
+    _assertClass(solid, Solid);
+    const ret = wasm.op_shell(solid.__wbg_ptr, thickness);
+    return Solid.__wrap(ret);
+}
+
+/**
+ * Create a solid by sweeping a profile along a helix path.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {any} profile_js
+ * @param {number} radius
+ * @param {number} pitch
+ * @param {number} height
+ * @param {number} turns
+ * @param {number | null} [twist_angle]
+ * @param {number | null} [scale_start]
+ * @param {number | null} [scale_end]
+ * @param {number | null} [path_segments]
+ * @param {number | null} [arc_segments]
+ * @returns {Solid}
+ */
+export function op_sweep_helix(profile_js, radius, pitch, height, turns, twist_angle, scale_start, scale_end, path_segments, arc_segments) {
+    const ret = wasm.op_sweep_helix(profile_js, radius, pitch, height, turns, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end, isLikeNone(path_segments) ? 0x100000001 : (path_segments) >>> 0, isLikeNone(arc_segments) ? 0x100000001 : (arc_segments) >>> 0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return Solid.__wrap(ret[0]);
+}
+
+/**
+ * Create a solid by sweeping a profile along a line path.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ * @param {any} profile_js
+ * @param {Float64Array} start
+ * @param {Float64Array} end
+ * @param {number | null} [twist_angle]
+ * @param {number | null} [scale_start]
+ * @param {number | null} [scale_end]
+ * @returns {Solid}
+ */
+export function op_sweep_line(profile_js, start, end, twist_angle, scale_start, scale_end) {
+    const ptr0 = passArrayF64ToWasm0(start, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF64ToWasm0(end, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.op_sweep_line(profile_js, ptr0, len0, ptr1, len1, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return Solid.__wrap(ret[0]);
 }
 
 /**
@@ -2899,12 +3153,12 @@ function __wbg_get_imports() {
             arg0.writeTexture(arg1, arg2, arg3, arg4);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 1150, function: Function { arguments: [Externref], shim_idx: 1151, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 1153, function: Function { arguments: [Externref], shim_idx: 1154, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__ha8b73a36ae48e470, wasm_bindgen__convert__closures_____invoke__h4488ad9b37e81000);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 405, function: Function { arguments: [NamedExternref("GPUUncapturedErrorEvent")], shim_idx: 406, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 408, function: Function { arguments: [NamedExternref("GPUUncapturedErrorEvent")], shim_idx: 409, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__h250d7189f9770b99, wasm_bindgen__convert__closures_____invoke__ha8b3f1b8e67fad08);
             return ret;
         },
@@ -3019,6 +3273,9 @@ const __wbindgen_enum_GpuIndexFormat = ["uint16", "uint32"];
 
 
 const __wbindgen_enum_GpuTextureFormat = ["r8unorm", "r8snorm", "r8uint", "r8sint", "r16uint", "r16sint", "r16float", "rg8unorm", "rg8snorm", "rg8uint", "rg8sint", "r32uint", "r32sint", "r32float", "rg16uint", "rg16sint", "rg16float", "rgba8unorm", "rgba8unorm-srgb", "rgba8snorm", "rgba8uint", "rgba8sint", "bgra8unorm", "bgra8unorm-srgb", "rgb9e5ufloat", "rgb10a2uint", "rgb10a2unorm", "rg11b10ufloat", "rg32uint", "rg32sint", "rg32float", "rgba16uint", "rgba16sint", "rgba16float", "rgba32uint", "rgba32sint", "rgba32float", "stencil8", "depth16unorm", "depth24plus", "depth24plus-stencil8", "depth32float", "depth32float-stencil8", "bc1-rgba-unorm", "bc1-rgba-unorm-srgb", "bc2-rgba-unorm", "bc2-rgba-unorm-srgb", "bc3-rgba-unorm", "bc3-rgba-unorm-srgb", "bc4-r-unorm", "bc4-r-snorm", "bc5-rg-unorm", "bc5-rg-snorm", "bc6h-rgb-ufloat", "bc6h-rgb-float", "bc7-rgba-unorm", "bc7-rgba-unorm-srgb", "etc2-rgb8unorm", "etc2-rgb8unorm-srgb", "etc2-rgb8a1unorm", "etc2-rgb8a1unorm-srgb", "etc2-rgba8unorm", "etc2-rgba8unorm-srgb", "eac-r11unorm", "eac-r11snorm", "eac-rg11unorm", "eac-rg11snorm", "astc-4x4-unorm", "astc-4x4-unorm-srgb", "astc-5x4-unorm", "astc-5x4-unorm-srgb", "astc-5x5-unorm", "astc-5x5-unorm-srgb", "astc-6x5-unorm", "astc-6x5-unorm-srgb", "astc-6x6-unorm", "astc-6x6-unorm-srgb", "astc-8x5-unorm", "astc-8x5-unorm-srgb", "astc-8x6-unorm", "astc-8x6-unorm-srgb", "astc-8x8-unorm", "astc-8x8-unorm-srgb", "astc-10x5-unorm", "astc-10x5-unorm-srgb", "astc-10x6-unorm", "astc-10x6-unorm-srgb", "astc-10x8-unorm", "astc-10x8-unorm-srgb", "astc-10x10-unorm", "astc-10x10-unorm-srgb", "astc-12x10-unorm", "astc-12x10-unorm-srgb", "astc-12x12-unorm", "astc-12x12-unorm-srgb"];
+const PhysicsSimFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_physicssim_free(ptr >>> 0, 1));
 const RayTracerFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_raytracer_free(ptr >>> 0, 1));
@@ -3293,6 +3550,16 @@ function passArrayF64ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 8, 8) >>> 0;
     getFloat64ArrayMemory0().set(arg, ptr / 8);
     WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArrayJsValueToWasm0(array, malloc) {
+    const ptr = malloc(array.length * 4, 4) >>> 0;
+    for (let i = 0; i < array.length; i++) {
+        const add = addToExternrefTable0(array[i]);
+        getDataViewMemory0().setUint32(ptr + 4 * i, add, true);
+    }
+    WASM_VECTOR_LEN = array.length;
     return ptr;
 }
 

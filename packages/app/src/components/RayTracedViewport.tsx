@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
-import { useEngineStore, useUiStore, logger } from "@vcad/core";
+import { useEngineStore, useDocumentStore, useUiStore, logger } from "@vcad/core";
 import { getRayTracer } from "@vcad/engine";
 import type { PerspectiveCamera } from "three";
 
@@ -25,6 +25,7 @@ export function setCameraStateCallback(cb: ((state: CameraState) => void) | null
  */
 export function RayTracedViewportSync() {
   const scene = useEngineStore((s) => s.scene);
+  const document = useDocumentStore((s) => s.document);
   const { camera, size, controls } = useThree();
   const rayTracer = getRayTracer();
 
@@ -43,6 +44,7 @@ export function RayTracedViewportSync() {
 
     // Try to upload first part with a solid
     let uploaded = false;
+    let materialKey: string | undefined;
     for (const p of scene.parts) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const solid = (p as any).solid;
@@ -51,14 +53,35 @@ export function RayTracedViewportSync() {
       try {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         rayTracer.uploadSolid(solid);
+        materialKey = p.material;
         uploaded = true;
         break;
       } catch {
         // Try next solid
       }
     }
+
+    // Apply material from document if available
+    if (uploaded && materialKey) {
+      const mat = document.materials[materialKey];
+      if (mat) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          rayTracer.setMaterial(
+            mat.color[0],
+            mat.color[1],
+            mat.color[2],
+            mat.metallic,
+            mat.roughness
+          );
+        } catch (e) {
+          logger.debug("gpu", `Failed to set material: ${e}`);
+        }
+      }
+    }
+
     uploadedRef.current = uploaded;
-  }, [scene, rayTracer]);
+  }, [scene, rayTracer, document.materials]);
 
   // Sync camera state on every frame
   useFrame(() => {
@@ -127,10 +150,20 @@ export function RayTracedViewportOverlay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const raytraceQuality = useUiStore((s) => s.raytraceQuality);
   const raytraceDebugMode = useUiStore((s) => s.raytraceDebugMode);
+  const raytraceEdgesEnabled = useUiStore((s) => s.raytraceEdgesEnabled);
+  const raytraceEdgeDepthThreshold = useUiStore((s) => s.raytraceEdgeDepthThreshold);
+  const raytraceEdgeNormalThreshold = useUiStore((s) => s.raytraceEdgeNormalThreshold);
   const rayTracer = getRayTracer();
 
   // Track last debug mode to detect changes
   const lastDebugModeRef = useRef<string>("off");
+
+  // Track last edge settings to detect changes
+  const lastEdgeSettingsRef = useRef({
+    enabled: true,
+    depth: 0.1,
+    normal: 30.0,
+  });
 
   // Track pending async render to avoid overlapping calls
   const renderInProgressRef = useRef(false);
@@ -329,6 +362,45 @@ export function RayTracedViewportOverlay() {
       doRender(lastCameraStateRef.current);
     }
   }, [raytraceDebugMode, rayTracer, doRender]);
+
+  // Apply edge detection settings changes
+  useEffect(() => {
+    if (!rayTracer) return;
+
+    const last = lastEdgeSettingsRef.current;
+    if (
+      raytraceEdgesEnabled === last.enabled &&
+      raytraceEdgeDepthThreshold === last.depth &&
+      raytraceEdgeNormalThreshold === last.normal
+    ) {
+      return;
+    }
+
+    lastEdgeSettingsRef.current = {
+      enabled: raytraceEdgesEnabled,
+      depth: raytraceEdgeDepthThreshold,
+      normal: raytraceEdgeNormalThreshold,
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    const hasMethod = typeof (rayTracer as any).setEdgeDetection === "function";
+    if (!hasMethod) {
+      logger.debug("gpu", "setEdgeDetection not available - WASM may need rebuild");
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    (rayTracer as any).setEdgeDetection(
+      raytraceEdgesEnabled,
+      raytraceEdgeDepthThreshold,
+      raytraceEdgeNormalThreshold
+    );
+
+    // Re-render to see the change
+    if (lastCameraStateRef.current) {
+      doRender(lastCameraStateRef.current);
+    }
+  }, [raytraceEdgesEnabled, raytraceEdgeDepthThreshold, raytraceEdgeNormalThreshold, rayTracer, doRender]);
 
   if (!rayTracer) {
     return null;

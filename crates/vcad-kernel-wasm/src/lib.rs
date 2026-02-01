@@ -1632,6 +1632,12 @@ pub struct RayTracer {
     last_height: u32,
     /// Debug render mode: 0=normal, 1=show normals, 2=show face_id, 3=show n_dot_l, 4=orientation.
     debug_mode: u32,
+    /// Enable edge detection overlay.
+    enable_edges: bool,
+    /// Edge depth threshold.
+    edge_depth_threshold: f32,
+    /// Edge normal threshold (degrees).
+    edge_normal_threshold: f32,
 }
 
 #[cfg(feature = "raytrace")]
@@ -1661,6 +1667,9 @@ impl RayTracer {
             last_width: 0,
             last_height: 0,
             debug_mode: 0,
+            enable_edges: true,
+            edge_depth_threshold: 0.1,
+            edge_normal_threshold: 30.0,
         })
     }
 
@@ -1696,6 +1705,32 @@ impl RayTracer {
     #[wasm_bindgen(js_name = getDebugMode)]
     pub fn get_debug_mode(&self) -> u32 {
         self.debug_mode
+    }
+
+    /// Set edge detection settings.
+    ///
+    /// # Arguments
+    /// * `enabled` - Whether to show edge detection overlay
+    /// * `depth_threshold` - Depth discontinuity threshold (default: 0.1)
+    /// * `normal_threshold` - Normal angle threshold in degrees (default: 30.0)
+    #[wasm_bindgen(js_name = setEdgeDetection)]
+    pub fn set_edge_detection(&mut self, enabled: bool, depth_threshold: f32, normal_threshold: f32) {
+        self.enable_edges = enabled;
+        self.edge_depth_threshold = depth_threshold;
+        self.edge_normal_threshold = normal_threshold;
+        // Reset accumulation when edge settings change
+        self.frame_index = 0;
+        self.accum_buffer = None;
+        web_sys::console::log_1(&format!(
+            "[WASM] Edge detection: enabled={}, depth={:.2}, normal={:.1}°",
+            enabled, depth_threshold, normal_threshold
+        ).into());
+    }
+
+    /// Get whether edge detection is enabled.
+    #[wasm_bindgen(js_name = getEdgeDetectionEnabled)]
+    pub fn get_edge_detection_enabled(&self) -> bool {
+        self.enable_edges
     }
 
     /// Upload a solid's BRep representation for ray tracing.
@@ -1762,6 +1797,31 @@ impl RayTracer {
         web_sys::console::log_1(&format!(
             "[WASM] Uploaded solid: {} faces, {} surfaces, {} BVH nodes",
             num_faces, num_surfaces, num_bvh_nodes
+        ).into());
+
+        Ok(())
+    }
+
+    /// Set the material for all faces in the scene.
+    ///
+    /// # Arguments
+    /// * `r`, `g`, `b` - RGB color components (0-1 range, linear)
+    /// * `metallic` - Metallic factor (0 = dielectric, 1 = metal)
+    /// * `roughness` - Roughness factor (0 = smooth/mirror, 1 = rough/diffuse)
+    #[wasm_bindgen(js_name = setMaterial)]
+    pub fn set_material(&mut self, r: f32, g: f32, b: f32, metallic: f32, roughness: f32) -> Result<(), JsError> {
+        let scene = self.scene.as_mut()
+            .ok_or_else(|| JsError::new("No solid uploaded. Call uploadSolid() first."))?;
+
+        scene.set_material(r, g, b, metallic, roughness);
+
+        // Reset accumulation since material changed
+        self.frame_index = 0;
+        self.accum_buffer = None;
+
+        web_sys::console::log_1(&format!(
+            "[WASM] Set material: rgb=({:.2}, {:.2}, {:.2}), metallic={:.2}, roughness={:.2}",
+            r, g, b, metallic, roughness
         ).into());
 
         Ok(())
@@ -1850,7 +1910,7 @@ impl RayTracer {
         let ctx = vcad_kernel_gpu::GpuContext::get()
             .ok_or_else(|| JsError::new("GPU context lost"))?;
 
-        let (pixels, new_accum) = self.pipeline.render_progressive_with_debug(
+        let (pixels, new_accum) = self.pipeline.render_with_full_settings(
             ctx,
             scene,
             &gpu_camera,
@@ -1859,6 +1919,9 @@ impl RayTracer {
             self.frame_index,
             self.accum_buffer.take(),
             self.debug_mode,
+            self.enable_edges,
+            self.edge_depth_threshold,
+            self.edge_normal_threshold,
         )
             .await
             .map_err(|e| JsError::new(&format!("Render failed: {}", e)))?;

@@ -343,6 +343,27 @@ impl GpuRenderState {
         state.enable_edges = 0;
         state
     }
+
+    /// Create a render state with custom edge settings.
+    pub fn with_edge_settings(
+        frame_index: u32,
+        debug_mode: u32,
+        enable_edges: bool,
+        edge_depth_threshold: f32,
+        edge_normal_threshold: f32,
+    ) -> Self {
+        let (jitter_x, jitter_y) = halton_2_3(frame_index);
+        Self {
+            frame_index,
+            jitter_x,
+            jitter_y,
+            enable_edges: if enable_edges { 1 } else { 0 },
+            edge_depth_threshold,
+            edge_normal_threshold,
+            debug_mode,
+            _pad: 0.0,
+        }
+    }
 }
 
 /// Generate Halton sequence sample for bases 2 and 3.
@@ -634,5 +655,20 @@ impl GpuScene {
             inner_loop_descs,
             face_index_map,
         })
+    }
+
+    /// Set the material for all faces in the scene.
+    ///
+    /// This replaces the default gray material with the specified color.
+    pub fn set_material(&mut self, r: f32, g: f32, b: f32, metallic: f32, roughness: f32) {
+        if self.materials.is_empty() {
+            self.materials.push(GpuMaterial::default());
+        }
+        self.materials[0] = GpuMaterial {
+            color: [r, g, b, 1.0],
+            metallic,
+            roughness,
+            _pad: [0.0; 2],
+        };
     }
 }

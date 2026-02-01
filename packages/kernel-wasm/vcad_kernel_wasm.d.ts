@@ -2,6 +2,18 @@
 /* eslint-disable */
 
 /**
+ * Stub PhysicsSim when physics feature is not enabled.
+ */
+export class PhysicsSim {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Returns an error when physics feature is not enabled.
+     */
+    constructor(_doc_json: string, _end_effector_ids: string[], _dt?: number | null, _substeps?: number | null);
+}
+
+/**
  * GPU-accelerated ray tracer for direct BRep rendering.
  *
  * This ray tracer renders BRep surfaces directly without tessellation,
@@ -28,6 +40,10 @@ export class RayTracer {
      * Get the current debug render mode.
      */
     getDebugMode(): number;
+    /**
+     * Get whether edge detection is enabled.
+     */
+    getEdgeDetectionEnabled(): boolean;
     /**
      * Get the current frame index for progressive rendering.
      */
@@ -83,6 +99,24 @@ export class RayTracer {
      * Call resetAccumulation() after changing mode to see immediate effect.
      */
     setDebugMode(mode: number): void;
+    /**
+     * Set edge detection settings.
+     *
+     * # Arguments
+     * * `enabled` - Whether to show edge detection overlay
+     * * `depth_threshold` - Depth discontinuity threshold (default: 0.1)
+     * * `normal_threshold` - Normal angle threshold in degrees (default: 30.0)
+     */
+    setEdgeDetection(enabled: boolean, depth_threshold: number, normal_threshold: number): void;
+    /**
+     * Set the material for all faces in the scene.
+     *
+     * # Arguments
+     * * `r`, `g`, `b` - RGB color components (0-1 range, linear)
+     * * `metallic` - Metallic factor (0 = dielectric, 1 = metal)
+     * * `roughness` - Roughness factor (0 = smooth/mirror, 1 = rough/diffuse)
+     */
+    setMaterial(r: number, g: number, b: number, metallic: number, roughness: number): void;
     /**
      * Upload a solid's BRep representation for ray tracing.
      *
@@ -474,6 +508,74 @@ export function initGpu(): Promise<boolean>;
 export function isGpuAvailable(): boolean;
 
 /**
+ * Check if physics simulation is available.
+ */
+export function isPhysicsAvailable(): boolean;
+
+/**
+ * Chamfer all edges of a solid by the given distance.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_chamfer(solid: Solid, distance: number): Solid;
+
+/**
+ * Create a circular pattern of a solid around an axis.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_circular_pattern(solid: Solid, axis_origin_x: number, axis_origin_y: number, axis_origin_z: number, axis_dir_x: number, axis_dir_y: number, axis_dir_z: number, count: number, angle_deg: number): Solid;
+
+/**
+ * Fillet all edges of a solid with the given radius.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_fillet(solid: Solid, radius: number): Solid;
+
+/**
+ * Create a linear pattern of a solid along a direction.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_linear_pattern(solid: Solid, dir_x: number, dir_y: number, dir_z: number, count: number, spacing: number): Solid;
+
+/**
+ * Create a solid by lofting between multiple profiles.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_loft(profiles_js: any, closed?: boolean | null): Solid;
+
+/**
+ * Create a solid by revolving a 2D sketch profile around an axis.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_revolve(profile_js: any, axis_origin: Float64Array, axis_dir: Float64Array, angle_deg: number): Solid;
+
+/**
+ * Shell (hollow) a solid by offsetting all faces inward.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_shell(solid: Solid, thickness: number): Solid;
+
+/**
+ * Create a solid by sweeping a profile along a helix path.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_sweep_helix(profile_js: any, radius: number, pitch: number, height: number, turns: number, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null, path_segments?: number | null, arc_segments?: number | null): Solid;
+
+/**
+ * Create a solid by sweeping a profile along a line path.
+ *
+ * This is a standalone wrapper for lazy loading via wasmosis.
+ */
+export function op_sweep_line(profile_js: any, start: Float64Array, end: Float64Array, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null): Solid;
+
+/**
  * Parse compact IR text format into a vcad IR Document (JSON).
  *
  * The compact IR format is a token-efficient text representation designed
@@ -557,6 +659,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_physicssim_free: (a: number, b: number) => void;
     readonly __wbg_raytracer_free: (a: number, b: number) => void;
     readonly __wbg_solid_free: (a: number, b: number) => void;
     readonly __wbg_wasmannotationlayer_free: (a: number, b: number) => void;
@@ -568,44 +671,52 @@ export interface InitOutput {
     readonly importStepBuffer: (a: number, b: number) => [number, number, number];
     readonly initGpu: () => any;
     readonly isGpuAvailable: () => number;
+    readonly isPhysicsAvailable: () => number;
+    readonly op_chamfer: (a: number, b: number) => number;
+    readonly op_circular_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
+    readonly op_fillet: (a: number, b: number) => number;
+    readonly op_linear_pattern: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly op_loft: (a: any, b: number) => [number, number, number];
+    readonly op_revolve: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly op_shell: (a: number, b: number) => number;
+    readonly op_sweep_helix: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
+    readonly op_sweep_line: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
     readonly parseCompactIR: (a: number, b: number) => [number, number, number, number];
+    readonly physicssim_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly processGeometryGpu: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
     readonly projectMesh: (a: any, b: number, c: number) => any;
     readonly raytracer_canRaytrace: (a: number) => number;
     readonly raytracer_create: () => [number, number, number];
     readonly raytracer_getDebugMode: (a: number) => number;
+    readonly raytracer_getEdgeDetectionEnabled: (a: number) => number;
     readonly raytracer_getFrameIndex: (a: number) => number;
     readonly raytracer_hasScene: (a: number) => number;
     readonly raytracer_pick: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
     readonly raytracer_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => any;
     readonly raytracer_resetAccumulation: (a: number) => void;
     readonly raytracer_setDebugMode: (a: number, b: number) => void;
+    readonly raytracer_setEdgeDetection: (a: number, b: number, c: number, d: number) => void;
+    readonly raytracer_setMaterial: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly raytracer_uploadSolid: (a: number, b: number) => [number, number];
     readonly sectionMesh: (a: any, b: number, c: number, d: number, e: number) => any;
     readonly solid_boundingBox: (a: number) => [number, number];
     readonly solid_centerOfMass: (a: number) => [number, number];
-    readonly solid_chamfer: (a: number, b: number) => number;
-    readonly solid_circularPattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly solid_cone: (a: number, b: number, c: number, d: number) => number;
     readonly solid_cube: (a: number, b: number, c: number) => number;
     readonly solid_cylinder: (a: number, b: number, c: number) => number;
     readonly solid_difference: (a: number, b: number) => number;
     readonly solid_empty: () => number;
     readonly solid_extrude: (a: any, b: number, c: number) => [number, number, number];
-    readonly solid_fillet: (a: number, b: number) => number;
     readonly solid_getMesh: (a: number, b: number) => any;
     readonly solid_horizontalSection: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => any;
     readonly solid_intersection: (a: number, b: number) => number;
     readonly solid_isEmpty: (a: number) => number;
-    readonly solid_linearPattern: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly solid_loft: (a: any, b: number) => [number, number, number];
     readonly solid_numTriangles: (a: number) => number;
     readonly solid_projectView: (a: number, b: number, c: number, d: number) => any;
-    readonly solid_revolve: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly solid_rotate: (a: number, b: number, c: number, d: number) => number;
     readonly solid_scale: (a: number, b: number, c: number, d: number) => number;
     readonly solid_sectionView: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
-    readonly solid_shell: (a: number, b: number) => number;
     readonly solid_sphere: (a: number, b: number) => number;
     readonly solid_surfaceArea: (a: number) => number;
     readonly solid_sweepHelix: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
@@ -625,7 +736,13 @@ export interface InitOutput {
     readonly wasmannotationlayer_isEmpty: (a: number) => number;
     readonly wasmannotationlayer_new: () => number;
     readonly wasmannotationlayer_renderAll: (a: number, b: number, c: number) => any;
+    readonly solid_linearPattern: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly init: () => void;
+    readonly solid_revolve: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly solid_chamfer: (a: number, b: number) => number;
+    readonly solid_fillet: (a: number, b: number) => number;
+    readonly solid_shell: (a: number, b: number) => number;
+    readonly solid_circularPattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly wasm_bindgen__closure__destroy__ha8b73a36ae48e470: (a: number, b: number) => void;
     readonly wasm_bindgen__closure__destroy__h250d7189f9770b99: (a: number, b: number) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h60f25fed64173f82: (a: number, b: number, c: any, d: any) => void;

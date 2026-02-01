@@ -116,9 +116,11 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
   const raytraceQuality = useUiStore((s) => s.raytraceQuality);
   const raytraceDebugMode = useUiStore((s) => s.raytraceDebugMode);
   const raytraceAvailable = useUiStore((s) => s.raytraceAvailable);
+  const raytraceEdgesEnabled = useUiStore((s) => s.raytraceEdgesEnabled);
   const toggleRenderMode = useUiStore((s) => s.toggleRenderMode);
   const setRaytraceQuality = useUiStore((s) => s.setRaytraceQuality);
   const setRaytraceDebugMode = useUiStore((s) => s.setRaytraceDebugMode);
+  const setRaytraceEdgesEnabled = useUiStore((s) => s.setRaytraceEdgesEnabled);
 
   // Camera settings
   const controlSchemeId = useCameraSettingsStore((s) => s.controlSchemeId);
@@ -319,6 +321,16 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
                             </span>
                           </button>
                         ))}
+                        {/* Edge detection toggle */}
+                        <div className="my-1 border-t border-border" />
+                        <button
+                          onClick={() => setRaytraceEdgesEnabled(!raytraceEdgesEnabled)}
+                          className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-hover"
+                        >
+                          <span className={raytraceEdgesEnabled ? "text-accent" : ""}>
+                            Edges {raytraceEdgesEnabled ? "On" : "Off"}
+                          </span>
+                        </button>
                       </>
                     )}
                   </div>
