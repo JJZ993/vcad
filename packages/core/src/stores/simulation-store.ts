@@ -78,7 +78,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   stepCount: 0,
   jointStates: [],
   selectedJointId: null,
-  actionType: "position",
+  actionType: "torque",
   endEffectorIds: [],
   lastObservation: null,
 

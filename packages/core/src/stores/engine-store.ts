@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { EvaluatedScene, TriangleMesh, Engine } from "@vcad/engine";
+import type { Transform3D } from "@vcad/ir";
 
 export interface EngineState {
   engine: Engine | null;
@@ -15,6 +16,8 @@ export interface EngineState {
   setEngineReady: (ready: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  /** Update instance transforms directly (for physics, bypasses CSG re-eval) */
+  updateInstanceTransforms: (transforms: Map<string, Transform3D>) => void;
 }
 
 export const useEngineStore = create<EngineState>((set) => ({
@@ -31,4 +34,13 @@ export const useEngineStore = create<EngineState>((set) => ({
   setEngineReady: (ready) => set({ engineReady: ready }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error, loading: false }),
+  updateInstanceTransforms: (transforms) =>
+    set((state) => {
+      if (!state.scene?.instances) return state;
+      const instances = state.scene.instances.map((inst) => {
+        const transform = transforms.get(inst.instanceId);
+        return transform ? { ...inst, transform } : inst;
+      });
+      return { scene: { ...state.scene, instances } };
+    }),
 }));

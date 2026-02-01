@@ -26,6 +26,11 @@ import {
   CubeTransparent,
   DotsThree,
   ArrowsHorizontal,
+  Play,
+  Pause,
+  Stop,
+  FastForward,
+  Printer,
 } from "@phosphor-icons/react";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
@@ -33,6 +38,7 @@ import {
   useUiStore,
   useSketchStore,
   useEngineStore,
+  useSimulationStore,
 } from "@vcad/core";
 import type { PrimitiveKind, BooleanType } from "@vcad/core";
 import { downloadDxf } from "@/lib/save-load";
@@ -48,6 +54,7 @@ import {
 } from "@/components/dialogs";
 import { useOnboardingStore, type GuidedFlowStep } from "@/stores/onboarding-store";
 import { useDrawingStore, type ViewDirection } from "@/stores/drawing-store";
+import { useSlicerStore } from "@/stores/slicer-store";
 
 const VIEW_DIRECTIONS: { value: ViewDirection; label: string }[] = [
   { value: "front", label: "Front" },
@@ -167,6 +174,16 @@ export function BottomToolbar() {
   const engine = useEngineStore((s) => s.engine);
   const scene = useEngineStore((s) => s.scene);
 
+  // Simulation state
+  const simMode = useSimulationStore((s) => s.mode);
+  const physicsAvailable = useSimulationStore((s) => s.physicsAvailable);
+  const playbackSpeed = useSimulationStore((s) => s.playbackSpeed);
+  const playSim = useSimulationStore((s) => s.play);
+  const pauseSim = useSimulationStore((s) => s.pause);
+  const stopSim = useSimulationStore((s) => s.stop);
+  const stepSim = useSimulationStore((s) => s.step);
+  const setPlaybackSpeed = useSimulationStore((s) => s.setPlaybackSpeed);
+
   // Guided flow state
   const guidedFlowActive = useOnboardingStore((s) => s.guidedFlowActive);
   const guidedFlowStep = useOnboardingStore((s) => s.guidedFlowStep);
@@ -197,6 +214,7 @@ export function BottomToolbar() {
   const hasPartDefs = document.partDefs && Object.keys(document.partDefs).length > 0;
   const hasInstances = document.instances && document.instances.length > 0;
   const isAssemblyMode = hasPartDefs || hasInstances;
+  const hasJoints = document.joints && document.joints.length > 0;
 
   // Check if we have one part selected (for create part def)
   const hasOnePartSelected = selectedPartIds.size === 1 &&
@@ -376,7 +394,7 @@ export function BottomToolbar() {
         {BOOLEANS.map(({ type, icon: Icon, label, shortcut }) => (
           <ToolbarButton
             key={type}
-            tooltip={`${label} (${shortcut})`}
+            tooltip={!hasTwoSelected ? `${label} (select 2 parts)` : `${label} (${shortcut})`}
             disabled={!hasTwoSelected}
             onClick={() => handleBoolean(type)}
             pulse={type === "difference" && shouldPulse("subtract")}
@@ -414,39 +432,88 @@ export function BottomToolbar() {
           </>
         )}
 
+        {/* Simulation controls (when in assembly mode with joints) */}
+        {isAssemblyMode && hasJoints && (
+          <>
+            <Divider />
+            <ToolbarButton
+              tooltip={simMode === "running" ? "Pause Simulation" : "Play Simulation"}
+              active={simMode === "running"}
+              disabled={!physicsAvailable || sketchActive}
+              onClick={() => {
+                if (simMode === "running") {
+                  pauseSim();
+                } else {
+                  playSim();
+                }
+              }}
+            >
+              {simMode === "running" ? <Pause size={20} /> : <Play size={20} />}
+            </ToolbarButton>
+            <ToolbarButton
+              tooltip="Stop Simulation"
+              disabled={simMode === "off" || sketchActive}
+              onClick={stopSim}
+            >
+              <Stop size={20} />
+            </ToolbarButton>
+            <ToolbarButton
+              tooltip="Step Simulation"
+              disabled={simMode === "running" || !physicsAvailable || sketchActive}
+              onClick={stepSim}
+            >
+              <FastForward size={20} />
+            </ToolbarButton>
+            {/* Playback speed slider */}
+            <div className="flex items-center gap-1 px-2">
+              <span className="text-xs text-text-muted">{playbackSpeed.toFixed(1)}x</span>
+              <input
+                type="range"
+                min="0.1"
+                max="2"
+                step="0.1"
+                value={playbackSpeed}
+                onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
+                className="w-16 h-1 accent-accent"
+                title="Playback Speed"
+              />
+            </div>
+          </>
+        )}
+
         <Divider />
 
         {/* Modify operations */}
         <ToolbarButton
-          tooltip="Fillet"
+          tooltip={!hasOnePartSelected ? "Fillet (select a part)" : "Fillet"}
           disabled={!hasOnePartSelected || sketchActive}
           onClick={() => setFilletDialogOpen(true)}
         >
           <Circle size={20} />
         </ToolbarButton>
         <ToolbarButton
-          tooltip="Chamfer"
+          tooltip={!hasOnePartSelected ? "Chamfer (select a part)" : "Chamfer"}
           disabled={!hasOnePartSelected || sketchActive}
           onClick={() => setChamferDialogOpen(true)}
         >
           <Octagon size={20} />
         </ToolbarButton>
         <ToolbarButton
-          tooltip="Shell"
+          tooltip={!hasOnePartSelected ? "Shell (select a part)" : "Shell"}
           disabled={!hasOnePartSelected || sketchActive}
           onClick={() => setShellDialogOpen(true)}
         >
           <CubeTransparent size={20} />
         </ToolbarButton>
         <ToolbarButton
-          tooltip="Pattern"
+          tooltip={!hasOnePartSelected ? "Pattern (select a part)" : "Pattern"}
           disabled={!hasOnePartSelected || sketchActive}
           onClick={() => setPatternDialogOpen(true)}
         >
           <DotsThree size={20} />
         </ToolbarButton>
         <ToolbarButton
-          tooltip="Mirror"
+          tooltip={!hasOnePartSelected ? "Mirror (select a part)" : "Mirror"}
           disabled={!hasOnePartSelected || sketchActive}
           onClick={() => setMirrorDialogOpen(true)}
         >
@@ -457,7 +524,7 @@ export function BottomToolbar() {
 
         {/* Transform mode */}
         <ToolbarButton
-          tooltip="Move (M)"
+          tooltip={!hasSelection ? "Move (select a part)" : "Move (M)"}
           active={hasSelection && transformMode === "translate"}
           disabled={!hasSelection || viewMode === "2d"}
           onClick={() => setTransformMode("translate")}
@@ -465,7 +532,7 @@ export function BottomToolbar() {
           <ArrowsOutCardinal size={20} />
         </ToolbarButton>
         <ToolbarButton
-          tooltip="Rotate (R)"
+          tooltip={!hasSelection ? "Rotate (select a part)" : "Rotate (R)"}
           active={hasSelection && transformMode === "rotate"}
           disabled={!hasSelection || viewMode === "2d"}
           onClick={() => setTransformMode("rotate")}
@@ -473,7 +540,7 @@ export function BottomToolbar() {
           <ArrowsClockwise size={20} />
         </ToolbarButton>
         <ToolbarButton
-          tooltip="Scale (S)"
+          tooltip={!hasSelection ? "Scale (select a part)" : "Scale (S)"}
           active={hasSelection && transformMode === "scale"}
           disabled={!hasSelection || viewMode === "2d"}
           onClick={() => setTransformMode("scale")}
@@ -587,6 +654,19 @@ export function BottomToolbar() {
             </ToolbarButton>
           </>
         )}
+
+        <Divider />
+
+        {/* Print button */}
+        <ToolbarButton
+          tooltip="Print (3D Print Settings)"
+          disabled={!scene?.parts?.length || sketchActive}
+          onClick={() => {
+            useSlicerStore.getState().openPrintPanel();
+          }}
+        >
+          <Printer size={20} />
+        </ToolbarButton>
 
       </div>
     </div>

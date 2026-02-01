@@ -102,12 +102,16 @@ export function useEngine() {
         return;
       }
 
+      // Check mode BEFORE scheduling RAF - if physics is active, skip entirely
+      const simModeNow = useSimulationStore.getState().mode;
+      if (simModeNow !== "off") {
+        return;
+      }
+
       // Debounce to next animation frame
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
-        // Skip re-evaluation when physics is active (any mode except "off")
-        // During physics, only transforms change - geometry stays the same.
-        // This prevents FK transforms from being overwritten by fresh CSG evaluation.
+        // Double-check mode inside RAF (mode might have changed since scheduling)
         const simMode = useSimulationStore.getState().mode;
         if (simMode !== "off") {
           return;

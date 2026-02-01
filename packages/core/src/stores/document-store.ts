@@ -1954,6 +1954,10 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     const idx = state.document.joints.findIndex((j) => j.id === jointId);
     if (idx === -1) return;
 
+    // Early return if value unchanged (avoids creating new document reference)
+    const currentJoint = state.document.joints[idx]!;
+    if (currentJoint.state === newState) return;
+
     const undoState = skipUndo ? {} : pushUndo(state, "Adjust Joint");
     const newDoc = structuredClone(state.document);
     const joint = newDoc.joints![idx]!;
