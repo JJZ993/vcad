@@ -1866,6 +1866,193 @@ pub fn evaluate_compact_ir(compact_ir: &str) -> Result<Solid, JsError> {
     evaluate_node(&doc, root_id)
 }
 
+// =========================================================================
+// Physics Simulation (Rapier-based gym environment)
+// =========================================================================
+
+/// Physics simulation environment for robotics and RL.
+///
+/// This provides a gym-style interface for simulating robot assemblies
+/// with physics, joints, and collision detection.
+#[cfg(feature = "physics")]
+#[wasm_bindgen]
+pub struct PhysicsSim {
+    env: vcad_kernel_physics::RobotEnv,
+}
+
+#[cfg(feature = "physics")]
+#[wasm_bindgen]
+impl PhysicsSim {
+    /// Create a new physics simulation from a vcad document JSON.
+    ///
+    /// # Arguments
+    /// * `doc_json` - JSON string representing a vcad IR Document
+    /// * `end_effector_ids` - Array of instance IDs to track as end effectors
+    /// * `dt` - Simulation timestep in seconds (default: 1/240)
+    /// * `substeps` - Number of physics substeps per step (default: 4)
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        doc_json: &str,
+        end_effector_ids: Vec<String>,
+        dt: Option<f32>,
+        substeps: Option<u32>,
+    ) -> Result<PhysicsSim, JsError> {
+        let doc = vcad_ir::Document::from_json(doc_json)
+            .map_err(|e| JsError::new(&format!("Invalid document JSON: {}", e)))?;
+
+        let env = vcad_kernel_physics::RobotEnv::new(doc, end_effector_ids, dt, substeps)
+            .map_err(|e| JsError::new(&format!("Failed to create physics env: {}", e)))?;
+
+        web_sys::console::log_1(&format!(
+            "[WASM] PhysicsSim created with {} joints",
+            env.num_joints()
+        ).into());
+
+        Ok(PhysicsSim { env })
+    }
+
+    /// Reset the environment to initial state.
+    ///
+    /// Returns the initial observation as JSON.
+    #[wasm_bindgen(js_name = reset)]
+    pub fn reset(&mut self) -> JsValue {
+        let obs = self.env.reset();
+        serde_wasm_bindgen::to_value(&obs).unwrap_or(JsValue::NULL)
+    }
+
+    /// Step the simulation with a torque action.
+    ///
+    /// # Arguments
+    /// * `torques` - Array of torques/forces for each joint (Nm or N)
+    ///
+    /// # Returns
+    /// Object with { observation, reward, done }
+    #[wasm_bindgen(js_name = stepTorque)]
+    pub fn step_torque(&mut self, torques: Vec<f64>) -> JsValue {
+        let action = vcad_kernel_physics::Action::Torque(torques);
+        let (obs, reward, done) = self.env.step(action);
+
+        let result = serde_json::json!({
+            "observation": obs,
+            "reward": reward,
+            "done": done
+        });
+
+        serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    }
+
+    /// Step the simulation with position targets.
+    ///
+    /// # Arguments
+    /// * `targets` - Array of position targets for each joint (degrees or mm)
+    ///
+    /// # Returns
+    /// Object with { observation, reward, done }
+    #[wasm_bindgen(js_name = stepPosition)]
+    pub fn step_position(&mut self, targets: Vec<f64>) -> JsValue {
+        let action = vcad_kernel_physics::Action::PositionTarget(targets);
+        let (obs, reward, done) = self.env.step(action);
+
+        let result = serde_json::json!({
+            "observation": obs,
+            "reward": reward,
+            "done": done
+        });
+
+        serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    }
+
+    /// Step the simulation with velocity targets.
+    ///
+    /// # Arguments
+    /// * `targets` - Array of velocity targets for each joint (deg/s or mm/s)
+    ///
+    /// # Returns
+    /// Object with { observation, reward, done }
+    #[wasm_bindgen(js_name = stepVelocity)]
+    pub fn step_velocity(&mut self, targets: Vec<f64>) -> JsValue {
+        let action = vcad_kernel_physics::Action::VelocityTarget(targets);
+        let (obs, reward, done) = self.env.step(action);
+
+        let result = serde_json::json!({
+            "observation": obs,
+            "reward": reward,
+            "done": done
+        });
+
+        serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    }
+
+    /// Get current observation without stepping.
+    ///
+    /// Returns observation as JSON.
+    #[wasm_bindgen(js_name = observe)]
+    pub fn observe(&self) -> JsValue {
+        let obs = self.env.observe();
+        serde_wasm_bindgen::to_value(&obs).unwrap_or(JsValue::NULL)
+    }
+
+    /// Get the number of joints in the environment.
+    #[wasm_bindgen(js_name = numJoints)]
+    pub fn num_joints(&self) -> usize {
+        self.env.num_joints()
+    }
+
+    /// Get the observation dimension.
+    #[wasm_bindgen(js_name = observationDim)]
+    pub fn observation_dim(&self) -> usize {
+        self.env.observation_dim()
+    }
+
+    /// Get the action dimension.
+    #[wasm_bindgen(js_name = actionDim)]
+    pub fn action_dim(&self) -> usize {
+        self.env.action_dim()
+    }
+
+    /// Set the maximum episode length.
+    #[wasm_bindgen(js_name = setMaxSteps)]
+    pub fn set_max_steps(&mut self, max_steps: u32) {
+        self.env.set_max_steps(max_steps);
+    }
+
+    /// Set the random seed.
+    #[wasm_bindgen(js_name = setSeed)]
+    pub fn set_seed(&mut self, seed: u64) {
+        self.env.seed(seed);
+    }
+}
+
+/// Stub PhysicsSim when physics feature is not enabled.
+#[cfg(not(feature = "physics"))]
+#[wasm_bindgen]
+pub struct PhysicsSim;
+
+#[cfg(not(feature = "physics"))]
+#[wasm_bindgen]
+impl PhysicsSim {
+    /// Returns an error when physics feature is not enabled.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        _doc_json: &str,
+        _end_effector_ids: Vec<String>,
+        _dt: Option<f32>,
+        _substeps: Option<u32>,
+    ) -> Result<PhysicsSim, JsError> {
+        Err(JsError::new("Physics feature not enabled. Compile with --features physics"))
+    }
+}
+
+/// Check if physics simulation is available.
+#[wasm_bindgen(js_name = isPhysicsAvailable)]
+pub fn is_physics_available() -> bool {
+    cfg!(feature = "physics")
+}
+
+// =========================================================================
+// Internal evaluation helpers
+// =========================================================================
+
 /// Recursively evaluate a node in the IR DAG.
 fn evaluate_node(doc: &vcad_ir::Document, node_id: vcad_ir::NodeId) -> Result<Solid, JsError> {
     let node = doc.nodes.get(&node_id)

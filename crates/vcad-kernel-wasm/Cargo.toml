@@ -27,6 +27,7 @@ default = ["console_error_panic_hook"]
 console_error_panic_hook = ["dep:console_error_panic_hook"]
 gpu = ["dep:vcad-kernel-gpu"]
 raytrace = ["dep:vcad-kernel-raytrace", "dep:vcad-kernel-topo", "dep:vcad-kernel-geom", "dep:vcad-kernel-math", "dep:wgpu", "gpu", "vcad-kernel-raytrace/gpu"]
+physics = ["dep:vcad-kernel-physics"]
 
 [dependencies.console_error_panic_hook]
 version = "0.1"
@@ -54,4 +55,8 @@ optional = true
 
 [dependencies.wgpu]
 version = "23"
+optional = true
+
+[dependencies.vcad-kernel-physics]
+path = "../vcad-kernel-physics"
 optional = true

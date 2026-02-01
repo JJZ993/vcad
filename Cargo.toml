@@ -22,6 +22,8 @@ members = [
     "crates/vcad-cli",
     "crates/vcad-kernel-gpu",
     "crates/vcad-kernel-raytrace",
+    "crates/vcad-kernel-urdf",
+    "crates/vcad-kernel-physics",
 ]
 
 [workspace.package]
@@ -59,3 +61,5 @@ vcad-kernel-constraints = { path = "crates/vcad-kernel-constraints" }
 vcad-kernel-drafting = { path = "crates/vcad-kernel-drafting" }
 vcad-kernel-gpu = { path = "crates/vcad-kernel-gpu" }
 vcad-kernel-raytrace = { path = "crates/vcad-kernel-raytrace" }
+vcad-kernel-urdf = { path = "crates/vcad-kernel-urdf" }
+vcad-kernel-physics = { path = "crates/vcad-kernel-physics" }

@@ -14,6 +14,7 @@ path = "src/main.rs"
 vcad = { path = "../vcad" }
 vcad-ir = { path = "../vcad-ir" }
 vcad-kernel = { path = "../vcad-kernel" }
+vcad-kernel-urdf = { path = "../vcad-kernel-urdf" }
 
 # TUI
 ratatui = "0.29"

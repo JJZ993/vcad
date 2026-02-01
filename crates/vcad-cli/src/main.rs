@@ -30,7 +30,7 @@ enum Commands {
     Export {
         /// Input .vcad file
         input: PathBuf,
-        /// Output file (format determined by extension: .stl, .glb, .step, .stp)
+        /// Output file (format determined by extension: .stl, .glb, .step, .stp, .urdf)
         output: PathBuf,
     },
     /// Import a STEP file to .vcad format
@@ -42,6 +42,13 @@ enum Commands {
         /// Name for the imported part (default: derived from filename)
         #[arg(short, long)]
         name: Option<String>,
+    },
+    /// Import a URDF robot description file to .vcad format
+    ImportUrdf {
+        /// Input URDF file (.urdf or .xml)
+        input: PathBuf,
+        /// Output .vcad file
+        output: PathBuf,
     },
     /// Display information about a .vcad file
     Info {
@@ -66,6 +73,9 @@ fn main() -> Result<()> {
             name,
         }) => {
             import_step(&input, &output, name)?;
+        }
+        Some(Commands::ImportUrdf { input, output }) => {
+            import_urdf(&input, &output)?;
         }
         Some(Commands::Info { file }) => {
             show_info(&file)?;
@@ -110,6 +120,9 @@ fn export_file(input: &PathBuf, output: &PathBuf) -> Result<()> {
         }
         "step" | "stp" => {
             export_step(&doc, output)?;
+        }
+        "urdf" => {
+            export_urdf(&doc, output)?;
         }
         _ => {
             anyhow::bail!("Unknown output format: {}", ext);
@@ -329,5 +342,43 @@ fn show_info(file: &PathBuf) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn import_urdf(input: &PathBuf, output: &PathBuf) -> Result<()> {
+    use std::fs;
+
+    // Import the URDF file
+    let doc = vcad_kernel_urdf::read_urdf(input)?;
+
+    // Write the document
+    let json = doc.to_json()?;
+    fs::write(output, json)?;
+
+    // Count parts and joints
+    let num_parts = doc.part_defs.as_ref().map(|p| p.len()).unwrap_or(0);
+    let num_joints = doc.joints.as_ref().map(|j| j.len()).unwrap_or(0);
+
+    println!(
+        "Imported URDF {} parts, {} joints from {} to {}",
+        num_parts,
+        num_joints,
+        input.display(),
+        output.display()
+    );
+    Ok(())
+}
+
+fn export_urdf(doc: &vcad_ir::Document, output: &PathBuf) -> Result<()> {
+    vcad_kernel_urdf::write_urdf(doc, output)?;
+
+    // Count parts and joints
+    let num_parts = doc.part_defs.as_ref().map(|p| p.len()).unwrap_or(doc.roots.len());
+    let num_joints = doc.joints.as_ref().map(|j| j.len()).unwrap_or(0);
+
+    println!(
+        "Exported URDF with {} links, {} joints to {}",
+        num_parts, num_joints, output.display()
+    );
     Ok(())
 }
