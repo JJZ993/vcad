@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Sun,
   Moon,
@@ -92,7 +92,19 @@ function ViewButton({
 
 
 function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
+  const [open, setOpen] = useState(false);
   const [showAllExamples, setShowAllExamples] = useState(false);
+
+  // Close on Escape
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && open) {
+        setOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   const showWireframe = useUiStore((s) => s.showWireframe);
   const toggleWireframe = useUiStore((s) => s.toggleWireframe);
@@ -131,7 +143,7 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
   }
 
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
           className={cn(

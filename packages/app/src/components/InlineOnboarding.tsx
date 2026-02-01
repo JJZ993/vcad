@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { X, Plus, FolderOpen } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,18 @@ export function InlineOnboarding({ visible }: InlineOnboardingProps) {
   const incrementProjectsCreated = useOnboardingStore(
     (s) => s.incrementProjectsCreated
   );
+
+  // Close on Escape
+  const show = visible && !dismissed;
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && show) {
+        handleDismiss();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [show]);
 
   function handleDismiss() {
     if (dontShowAgain) {
@@ -75,8 +87,6 @@ export function InlineOnboarding({ visible }: InlineOnboardingProps) {
   function handleOpenExample(example: Example) {
     loadDocument(example.file);
   }
-
-  const show = visible && !dismissed;
 
   return (
     <div
