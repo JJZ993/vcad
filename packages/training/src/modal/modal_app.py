@@ -27,10 +27,23 @@ app = modal.App("cad0-training")
 volume = modal.Volume.from_name("vcad-training-vol", create_if_missing=True)
 
 # Container image with all dependencies
+# Use CUDA image for flash-attn compilation
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.from_registry(
+        "nvidia/cuda:12.4.0-devel-ubuntu22.04",
+        add_python="3.11",
+    )
+    .apt_install("git")
+    .pip_install(
+        "packaging",
+        "ninja",
+        "wheel",
+    )
     .pip_install(
         "torch==2.5.1",
+        extra_options="--extra-index-url https://download.pytorch.org/whl/cu124",
+    )
+    .pip_install(
         "transformers==4.47.0",
         "peft==0.14.0",
         "trl==0.13.0",
@@ -38,18 +51,22 @@ image = (
         "bitsandbytes==0.45.0",
         "accelerate==1.2.1",
         "wandb==0.19.1",
-        "flash-attn==2.7.2.post1",
-        extra_options="--extra-index-url https://download.pytorch.org/whl/cu124",
+        "hf_transfer",
+    )
+    .pip_install(
+        "flash-attn",
+        extra_options="--no-build-isolation",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .add_local_dir(".", "/root", copy=True)
 )
 
 
 @app.function(
     image=image,
-    gpu=modal.gpu.A100(size="80GB"),
+    gpu="A100-80GB",
     volumes={"/data": volume},
-    secrets=[
+        secrets=[
         modal.Secret.from_name("huggingface-secret"),
         modal.Secret.from_name("wandb-secret"),
     ],
@@ -119,9 +136,9 @@ def train(
 
 @app.function(
     image=image,
-    gpu=modal.gpu.A100(size="80GB"),
+    gpu="A100-80GB",
     volumes={"/data": volume},
-    secrets=[modal.Secret.from_name("huggingface-secret")],
+        secrets=[modal.Secret.from_name("huggingface-secret")],
     timeout=60 * 60,  # 1 hour
 )
 def evaluate(
@@ -183,9 +200,9 @@ def evaluate(
 
 @app.function(
     image=image,
-    gpu=modal.gpu.A100(size="80GB"),
+    gpu="A100-80GB",
     volumes={"/data": volume},
-    secrets=[modal.Secret.from_name("huggingface-secret")],
+        secrets=[modal.Secret.from_name("huggingface-secret")],
     timeout=60 * 10,  # 10 minutes
 )
 def generate(

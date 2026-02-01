@@ -18,8 +18,8 @@ from transformers import (
 )
 from trl import SFTTrainer
 
-from .config import Config, ModelConfig, TrainingConfig, DataConfig
-from .data import (
+from config import Config, ModelConfig, TrainingConfig, DataConfig
+from data import (
     load_dataset,
     create_formatting_function,
     create_data_collator,
@@ -201,17 +201,21 @@ def train_model(config: Config) -> str:
     formatting_func = create_formatting_function(config.data.prompt_template)
     data_collator = create_data_collator(tokenizer, config.data.response_template)
 
-    # Create trainer
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-        args=training_args,
-        formatting_func=formatting_func,
-        data_collator=data_collator,
+    # Create trainer (TRL 0.13+ uses SFTConfig for max_seq_length and packing)
+    from trl import SFTConfig
+    sft_config = SFTConfig(
+        **training_args.to_dict(),
         max_seq_length=config.training.max_seq_length,
         packing=config.training.packing,
+    )
+    trainer = SFTTrainer(
+        model=model,
+        processing_class=tokenizer,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        args=sft_config,
+        formatting_func=formatting_func,
+        data_collator=data_collator,
     )
 
     # Train
