@@ -122,7 +122,10 @@ export function useEngine() {
         // Check must be inside RAF so it runs after setScene() has been called
         if (state.document.roots.length === 0) {
           const currentScene = useEngineStore.getState().scene;
-          if (currentScene && currentScene.parts.length > 0) {
+          // Only preserve if document was already empty (STL/STEP import case)
+          // NOT if user just deleted all features (transition from non-empty → empty)
+          const wasAlreadyEmpty = prevState?.document.roots.length === 0;
+          if (currentScene && currentScene.parts.length > 0 && wasAlreadyEmpty) {
             return;
           }
         }
