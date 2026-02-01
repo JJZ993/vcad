@@ -313,11 +313,14 @@ def main(
         run_name: W&B run name
     """
     if action == "train":
-        result = train.remote(
+        # Use spawn() for detached execution - training continues even if client disconnects
+        fc = train.spawn(
             max_samples=max_samples,
             run_name=run_name,
         )
-        print(f"Training complete. Model saved to: {result}")
+        print(f"Training started! Function call ID: {fc.object_id}")
+        print("Training will continue in the cloud even if you disconnect.")
+        print("Check progress at: https://modal.com/apps/ecto/main/deployed/cad0-training")
 
     elif action == "evaluate":
         result = evaluate.remote(max_samples=max_samples)
