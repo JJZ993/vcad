@@ -112,37 +112,34 @@ export function RayTracedViewportSync() {
  * This component renders an HTML canvas that overlays the Three.js scene,
  * providing pixel-perfect silhouettes for CAD geometry.
  *
- * Supports progressive anti-aliasing: when camera stops, continues rendering
- * to accumulate samples for smoother edges.
- *
  * Must be placed OUTSIDE the R3F Canvas (as a sibling).
  */
+// Map debug mode names to shader mode numbers
+const DEBUG_MODE_MAP: Record<string, number> = {
+  "off": 0,
+  "normals": 1,
+  "face-id": 2,
+  "lighting": 3,
+  "orientation": 4,
+};
+
 export function RayTracedViewportOverlay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const raytraceQuality = useUiStore((s) => s.raytraceQuality);
+  const raytraceDebugMode = useUiStore((s) => s.raytraceDebugMode);
   const rayTracer = getRayTracer();
+
+  // Track last debug mode to detect changes
+  const lastDebugModeRef = useRef<string>("off");
 
   // Track pending async render to avoid overlapping calls
   const renderInProgressRef = useRef(false);
-  const needsRenderRef = useRef(true);
+  const needsRenderRef = useRef(false);
   const lastCameraStateRef = useRef<CameraState | null>(null);
-
-  // Progressive rendering state
-  const progressiveTimerRef = useRef<number | null>(null);
-  const maxSamples = raytraceQuality === "draft" ? 16 : raytraceQuality === "high" ? 256 : 64;
-
-  // Camera settling detection - only start progressive refinement when camera is still
-  const cameraHistoryRef = useRef<Array<[number, number, number]>>([]);
-  const cameraSettledRef = useRef(false);
-  const SETTLE_THRESHOLD = 0.01; // 1cm movement threshold
-  const SETTLE_FRAMES = 3; // Must be still for 3 frames before progressive starts
 
   // Quality multiplier for render resolution
   const qualityScale =
     raytraceQuality === "draft" ? 0.5 : raytraceQuality === "high" ? 2 : 1;
-
-  // Track frame count for sparse logging
-  const frameCountRef = useRef(0);
 
   // Helper to draw pixels to canvas
   const drawPixels = useCallback(
@@ -179,84 +176,9 @@ export function RayTracedViewportOverlay() {
     [qualityScale]
   );
 
-  // Check if camera has settled (not moving for SETTLE_FRAMES)
-  const checkCameraSettled = useCallback((state: CameraState): boolean => {
-    const pos = state.position;
-    const history = cameraHistoryRef.current;
-
-    // Add current position to history
-    history.push([pos[0], pos[1], pos[2]]);
-
-    // Keep only last SETTLE_FRAMES + 1 positions
-    while (history.length > SETTLE_FRAMES + 1) {
-      history.shift();
-    }
-
-    // Need enough history to determine if settled
-    if (history.length < SETTLE_FRAMES + 1) {
-      return false;
-    }
-
-    // Check if all positions in history are within threshold
-    const first = history[0]!;
-    for (let i = 1; i < history.length; i++) {
-      const p = history[i]!;
-      const dx = Math.abs(p[0] - first[0]);
-      const dy = Math.abs(p[1] - first[1]);
-      const dz = Math.abs(p[2] - first[2]);
-      if (dx > SETTLE_THRESHOLD || dy > SETTLE_THRESHOLD || dz > SETTLE_THRESHOLD) {
-        return false;
-      }
-    }
-
-    return true;
-  }, []);
-
-  // Schedule progressive refinement renders
-  const scheduleProgressiveRender = useCallback(
-    (state: CameraState) => {
-      // Cancel any pending progressive render
-      if (progressiveTimerRef.current !== null) {
-        cancelAnimationFrame(progressiveTimerRef.current);
-        progressiveTimerRef.current = null;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const currentFrame = (rayTracer?.getFrameIndex?.() as number) ?? 0;
-      if (currentFrame >= maxSamples) {
-        return; // Already converged
-      }
-
-      // Only continue progressive refinement if camera has settled
-      const settled = checkCameraSettled(state);
-      if (!settled && !cameraSettledRef.current) {
-        // Camera still moving - schedule another check after a short delay
-        progressiveTimerRef.current = requestAnimationFrame(() => {
-          progressiveTimerRef.current = null;
-          if (lastCameraStateRef.current) {
-            scheduleProgressiveRender(lastCameraStateRef.current);
-          }
-        });
-        return;
-      }
-
-      cameraSettledRef.current = settled;
-
-      // Schedule next frame after a short delay (16ms = ~60fps)
-      progressiveTimerRef.current = requestAnimationFrame(() => {
-        progressiveTimerRef.current = null;
-        if (lastCameraStateRef.current) {
-          doRenderInternal(lastCameraStateRef.current, true);
-        }
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rayTracer, maxSamples, checkCameraSettled]
-  );
-
   // Internal render function
   const doRenderInternal = useCallback(
-    (state: CameraState, isProgressive: boolean) => {
+    (state: CameraState) => {
       if (!rayTracer || !canvasRef.current || renderInProgressRef.current) return;
 
       const canvas = canvasRef.current;
@@ -268,8 +190,6 @@ export function RayTracedViewportOverlay() {
         canvas.width = state.width;
         canvas.height = state.height;
       }
-
-      frameCountRef.current++;
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       const currentFrame = (rayTracer?.getFrameIndex?.() as number) ?? 0;
@@ -323,24 +243,14 @@ export function RayTracedViewportOverlay() {
             const drawCtx = drawCanvas.getContext("2d");
             if (drawCtx) {
               drawPixels(drawCtx, pixels, w, h, cw, ch);
-
-              // Log stats occasionally
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-              const currentFrame = (rayTracer?.getFrameIndex?.() as number) ?? 0;
-              if (currentFrame === 1 || currentFrame % 32 === 0) {
-                logger.debug("gpu", `Progressive sample: ${currentFrame} / ${maxSamples}`);
-              }
             }
           }
           renderInProgressRef.current = false;
 
-          // If camera moved while rendering, render again (resets accumulation)
+          // If camera moved while rendering, render again
           if (needsRenderRef.current && lastCameraStateRef.current) {
             needsRenderRef.current = false;
-            doRenderInternal(lastCameraStateRef.current, false);
-          } else if (isProgressive && lastCameraStateRef.current) {
-            // Continue progressive refinement
-            scheduleProgressiveRender(lastCameraStateRef.current);
+            doRenderInternal(lastCameraStateRef.current);
           }
         })
         .catch((e: Error) => {
@@ -348,21 +258,13 @@ export function RayTracedViewportOverlay() {
           renderInProgressRef.current = false;
         });
     },
-    [rayTracer, qualityScale, drawPixels, maxSamples, scheduleProgressiveRender]
+    [rayTracer, qualityScale, drawPixels]
   );
 
-  // Public render function that starts fresh
+  // Public render function
   const doRender = useCallback(
     (state: CameraState) => {
-      // Cancel any pending progressive render
-      if (progressiveTimerRef.current !== null) {
-        cancelAnimationFrame(progressiveTimerRef.current);
-        progressiveTimerRef.current = null;
-      }
-      // Reset settling state when new camera position arrives
-      cameraSettledRef.current = false;
-      cameraHistoryRef.current = [];
-      doRenderInternal(state, true);
+      doRenderInternal(state);
     },
     [doRenderInternal]
   );
@@ -380,11 +282,6 @@ export function RayTracedViewportOverlay() {
 
     return () => {
       setCameraStateCallback(null);
-      // Clean up progressive timer
-      if (progressiveTimerRef.current !== null) {
-        cancelAnimationFrame(progressiveTimerRef.current);
-        progressiveTimerRef.current = null;
-      }
     };
   }, [doRender]);
 
@@ -394,6 +291,44 @@ export function RayTracedViewportOverlay() {
       doRender(lastCameraStateRef.current);
     }
   }, [raytraceQuality, doRender]);
+
+  // Apply debug mode changes to raytracer
+  useEffect(() => {
+    console.log(`[DEBUG] Debug mode effect running: mode=${raytraceDebugMode}, lastMode=${lastDebugModeRef.current}, hasRayTracer=${!!rayTracer}`);
+
+    if (!rayTracer) {
+      console.log("[DEBUG] No rayTracer available");
+      return;
+    }
+    if (raytraceDebugMode === lastDebugModeRef.current) {
+      console.log("[DEBUG] Debug mode unchanged, skipping");
+      return;
+    }
+
+    lastDebugModeRef.current = raytraceDebugMode;
+    const modeNumber = DEBUG_MODE_MAP[raytraceDebugMode] ?? 0;
+
+    console.log(`[DEBUG] Setting debug mode: ${raytraceDebugMode} -> ${modeNumber}`);
+
+    // Check if method exists
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    const hasMethod = typeof (rayTracer as any).setDebugMode === "function";
+    console.log(`[DEBUG] setDebugMode method exists: ${hasMethod}`);
+
+    if (!hasMethod) {
+      console.log("[DEBUG] WARNING: setDebugMode not available - WASM may need rebuild");
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    (rayTracer as any).setDebugMode(modeNumber);
+    console.log(`[DEBUG] Called setDebugMode(${modeNumber})`);
+
+    // Re-render to see the change
+    if (lastCameraStateRef.current) {
+      doRender(lastCameraStateRef.current);
+    }
+  }, [raytraceDebugMode, rayTracer, doRender]);
 
   if (!rayTracer) {
     return null;
