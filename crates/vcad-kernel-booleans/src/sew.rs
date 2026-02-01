@@ -112,12 +112,16 @@ fn copy_faces(
     target_topo: &mut Topology,
     target_geom: &mut GeometryStore,
 ) -> HashMap<FaceId, FaceId> {
+    use vcad_kernel_topo::HalfEdgeId;
+
     let mut face_map = HashMap::new();
     // Map from source VertexId position hash → target VertexId
     // We use positions since VertexIds from different topologies aren't comparable
     let mut vertex_map: HashMap<VertexPosKey, vcad_kernel_topo::VertexId> = HashMap::new();
     // Map from source surface index → target surface index
     let mut surface_map: HashMap<usize, usize> = HashMap::new();
+    // Map from source HalfEdgeId → target HalfEdgeId (to preserve twin relationships)
+    let mut he_map: HashMap<HalfEdgeId, HalfEdgeId> = HashMap::new();
 
     for &src_face_id in face_ids {
         let src_face = &source.topology.faces[src_face_id];
@@ -138,12 +142,13 @@ fn copy_faces(
         //
         // This was a bug that caused boolean difference to produce wrong results:
         // hole walls pointed outward instead of inward, adding volume instead of subtracting.
-        let tgt_outer_loop = copy_loop(
+        let tgt_outer_loop = copy_loop_with_he_map(
             source,
             src_face.outer_loop,
             false, // NEVER reverse loop - orientation flip handles normal reversal
             target_topo,
             &mut vertex_map,
+            &mut he_map,
         );
 
         // Determine orientation
@@ -160,12 +165,13 @@ fn copy_faces(
 
         // Copy inner loops
         for &inner_loop in &src_face.inner_loops {
-            let tgt_inner = copy_loop(
+            let tgt_inner = copy_loop_with_he_map(
                 source,
                 inner_loop,
                 false, // Never reverse loop for orientation flip
                 target_topo,
                 &mut vertex_map,
+                &mut he_map,
             );
             target_topo.add_inner_loop(tgt_face, tgt_inner);
         }
@@ -173,18 +179,39 @@ fn copy_faces(
         face_map.insert(src_face_id, tgt_face);
     }
 
+    // Now link twins for half-edges that were twins in the source
+    // This preserves topology for edges that are fully within the copied faces
+    for (src_he, tgt_he) in &he_map {
+        // Skip if already has twin (might have been set by repair)
+        if target_topo.half_edges[*tgt_he].twin.is_some() {
+            continue;
+        }
+
+        // Check if source had a twin
+        if let Some(src_twin) = source.topology.half_edges[*src_he].twin {
+            // Check if the twin was also copied
+            if let Some(&tgt_twin) = he_map.get(&src_twin) {
+                // Only link if target twin also doesn't have a twin yet
+                if target_topo.half_edges[tgt_twin].twin.is_none() {
+                    target_topo.add_edge(*tgt_he, tgt_twin);
+                }
+            }
+        }
+    }
+
     face_map
 }
 
-/// Copy a loop from source to target topology.
+/// Copy a loop from source to target topology, tracking half-edge mapping.
 ///
 /// Returns the new LoopId in the target topology.
-fn copy_loop(
+fn copy_loop_with_he_map(
     source: &BRepSolid,
     src_loop: vcad_kernel_topo::LoopId,
     reverse: bool,
     target: &mut Topology,
     vertex_map: &mut HashMap<VertexPosKey, vcad_kernel_topo::VertexId>,
+    he_map: &mut HashMap<vcad_kernel_topo::HalfEdgeId, vcad_kernel_topo::HalfEdgeId>,
 ) -> vcad_kernel_topo::LoopId {
     let src_topo = &source.topology;
 
@@ -209,11 +236,39 @@ fn copy_loop(
         vert_ids.reverse();
     }
 
-    // Create half-edges
+    // Create half-edges and track mapping
     let hes: Vec<_> = vert_ids.iter().map(|&v| target.add_half_edge(v)).collect();
+
+    // Record the half-edge mapping (source → target)
+    if reverse {
+        // When reversed, the correspondence is reversed too
+        for (i, &src_he) in src_hes.iter().enumerate() {
+            let tgt_idx = src_hes.len() - 1 - i;
+            he_map.insert(src_he, hes[tgt_idx]);
+        }
+    } else {
+        for (src_he, &tgt_he) in src_hes.iter().zip(hes.iter()) {
+            he_map.insert(*src_he, tgt_he);
+        }
+    }
 
     // Create loop
     target.add_loop(&hes)
+}
+
+/// Copy a loop from source to target topology (legacy version without he_map).
+///
+/// Returns the new LoopId in the target topology.
+#[allow(dead_code)]
+fn copy_loop(
+    source: &BRepSolid,
+    src_loop: vcad_kernel_topo::LoopId,
+    reverse: bool,
+    target: &mut Topology,
+    vertex_map: &mut HashMap<VertexPosKey, vcad_kernel_topo::VertexId>,
+) -> vcad_kernel_topo::LoopId {
+    let mut he_map = HashMap::new();
+    copy_loop_with_he_map(source, src_loop, reverse, target, vertex_map, &mut he_map)
 }
 
 /// Key for vertex position hashing (for deduplication).
@@ -349,5 +404,82 @@ mod tests {
         let a = make_cube(10.0, 10.0, 10.0);
         let result = sew_faces(&a, &[], &a, &[], false, 1e-6);
         assert_eq!(result.topology.faces.len(), 0);
+    }
+
+    #[test]
+    fn test_sew_preserves_edges() {
+        // Two separate cubes — all half-edges should have parent edges after sewing
+        let a = make_cube(10.0, 10.0, 10.0);
+        let mut b = make_cube(10.0, 10.0, 10.0);
+        for (_, v) in &mut b.topology.vertices {
+            v.point.x += 100.0;
+        }
+
+        let faces_a: Vec<FaceId> = a.topology.faces.keys().collect();
+        let faces_b: Vec<FaceId> = b.topology.faces.keys().collect();
+
+        let result = sew_faces(&a, &faces_a, &b, &faces_b, false, 1e-6);
+
+        // Count half-edges without parent edges
+        let mut orphan_count = 0;
+        for (he_id, he) in &result.topology.half_edges {
+            if he.loop_id.is_some() && he.edge.is_none() {
+                eprintln!(
+                    "Orphan half-edge {:?}: origin={:?}, next={:?}, prev={:?}, twin={:?}",
+                    he_id, he.origin, he.next, he.prev, he.twin
+                );
+                orphan_count += 1;
+            }
+        }
+
+        assert_eq!(
+            orphan_count, 0,
+            "Found {} half-edges without parent edges",
+            orphan_count
+        );
+    }
+
+    #[test]
+    fn test_sew_cylinders_preserves_edges() {
+        use vcad_kernel_primitives::make_cylinder;
+
+        // Two separate cylinders — all half-edges should have parent edges after sewing
+        let a = make_cylinder(3.0, 10.0, 32);
+        let mut b = make_cylinder(3.0, 10.0, 32);
+        for (_, v) in &mut b.topology.vertices {
+            v.point.x += 100.0;
+        }
+
+        let faces_a: Vec<FaceId> = a.topology.faces.keys().collect();
+        let faces_b: Vec<FaceId> = b.topology.faces.keys().collect();
+
+        eprintln!("Cylinder A: {} faces, {} half-edges", a.topology.faces.len(), a.topology.half_edges.len());
+        eprintln!("Cylinder B: {} faces, {} half-edges", b.topology.faces.len(), b.topology.half_edges.len());
+
+        let result = sew_faces(&a, &faces_a, &b, &faces_b, false, 1e-6);
+
+        eprintln!("Result: {} faces, {} half-edges, {} edges",
+            result.topology.faces.len(),
+            result.topology.half_edges.len(),
+            result.topology.edges.len());
+
+        // Count half-edges without parent edges
+        let mut orphan_count = 0;
+        for (he_id, he) in &result.topology.half_edges {
+            if he.loop_id.is_some() && he.edge.is_none() {
+                let origin_pos = result.topology.vertices[he.origin].point;
+                eprintln!(
+                    "Orphan half-edge {:?}: origin={:?} pos=({:.2},{:.2},{:.2}), twin={:?}",
+                    he_id, he.origin, origin_pos.x, origin_pos.y, origin_pos.z, he.twin
+                );
+                orphan_count += 1;
+            }
+        }
+
+        assert_eq!(
+            orphan_count, 0,
+            "Found {} half-edges without parent edges",
+            orphan_count
+        );
     }
 }

@@ -30,6 +30,18 @@ fn collapse_degenerate_half_edges(topo: &mut Topology, tolerance: f64) {
             Some(next) => next,
             None => continue,
         };
+
+        // Don't collapse half-edges that form a single-edge loop (valid closed curves like circles)
+        if next == he_id {
+            continue;
+        }
+
+        // Don't collapse half-edges that have a twin - they're part of a valid edge pair
+        // (even if origin == dest, they might represent closed curves like circles)
+        if topo.half_edges[he_id].twin.is_some() {
+            continue;
+        }
+
         let origin = topo.half_edges[he_id].origin;
         let dest = topo.half_edges[next].origin;
         let origin_point = topo.vertices[origin].point;
@@ -54,6 +66,12 @@ fn cleanup_loop_spikes(topo: &mut Topology, tolerance: f64) {
                 let he_prev = hes[(i + hes.len() - 1) % hes.len()];
                 let he_mid = hes[i];
                 let he_next = hes[(i + 1) % hes.len()];
+
+                // Don't remove half-edges that have a twin - they're part of a valid edge pair
+                if topo.half_edges[he_mid].twin.is_some() {
+                    continue;
+                }
+
                 let v_prev = topo.half_edges[he_prev].origin;
                 let v_next = topo.half_edges[he_next].origin;
                 let p_prev = topo.vertices[v_prev].point;
@@ -70,8 +88,43 @@ fn cleanup_loop_spikes(topo: &mut Topology, tolerance: f64) {
 }
 
 fn pair_half_edges(topo: &mut Topology, tolerance: f64) {
-    let mut candidates: HashMap<EdgeKey, HalfEdgeInfo> = HashMap::new();
+    // Use vertex IDs directly for matching (after vertex merging, IDs are canonical)
+    // Also use position-based fallback with coarser tolerance for robustness
+    use vcad_kernel_topo::VertexId;
+
+    // First pass: match by vertex IDs (fast and exact)
+    let mut id_candidates: HashMap<(VertexId, VertexId), HalfEdgeId> = HashMap::new();
     let he_ids: Vec<_> = topo.half_edges.keys().collect();
+
+    for he_id in &he_ids {
+        if topo.half_edges[*he_id].twin.is_some() {
+            continue;
+        }
+        if topo.half_edges[*he_id].loop_id.is_none() {
+            continue;
+        }
+        let next = match topo.half_edges[*he_id].next {
+            Some(next) => next,
+            None => continue,
+        };
+        let origin = topo.half_edges[*he_id].origin;
+        let dest = topo.half_edges[next].origin;
+
+        // Look for twin going dest -> origin
+        if let Some(&twin_he) = id_candidates.get(&(dest, origin)) {
+            if topo.half_edges[twin_he].twin.is_none() {
+                topo.add_edge(*he_id, twin_he);
+                id_candidates.remove(&(dest, origin));
+                continue;
+            }
+        }
+        // Store for later matching
+        id_candidates.insert((origin, dest), *he_id);
+    }
+
+    // Second pass: match remaining by position (for cases where vertex IDs differ but positions match)
+    let mut pos_candidates: HashMap<EdgeKey, HalfEdgeInfo> = HashMap::new();
+
     for he_id in he_ids {
         if topo.half_edges[he_id].twin.is_some() {
             continue;
@@ -85,10 +138,12 @@ fn pair_half_edges(topo: &mut Topology, tolerance: f64) {
         };
         let origin = topo.half_edges[he_id].origin;
         let dest = topo.half_edges[next].origin;
-        let origin_key = VertexKey::from_point(&topo.vertices[origin].point, tolerance);
-        let dest_key = VertexKey::from_point(&topo.vertices[dest].point, tolerance);
+        // Use coarser tolerance (2x) for position matching to handle floating point issues
+        let origin_key = VertexKey::from_point(&topo.vertices[origin].point, tolerance * 2.0);
+        let dest_key = VertexKey::from_point(&topo.vertices[dest].point, tolerance * 2.0);
         let edge_key = EdgeKey::new(origin_key, dest_key);
-        if let Some(existing) = candidates.remove(&edge_key) {
+
+        if let Some(existing) = pos_candidates.remove(&edge_key) {
             let opposite = existing.origin_key == dest_key && existing.dest_key == origin_key;
             if opposite
                 && topo.half_edges[existing.half_edge].twin.is_none()
@@ -96,10 +151,10 @@ fn pair_half_edges(topo: &mut Topology, tolerance: f64) {
             {
                 topo.add_edge(existing.half_edge, he_id);
             } else {
-                candidates.insert(edge_key, existing);
+                pos_candidates.insert(edge_key, existing);
             }
         } else {
-            candidates.insert(
+            pos_candidates.insert(
                 edge_key,
                 HalfEdgeInfo {
                     half_edge: he_id,
