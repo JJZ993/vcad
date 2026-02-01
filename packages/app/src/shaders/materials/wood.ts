@@ -10,6 +10,7 @@ import { triplanarChunk } from "../chunks/triplanar.glsl";
 import type { ProceduralShaderDef } from "../types";
 
 const vertexShader = /* glsl */ `
+#include <common>
 #include <logdepthbuf_pars_vertex>
 
 varying vec3 vWorldPosition;
