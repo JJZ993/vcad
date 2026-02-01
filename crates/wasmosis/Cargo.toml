@@ -1,0 +1,13 @@
+[package]
+name = "wasmosis"
+description = "Lazy WASM module splitting - annotate functions for code splitting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+wasmosis-macro = { path = "wasmosis-macro" }
+
+[dev-dependencies]
+wasm-bindgen = "0.2"
