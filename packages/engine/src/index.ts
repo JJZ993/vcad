@@ -1,7 +1,10 @@
-import type { Document, Vec3, SketchSegment2D } from "@vcad/ir";
-import { evaluateDocument } from "./evaluate.js";
+import type { Document, Vec3, SketchSegment2D, NodeId } from "@vcad/ir";
+import { evaluateDocument, type EvaluateOptions } from "./evaluate.js";
 import type { EvaluatedScene, TriangleMesh } from "./mesh.js";
 import type { Solid, WasmAnnotationLayer } from "@vcad/kernel-wasm";
+import { SolidCache } from "./solid-cache.js";
+import { MeshCache } from "./mesh-cache.js";
+import { DependencyGraph } from "./dependency-graph.js";
 
 export type {
   TriangleMesh,
@@ -29,6 +32,21 @@ export {
 } from "./gpu.js";
 
 export type { GpuGeometryResult } from "./gpu.js";
+
+// Caching and incremental evaluation
+export { SolidCache, hashCsgOp } from "./solid-cache.js";
+export { MeshCache } from "./mesh-cache.js";
+export { DependencyGraph } from "./dependency-graph.js";
+export type { EvaluateOptions } from "./evaluate.js";
+
+// Physics simulation
+export { PhysicsEnv, isPhysicsAvailable } from "./physics.js";
+export type {
+  PhysicsObservation,
+  PhysicsStepResult,
+  PhysicsEnvOptions,
+  ActionType as PhysicsActionType,
+} from "./physics.js";
 
 /** Re-export Solid class for direct use */
 export type { Solid, WasmAnnotationLayer } from "@vcad/kernel-wasm";
@@ -126,8 +144,23 @@ export interface RenderedDimension {
 export class Engine {
   private kernel: KernelModule;
 
+  /** Persistent cache for evaluated solids */
+  readonly solidCache: SolidCache;
+
+  /** Cache for tessellated meshes */
+  readonly meshCache: MeshCache;
+
+  /** Dependency graph for incremental evaluation */
+  readonly dependencyGraph: DependencyGraph;
+
+  /** Last evaluated document hash for change detection */
+  private lastDocHash: string | null = null;
+
   private constructor(kernel: KernelModule) {
     this.kernel = kernel;
+    this.solidCache = new SolidCache();
+    this.meshCache = new MeshCache();
+    this.dependencyGraph = new DependencyGraph();
   }
 
   /** Load the vcad-kernel WASM module and return a ready engine. */
@@ -174,8 +207,35 @@ export class Engine {
   }
 
   /** Evaluate an IR document into triangle meshes. */
-  evaluate(doc: Document): EvaluatedScene {
-    return evaluateDocument(doc, this.kernel);
+  evaluate(doc: Document, options: EvaluateOptions = {}): EvaluatedScene {
+    // Rebuild dependency graph if document structure changed significantly
+    // (This is a simple heuristic - compare node count)
+    const nodeCount = Object.keys(doc.nodes).length;
+    const currentHash = `${nodeCount}:${doc.roots.length}`;
+    if (this.lastDocHash !== currentHash) {
+      this.dependencyGraph.build(doc);
+      this.lastDocHash = currentHash;
+    }
+
+    return evaluateDocument(doc, this.kernel, options);
+  }
+
+  /**
+   * Invalidate cached data for specific nodes.
+   * Call this when you know which nodes have changed.
+   */
+  invalidateNodes(nodeIds: Set<NodeId>): void {
+    // Get all affected nodes (including dependents)
+    const affected = this.dependencyGraph.getAffectedNodes(nodeIds);
+    this.solidCache.invalidate(affected);
+  }
+
+  /**
+   * Clear all caches.
+   */
+  clearCaches(): void {
+    this.solidCache.clear();
+    this.meshCache.clear();
   }
 
   /** Get the Solid class for direct use */

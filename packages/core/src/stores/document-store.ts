@@ -83,6 +83,12 @@ export interface DocumentState {
   documentName: string;
   lastSavedAt: number | null;
 
+  // Incremental evaluation tracking
+  /** Node IDs that have changed since last evaluation */
+  dirtyNodeIds: Set<NodeId>;
+  /** Whether a parametric drag is in progress (enables LOD mode) */
+  isParameterDragging: boolean;
+
   // undo/redo
   undoStack: Snapshot[];
   redoStack: Snapshot[];
@@ -198,6 +204,9 @@ export interface DocumentState {
     angleDeg: number,
   ) => string | null;
   addMirror: (partId: string, plane: "XY" | "XZ" | "YZ") => string | null;
+  // Incremental evaluation actions
+  clearDirtyNodes: () => Set<NodeId>;
+  setParameterDragging: (dragging: boolean) => void;
 }
 
 function makeNode(id: NodeId, name: string | null, op: CsgOp): Node {
@@ -222,6 +231,13 @@ function snapshot(state: DocumentState, actionName: string): Snapshot {
     nextPartNum: state.nextPartNum,
     actionName,
   };
+}
+
+/** Add a node ID to the dirty set (for incremental evaluation) */
+function markNodeDirty(state: DocumentState, nodeId: NodeId): Set<NodeId> {
+  const newDirty = new Set(state.dirtyNodeIds);
+  newDirty.add(nodeId);
+  return newDirty;
 }
 
 function pushUndo(
@@ -270,6 +286,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   documentId: null,
   documentName: "Untitled",
   lastSavedAt: null,
+  dirtyNodeIds: new Set<NodeId>(),
+  isParameterDragging: false,
   undoStack: [],
   redoStack: [],
 
@@ -431,7 +449,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       },
     };
 
-    set({ document: newDoc, isDirty: true, ...undoState });
+    set({
+      document: newDoc,
+      isDirty: true,
+      dirtyNodeIds: markNodeDirty(state, part.translateNodeId),
+      ...undoState,
+    });
   },
 
   setRotation: (partId, angles, skipUndo) => {
@@ -453,7 +476,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       },
     };
 
-    set({ document: newDoc, isDirty: true, ...undoState });
+    set({
+      document: newDoc,
+      isDirty: true,
+      dirtyNodeIds: markNodeDirty(state, part.rotateNodeId),
+      ...undoState,
+    });
   },
 
   setScale: (partId, factor, skipUndo) => {
@@ -475,7 +503,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       },
     };
 
-    set({ document: newDoc, isDirty: true, ...undoState });
+    set({
+      document: newDoc,
+      isDirty: true,
+      dirtyNodeIds: markNodeDirty(state, part.scaleNodeId),
+      ...undoState,
+    });
   },
 
   updatePrimitiveOp: (partId, op, skipUndo) => {
@@ -490,7 +523,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       node.op = op;
     }
 
-    set({ document: newDoc, isDirty: true, ...undoState });
+    set({
+      document: newDoc,
+      isDirty: true,
+      dirtyNodeIds: markNodeDirty(state, part.primitiveNodeId),
+      ...undoState,
+    });
   },
 
   updateSweepOp: (partId, updates, skipUndo) => {
@@ -809,6 +847,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       nextNodeId: file.nextNodeId ?? 1,
       nextPartNum: file.nextPartNum ?? 1,
       isDirty: false,
+      dirtyNodeIds: new Set<NodeId>(),
+      isParameterDragging: false,
       undoStack: [],
       redoStack: [],
     });
@@ -2138,8 +2178,21 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       documentId: id,
       documentName: name,
       lastSavedAt: null,
+      dirtyNodeIds: new Set<NodeId>(),
+      isParameterDragging: false,
       undoStack: [],
       redoStack: [],
     });
+  },
+
+  clearDirtyNodes: () => {
+    const state = get();
+    const dirty = state.dirtyNodeIds;
+    set({ dirtyNodeIds: new Set<NodeId>() });
+    return dirty;
+  },
+
+  setParameterDragging: (dragging) => {
+    set({ isParameterDragging: dragging });
   },
 }));

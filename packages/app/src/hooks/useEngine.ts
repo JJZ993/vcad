@@ -1,11 +1,14 @@
 import { useEffect, useRef } from "react";
-import { Engine, useDocumentStore, useEngineStore, useUiStore, logger } from "@vcad/core";
+import { Engine, useDocumentStore, useEngineStore, useSimulationStore, useUiStore, logger } from "@vcad/core";
 import { initializeGpu, initializeRayTracer } from "@vcad/engine";
 
 // Module-level engine instance to survive HMR
 let globalEngine: Engine | null = null;
 // Guard against concurrent init (React StrictMode calls effect twice)
 let engineInitPromise: Promise<Engine> | null = null;
+
+/** Debounce timeout for full-quality re-render after drag ends */
+let refinementTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export function useEngine() {
   const engineRef = useRef<Engine | null>(globalEngine);
@@ -88,7 +91,7 @@ export function useEngine() {
 
   // Subscribe to document changes and re-evaluate
   useEffect(() => {
-    const unsub = useDocumentStore.subscribe((state) => {
+    const unsub = useDocumentStore.subscribe((state, prevState) => {
       // Use globalEngine for HMR stability (engineRef might be stale)
       const engine = globalEngine;
       if (!engine) return;
@@ -96,6 +99,14 @@ export function useEngine() {
       // Debounce to next animation frame
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
+        // Skip re-evaluation when physics is active (any mode except "off")
+        // During physics, only transforms change - geometry stays the same.
+        // This prevents FK transforms from being overwritten by fresh CSG evaluation.
+        const simMode = useSimulationStore.getState().mode;
+        if (simMode !== "off") {
+          return;
+        }
+
         // Skip re-evaluation for empty documents if we already have a scene
         // (preserves imported STL/STEP meshes that bypass the document model)
         // Check must be inside RAF so it runs after setScene() has been called
@@ -107,8 +118,44 @@ export function useEngine() {
         }
 
         try {
-          const scene = engine.evaluate(state.document);
+          // During parameter dragging: skip clash detection for faster updates
+          const isDragging = state.isParameterDragging;
+
+          // Get dirty nodes and clear them
+          const dirtyNodes = state.dirtyNodeIds;
+
+          // Invalidate caches for dirty nodes (if any)
+          if (dirtyNodes.size > 0) {
+            engine.invalidateNodes(dirtyNodes);
+            // Clear dirty nodes after invalidation
+            useDocumentStore.getState().clearDirtyNodes();
+          }
+
+          // Evaluate with optimizations during dragging
+          const scene = engine.evaluate(state.document, {
+            skipClashDetection: isDragging,
+          });
           useEngineStore.getState().setScene(scene);
+
+          // If dragging just ended, schedule a refinement pass
+          if (prevState?.isParameterDragging && !isDragging) {
+            if (refinementTimeout) {
+              clearTimeout(refinementTimeout);
+            }
+            refinementTimeout = setTimeout(() => {
+              // Full quality re-evaluation with clash detection
+              try {
+                const doc = useDocumentStore.getState().document;
+                const refinedScene = engine.evaluate(doc, {
+                  skipClashDetection: false,
+                });
+                useEngineStore.getState().setScene(refinedScene);
+              } catch (e) {
+                useEngineStore.getState().setError(String(e));
+              }
+              refinementTimeout = null;
+            }, 100);
+          }
         } catch (e) {
           useEngineStore.getState().setError(String(e));
         }
@@ -118,6 +165,10 @@ export function useEngine() {
     return () => {
       unsub();
       cancelAnimationFrame(rafRef.current);
+      if (refinementTimeout) {
+        clearTimeout(refinementTimeout);
+        refinementTimeout = null;
+      }
     };
   }, []); // Empty deps - subscription is stable
 }

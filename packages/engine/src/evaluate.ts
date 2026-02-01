@@ -19,6 +19,9 @@ import type {
 import type { Solid } from "@vcad/kernel-wasm";
 import { solveForwardKinematics } from "./kinematics.js";
 
+/** Debug flag - set to true to enable verbose console logging */
+const DEBUG_EVAL = false;
+
 /** Convert IR sketch segment to WASM format */
 function convertSegment(seg: SketchSegment2D) {
   if (seg.type === "Line") {
@@ -65,7 +68,7 @@ function solidToMesh(solid: Solid): TriangleMesh {
   for (let i = 0; i < indices.length; i++) {
     if (indices[i] >= numVertices) {
       hasInvalidIndices = true;
-      console.warn(`[MESH] Invalid index ${indices[i]} at position ${i}, max vertex is ${numVertices - 1}`);
+      if (DEBUG_EVAL) console.warn(`[MESH] Invalid index ${indices[i]} at position ${i}, max vertex is ${numVertices - 1}`);
       break;
     }
   }
@@ -81,7 +84,7 @@ function solidToMesh(solid: Solid): TriangleMesh {
         validIndices.push(i0, i1, i2);
       }
     }
-    console.warn(`[MESH] Filtered ${(indices.length - validIndices.length) / 3} invalid triangles, ${validIndices.length / 3} remaining`);
+    if (DEBUG_EVAL) console.warn(`[MESH] Filtered ${(indices.length - validIndices.length) / 3} invalid triangles, ${validIndices.length / 3} remaining`);
     return {
       positions,
       indices: new Uint32Array(validIndices),
@@ -209,6 +212,12 @@ function transformMesh(
   return { positions, indices: mesh.indices, normals };
 }
 
+/** Options for document evaluation */
+export interface EvaluateOptions {
+  /** Skip O(n²) clash detection for faster updates during parametric editing */
+  skipClashDetection?: boolean;
+}
+
 /**
  * Evaluate a vcad IR Document into an EvaluatedScene using vcad-kernel-wasm.
  *
@@ -222,33 +231,40 @@ function transformMesh(
 export function evaluateDocument(
   doc: Document,
   kernel: KernelModule,
+  options: EvaluateOptions = {},
 ): EvaluatedScene {
   const { Solid } = kernel;
   const cache = new Map<NodeId, Solid>();
 
-  console.group("[ENGINE] evaluateDocument");
-  console.log("Number of roots:", doc.roots.length);
-  console.log("Roots:", JSON.stringify(doc.roots, null, 2));
+  if (DEBUG_EVAL) {
+    console.group("[ENGINE] evaluateDocument");
+    console.log("Number of roots:", doc.roots.length);
+    console.log("Roots:", JSON.stringify(doc.roots, null, 2));
+  }
 
   // Traditional mode: evaluate roots
   const solids: Solid[] = [];
   const parts = doc.roots.map((entry, idx) => {
     const node = doc.nodes[String(entry.root)];
-    console.group(`[ENGINE] Evaluating root[${idx}] nodeId=${entry.root}`);
-    console.log("Node:", JSON.stringify(node, null, 2));
+    if (DEBUG_EVAL) {
+      console.group(`[ENGINE] Evaluating root[${idx}] nodeId=${entry.root}`);
+      console.log("Node:", JSON.stringify(node, null, 2));
+    }
 
     // Check if this is an imported mesh (doesn't go through Solid pipeline)
     const imported = findImportedMesh(entry.root, doc.nodes);
     if (imported) {
-      console.log("Found ImportedMesh with", imported.mesh.positions.length / 3, "vertices");
+      if (DEBUG_EVAL) console.log("Found ImportedMesh with", imported.mesh.positions.length / 3, "vertices");
       const baseMesh: TriangleMesh = {
         positions: new Float32Array(imported.mesh.positions),
         indices: new Uint32Array(imported.mesh.indices),
         normals: imported.mesh.normals ? new Float32Array(imported.mesh.normals) : undefined,
       };
       const mesh = transformMesh(baseMesh, imported.transform);
-      console.log("Result mesh - triangles:", mesh.indices.length / 3, "vertices:", mesh.positions.length / 3);
-      console.groupEnd();
+      if (DEBUG_EVAL) {
+        console.log("Result mesh - triangles:", mesh.indices.length / 3, "vertices:", mesh.positions.length / 3);
+        console.groupEnd();
+      }
       // Push empty solid for clash detection (imported meshes don't participate)
       solids.push(Solid.empty());
       return { mesh, material: entry.material };
@@ -257,8 +273,10 @@ export function evaluateDocument(
     // Normal solid-based evaluation
     const solid = evaluateNode(entry.root, doc.nodes, Solid, cache, 0);
     const mesh = solidToMesh(solid);
-    console.log("Result mesh - triangles:", mesh.indices.length / 3, "vertices:", mesh.positions.length / 3);
-    console.groupEnd();
+    if (DEBUG_EVAL) {
+      console.log("Result mesh - triangles:", mesh.indices.length / 3, "vertices:", mesh.positions.length / 3);
+      console.groupEnd();
+    }
     solids.push(solid);
     return {
       mesh,
@@ -268,8 +286,10 @@ export function evaluateDocument(
     };
   });
 
-  console.log("Total parts evaluated:", parts.length);
-  console.groupEnd();
+  if (DEBUG_EVAL) {
+    console.log("Total parts evaluated:", parts.length);
+    console.groupEnd();
+  }
 
   // Assembly mode: evaluate partDefs and instances
   let evaluatedPartDefs: EvaluatedPartDef[] | undefined;
@@ -297,7 +317,7 @@ export function evaluateDocument(
     for (const instance of doc.instances) {
       const mesh = partDefMeshes.get(instance.partDefId);
       if (!mesh) {
-        console.warn(`Instance ${instance.id} references unknown partDef ${instance.partDefId}`);
+        if (DEBUG_EVAL) console.warn(`Instance ${instance.id} references unknown partDef ${instance.partDefId}`);
         continue;
       }
 
@@ -324,22 +344,25 @@ export function evaluateDocument(
   }
 
   // Compute pairwise intersections for clash detection
+  // Skip during parametric editing for performance (O(n²) operation)
   const clashes: TriangleMesh[] = [];
 
-  // Clashes between traditional parts (non-assembly mode)
-  for (let i = 0; i < solids.length; i++) {
-    for (let j = i + 1; j < solids.length; j++) {
-      const intersection = solids[i].intersection(solids[j]);
-      if (!intersection.isEmpty()) {
-        const meshData = intersection.getMesh();
-        if (meshData.positions.length > 0) {
-          clashes.push({
-            positions: new Float32Array(meshData.positions),
-            indices: new Uint32Array(meshData.indices),
-            normals: meshData.normals
-              ? new Float32Array(meshData.normals)
-              : undefined,
-          });
+  if (!options.skipClashDetection) {
+    // Clashes between traditional parts (non-assembly mode)
+    for (let i = 0; i < solids.length; i++) {
+      for (let j = i + 1; j < solids.length; j++) {
+        const intersection = solids[i].intersection(solids[j]);
+        if (!intersection.isEmpty()) {
+          const meshData = intersection.getMesh();
+          if (meshData.positions.length > 0) {
+            clashes.push({
+              positions: new Float32Array(meshData.positions),
+              indices: new Uint32Array(meshData.indices),
+              normals: meshData.normals
+                ? new Float32Array(meshData.normals)
+                : undefined,
+            });
+          }
         }
       }
     }
@@ -364,10 +387,12 @@ function evaluateNode(
   cache: Map<NodeId, import("@vcad/kernel-wasm").Solid>,
   depth = 0,
 ): import("@vcad/kernel-wasm").Solid {
-  const indent = "  ".repeat(depth);
   const cached = cache.get(nodeId);
   if (cached) {
-    console.log(`${indent}[NODE] ${nodeId} (CACHED)`);
+    if (DEBUG_EVAL) {
+      const indent = "  ".repeat(depth);
+      console.log(`${indent}[NODE] ${nodeId} (CACHED)`);
+    }
     return cached;
   }
 
@@ -376,7 +401,10 @@ function evaluateNode(
     throw new Error(`Missing node: ${nodeId}`);
   }
 
-  console.log(`${indent}[NODE] ${nodeId} type=${node.op.type} name=${node.name || "(unnamed)"}`);
+  if (DEBUG_EVAL) {
+    const indent = "  ".repeat(depth);
+    console.log(`${indent}[NODE] ${nodeId} type=${node.op.type} name=${node.name || "(unnamed)"}`);
+  }
   const result = evaluateOp(node.op, nodes, Solid, cache, depth);
   cache.set(nodeId, result);
   return result;
@@ -389,14 +417,19 @@ function evaluateOp(
   cache: Map<NodeId, import("@vcad/kernel-wasm").Solid>,
   depth = 0,
 ): import("@vcad/kernel-wasm").Solid {
-  const indent = "  ".repeat(depth);
   switch (op.type) {
     case "Cube":
-      console.log(`${indent}  -> Cube(${op.size.x}, ${op.size.y}, ${op.size.z})`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Cube(${op.size.x}, ${op.size.y}, ${op.size.z})`);
+      }
       return Solid.cube(op.size.x, op.size.y, op.size.z);
 
     case "Cylinder":
-      console.log(`${indent}  -> Cylinder(r=${op.radius}, h=${op.height})`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Cylinder(r=${op.radius}, h=${op.height})`);
+      }
       return Solid.cylinder(op.radius, op.height, op.segments || undefined);
 
     case "Sphere":
@@ -414,21 +447,33 @@ function evaluateOp(
       return Solid.empty();
 
     case "Union": {
-      console.log(`${indent}  -> Union(left=${op.left}, right=${op.right})`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Union(left=${op.left}, right=${op.right})`);
+      }
       const left = evaluateNode(op.left, nodes, Solid, cache, depth + 1);
       const right = evaluateNode(op.right, nodes, Solid, cache, depth + 1);
       return left.union(right);
     }
 
     case "Difference": {
-      console.log(`${indent}  -> Difference(left=${op.left}, right=${op.right})`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Difference(left=${op.left}, right=${op.right})`);
+      }
       const left = evaluateNode(op.left, nodes, Solid, cache, depth + 1);
       const right = evaluateNode(op.right, nodes, Solid, cache, depth + 1);
-      const leftTris = left.getMesh().indices.length / 3;
-      const rightTris = right.getMesh().indices.length / 3;
-      console.log(`${indent}  -> Difference: left has ${leftTris} tris, right has ${rightTris} tris`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        const leftTris = left.getMesh().indices.length / 3;
+        const rightTris = right.getMesh().indices.length / 3;
+        console.log(`${indent}  -> Difference: left has ${leftTris} tris, right has ${rightTris} tris`);
+      }
       const result = left.difference(right);
-      console.log(`${indent}  -> Difference result: ${result.getMesh().indices.length / 3} tris`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Difference result: ${result.getMesh().indices.length / 3} tris`);
+      }
       return result;
     }
 
@@ -439,19 +484,28 @@ function evaluateOp(
     }
 
     case "Translate": {
-      console.log(`${indent}  -> Translate(${op.offset.x}, ${op.offset.y}, ${op.offset.z}) child=${op.child}`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Translate(${op.offset.x}, ${op.offset.y}, ${op.offset.z}) child=${op.child}`);
+      }
       const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.translate(op.offset.x, op.offset.y, op.offset.z);
     }
 
     case "Rotate": {
-      console.log(`${indent}  -> Rotate(${op.angles.x}, ${op.angles.y}, ${op.angles.z}) child=${op.child}`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Rotate(${op.angles.x}, ${op.angles.y}, ${op.angles.z}) child=${op.child}`);
+      }
       const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.rotate(op.angles.x, op.angles.y, op.angles.z);
     }
 
     case "Scale": {
-      console.log(`${indent}  -> Scale(${op.factor.x}, ${op.factor.y}, ${op.factor.z}) child=${op.child}`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Scale(${op.factor.x}, ${op.factor.y}, ${op.factor.z}) child=${op.child}`);
+      }
       const child = evaluateNode(op.child, nodes, Solid, cache, depth + 1);
       return child.scale(op.factor.x, op.factor.y, op.factor.z);
     }
@@ -462,7 +516,10 @@ function evaluateOp(
       return Solid.empty();
 
     case "Extrude": {
-      console.log(`${indent}  -> Extrude(sketch=${op.sketch}, dir=(${op.direction.x}, ${op.direction.y}, ${op.direction.z}))`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Extrude(sketch=${op.sketch}, dir=(${op.direction.x}, ${op.direction.y}, ${op.direction.z}))`);
+      }
       const sketchNode = nodes[String(op.sketch)];
       if (!sketchNode || sketchNode.op.type !== "Sketch2D") {
         throw new Error(`Extrude references invalid sketch node: ${op.sketch}`);
@@ -474,7 +531,10 @@ function evaluateOp(
         op.direction.z,
       ]);
       const result = Solid.extrude(profile, direction);
-      console.log(`${indent}  -> Extrude result: ${result.getMesh().indices.length / 3} tris`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> Extrude result: ${result.getMesh().indices.length / 3} tris`);
+      }
       return result;
     }
 
@@ -594,7 +654,10 @@ function evaluateOp(
     case "ImportedMesh":
       // ImportedMesh is handled specially in evaluateDocument, not through Solid
       // Return empty solid as fallback
-      console.log(`${indent}  -> ImportedMesh (handled at document level)`);
+      if (DEBUG_EVAL) {
+        const indent = "  ".repeat(depth);
+        console.log(`${indent}  -> ImportedMesh (handled at document level)`);
+      }
       return Solid.empty();
   }
 }
