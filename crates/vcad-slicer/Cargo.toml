@@ -1,0 +1,17 @@
+[package]
+name = "vcad-slicer"
+description = "3D printing slicer for the vcad kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vcad-kernel-tessellate = { workspace = true }
+vcad-kernel-math = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+rayon = "1.10"
+
+[dev-dependencies]
+approx = "0.5"

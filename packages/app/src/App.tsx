@@ -22,6 +22,7 @@ import { SketchToolbar } from "@/components/SketchToolbar";
 import { FaceSelectionOverlay } from "@/components/FaceSelectionOverlay";
 import { QuotePanel } from "@/components/QuotePanel";
 import { LogViewer } from "@/components/LogViewer";
+import { PrintPanel } from "@/components/print";
 import { DocumentPicker } from "@/components/DocumentPicker";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
 import {
@@ -50,6 +51,7 @@ import {
 } from "@vcad/engine";
 import { useNotificationStore } from "@/stores/notification-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
+import { useSlicerStore } from "@/stores/slicer-store";
 
 function useThemeSync() {
   const theme = useUiStore((s) => s.theme);
@@ -110,6 +112,7 @@ export function App() {
   const incrementSessions = useOnboardingStore((s) => s.incrementSessions);
   const parts = useDocumentStore((s) => s.parts);
   const selectMultiple = useUiStore((s) => s.selectMultiple);
+  const printPanelOpen = useSlicerStore((s) => s.printPanelOpen);
 
   const handleSave = useCallback(() => {
     const state = useDocumentStore.getState();
@@ -488,6 +491,9 @@ export function App() {
 
           {/* Quote panel (slides in from right when Make It Real clicked) */}
           <QuotePanel />
+
+          {/* Print panel (for 3D printing slicer settings) */}
+          {printPanelOpen && <PrintPanel />}
 
           {/* Log viewer (Cmd+J to toggle) */}
           <LogViewer />

@@ -24,6 +24,12 @@ members = [
     "crates/vcad-kernel-raytrace",
     "crates/vcad-kernel-urdf",
     "crates/vcad-kernel-physics",
+    "crates/wasmosis",
+    "crates/wasmosis/wasmosis-macro",
+    "crates/vcad-slicer",
+    "crates/vcad-slicer-gcode",
+    "crates/vcad-slicer-bambu",
+    "crates/vcad-slicer-wasm",
 ]
 
 [workspace.package]
@@ -63,3 +69,9 @@ vcad-kernel-gpu = { path = "crates/vcad-kernel-gpu" }
 vcad-kernel-raytrace = { path = "crates/vcad-kernel-raytrace" }
 vcad-kernel-urdf = { path = "crates/vcad-kernel-urdf" }
 vcad-kernel-physics = { path = "crates/vcad-kernel-physics" }
+wasmosis = { path = "crates/wasmosis" }
+wasmosis-macro = { path = "crates/wasmosis/wasmosis-macro" }
+vcad-slicer = { path = "crates/vcad-slicer" }
+vcad-slicer-gcode = { path = "crates/vcad-slicer-gcode" }
+vcad-slicer-bambu = { path = "crates/vcad-slicer-bambu" }
+vcad-slicer-wasm = { path = "crates/vcad-slicer-wasm" }

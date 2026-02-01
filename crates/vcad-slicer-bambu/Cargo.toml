@@ -1,0 +1,25 @@
+[package]
+name = "vcad-slicer-bambu"
+description = "Bambu Lab printer integration for the vcad slicer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vcad-slicer = { path = "../vcad-slicer" }
+vcad-slicer-gcode = { path = "../vcad-slicer-gcode" }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", features = ["full", "net", "time", "sync"] }
+rumqttc = "0.24"
+rustls = "0.23"
+webpki-roots = "0.26"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = { version = "0.36", features = ["serialize"] }
+base64 = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
