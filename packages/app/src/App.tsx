@@ -6,7 +6,7 @@ import {
   useLayoutEffect,
 } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ToastContainer } from "@/components/ui/toast";
+import { NotificationContainer, ActivityPanel } from "@/components/ui/notifications";
 import { AppShell } from "@/components/AppShell";
 import { CornerIcons } from "@/components/CornerIcons";
 import { BottomToolbar } from "@/components/BottomToolbar";
@@ -48,7 +48,7 @@ import {
   processGeometryGpu,
   mergeMeshes,
 } from "@vcad/engine";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 
 function useThemeSync() {
@@ -115,7 +115,7 @@ export function App() {
     const state = useDocumentStore.getState();
     saveDocument(state);
     useDocumentStore.getState().markSaved();
-    useToastStore.getState().addToast("Document saved", "success");
+    useNotificationStore.getState().addToast("Document saved", "success");
   }, []);
 
   const handleOpen = useCallback(() => {
@@ -130,7 +130,7 @@ export function App() {
       try {
         const engine = useEngineStore.getState().engine;
         if (!engine) {
-          useToastStore.getState().addToast("Engine not ready", "error");
+          useNotificationStore.getState().addToast("Engine not ready", "error");
           return;
         }
 
@@ -143,7 +143,7 @@ export function App() {
         logger.info("step", `Got meshes: ${rawMeshes.length}`);
 
         if (rawMeshes.length === 0) {
-          useToastStore.getState().addToast("No geometry found in STEP file", "error");
+          useNotificationStore.getState().addToast("No geometry found in STEP file", "error");
           return;
         }
 
@@ -209,13 +209,13 @@ export function App() {
         );
         useUiStore.getState().clearSelection();
 
-        useToastStore.getState().addToast(
+        useNotificationStore.getState().addToast(
           `Imported ${rawMeshes.length} solid${rawMeshes.length > 1 ? "s" : ""} from STEP (${totalTris.toLocaleString()} triangles)`,
           "success"
         );
       } catch (err) {
         console.error("Failed to import STEP:", err);
-        useToastStore.getState().addToast("Failed to import STEP file", "error");
+        useNotificationStore.getState().addToast("Failed to import STEP file", "error");
       }
       return;
     }
@@ -243,13 +243,13 @@ export function App() {
         useEngineStore.getState().setScene(scene);
         useUiStore.getState().clearSelection();
 
-        useToastStore.getState().addToast(
+        useNotificationStore.getState().addToast(
           `Imported STL with ${triangleCount.toLocaleString()} triangles`,
           "success"
         );
       } catch (err) {
         console.error("Failed to import STL:", err);
-        useToastStore.getState().addToast("Failed to import STL file", "error");
+        useNotificationStore.getState().addToast("Failed to import STL file", "error");
       }
       return;
     }
@@ -262,7 +262,7 @@ export function App() {
       useUiStore.getState().clearSelection();
     } catch (err) {
       console.error("Failed to load file:", err);
-      useToastStore.getState().addToast("Failed to load document", "error");
+      useNotificationStore.getState().addToast("Failed to load document", "error");
     }
   }, []);
 
@@ -324,7 +324,7 @@ export function App() {
         useUiStore.getState().clearSelection();
       } catch (err) {
         console.error("Failed to load example:", err);
-        useToastStore.getState().addToast("Failed to load example", "error");
+        useNotificationStore.getState().addToast("Failed to load example", "error");
       }
     };
     window.addEventListener(
@@ -524,7 +524,8 @@ export function App() {
           className="hidden"
           onChange={handleFileChange}
         />
-        <ToastContainer />
+        <NotificationContainer />
+        <ActivityPanel />
       </div>
     </TooltipProvider>
   );

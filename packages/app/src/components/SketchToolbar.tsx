@@ -25,7 +25,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useSketchStore, useDocumentStore, useUiStore, useEngineStore, getSketchPlaneDirections, formatDirection, negateDirection, getSketchPlaneName } from "@vcad/core";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import type { SketchState, ConstraintTool, SketchPlane } from "@vcad/core";
 import type { Vec3, SketchSegment2D } from "@vcad/ir";
 
@@ -456,7 +456,7 @@ export function SketchToolbar() {
   const pointSnap = useUiStore((s) => s.pointSnap);
   const toggleGridSnap = useUiStore((s) => s.toggleGridSnap);
   const togglePointSnap = useUiStore((s) => s.togglePointSnap);
-  const addToast = useToastStore((s) => s.addToast);
+  const addToast = useNotificationStore((s) => s.addToast);
 
   // Listen for quick extrude keyboard shortcut
   useEffect(() => {

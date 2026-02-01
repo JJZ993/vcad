@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import type { LogEntry, LogLevelName } from "@vcad/core";
 import { useLogStore, getFilteredEntries } from "@/stores/log-store";
 import { LogFilterBar } from "@/components/LogFilterBar";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 
 const LEVEL_COLORS: Record<LogLevelName, string> = {
   DEBUG: "text-text-muted",
@@ -122,12 +122,12 @@ export function LogViewer() {
       )
       .join("\n");
     navigator.clipboard.writeText(text);
-    useToastStore.getState().addToast("Logs copied to clipboard", "success");
+    useNotificationStore.getState().addToast("Logs copied to clipboard", "success");
   };
 
   const handleClear = () => {
     clearLogs();
-    useToastStore.getState().addToast("Logs cleared", "info");
+    useNotificationStore.getState().addToast("Logs cleared", "info");
   };
 
   if (!panelOpen) return null;

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useUiStore, useDocumentStore, useSketchStore } from "@vcad/core";
-import { useToastStore } from "../stores/toast-store";
+import { useNotificationStore } from "../stores/notification-store";
 import { useLogStore } from "../stores/log-store";
 
 export function useKeyboardShortcuts() {
@@ -89,12 +89,12 @@ export function useKeyboardShortcuts() {
       if (mod && !e.shiftKey && e.key === "c") {
         e.preventDefault();
         if (selectedPartIds.size === 0) {
-          useToastStore.getState().addToast("Nothing to copy", "info");
+          useNotificationStore.getState().addToast("Nothing to copy", "info");
           return;
         }
         copyToClipboard(Array.from(selectedPartIds));
         const count = selectedPartIds.size;
-        useToastStore
+        useNotificationStore
           .getState()
           .addToast(`Copied ${count} part${count > 1 ? "s" : ""}`, "success");
         return;
@@ -108,7 +108,7 @@ export function useKeyboardShortcuts() {
           const newIds = duplicateParts(clipboard);
           useUiStore.getState().selectMultiple(newIds);
           const count = newIds.length;
-          useToastStore
+          useNotificationStore
             .getState()
             .addToast(`Pasted ${count} part${count > 1 ? "s" : ""}`, "success");
         }
@@ -259,7 +259,7 @@ export function useKeyboardShortcuts() {
         // Cancel face selection mode
         if (faceSelectionMode) {
           cancelFaceSelection();
-          useToastStore.getState().addToast("Face selection cancelled", "info");
+          useNotificationStore.getState().addToast("Face selection cancelled", "info");
           return;
         }
 
@@ -272,7 +272,7 @@ export function useKeyboardShortcuts() {
           // Request exit - returns true if exited immediately (empty sketch)
           const exited = requestExit();
           if (exited) {
-            useToastStore.getState().addToast("Sketch cancelled", "info");
+            useNotificationStore.getState().addToast("Sketch cancelled", "info");
           }
           // If not exited, confirmation dialog will show in SketchToolbar
         } else {

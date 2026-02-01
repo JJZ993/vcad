@@ -1,43 +1,11 @@
-import { create } from "zustand";
+/**
+ * @deprecated This module is deprecated. Use notification-store instead.
+ *
+ * This file re-exports from notification-store for backwards compatibility.
+ * New code should import from "@/stores/notification-store" directly.
+ */
 
-export interface Toast {
-  id: string;
-  message: string;
-  type: "success" | "error" | "info";
-  duration: number;
-}
-
-interface ToastStore {
-  toasts: Toast[];
-  addToast: (message: string, type: Toast["type"], duration?: number) => void;
-  removeToast: (id: string) => void;
-}
-
-let toastId = 0;
-
-export const useToastStore = create<ToastStore>((set) => ({
-  toasts: [],
-
-  addToast: (message, type, duration = 3000) => {
-    const id = `toast-${++toastId}`;
-    const toast: Toast = { id, message, type, duration };
-
-    set((state) => ({
-      toasts: [...state.toasts, toast],
-    }));
-
-    // Auto-dismiss after duration
-    if (duration > 0) {
-      setTimeout(() => {
-        set((state) => ({
-          toasts: state.toasts.filter((t) => t.id !== id),
-        }));
-      }, duration);
-    }
-  },
-
-  removeToast: (id) =>
-    set((state) => ({
-      toasts: state.toasts.filter((t) => t.id !== id),
-    })),
-}));
+export {
+  useNotificationStore as useToastStore,
+  type Toast,
+} from "./notification-store";

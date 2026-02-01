@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { SpinnerGap, Sparkle, CloudArrowDown, Desktop, Warning } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useDocumentStore } from "@vcad/core";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import { fromCompact, type Document } from "@vcad/ir";
 import {
   useAuth,
@@ -81,6 +81,16 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
     setLoading(true);
     setLoadingStatus("Initializing...");
     setLoadingProgress(0);
+    onOpenChange(false); // Close panel immediately
+
+    const store = useNotificationStore.getState();
+
+    // Determine stages based on mode
+    const stages = effectiveMode === "browser"
+      ? ["Loading AI model", "Parsing intent", "Generating geometry", "Validating mesh"]
+      : ["Connecting to server", "Generating geometry", "Validating mesh"];
+
+    const progressId = store.startAIOperation(prompt, stages);
 
     try {
       let document: Document;
@@ -88,14 +98,25 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
       if (effectiveMode === "browser") {
         // Browser-based inference
         const progressCallback: ProgressCallback = (loaded, total, status) => {
-          setLoadingProgress(Math.round((loaded / total) * 100));
+          const pct = Math.round((loaded / total) * 100);
+          setLoadingProgress(pct);
           setLoadingStatus(status);
+
+          // Update notification progress
+          if (status.includes("Loading") || status.includes("Initializing")) {
+            store.updateAIProgress(progressId, 0, Math.min(pct, 30));
+          } else if (status.includes("Generating") || status.includes("Processing")) {
+            store.updateAIProgress(progressId, 2, 30 + Math.min(pct * 0.5, 50));
+          }
         };
 
         setLoadingStatus("Loading AI model...");
+        store.updateAIProgress(progressId, 0, 5);
+
         const result = await generateCAD(prompt, undefined, progressCallback);
 
         setLoadingStatus("Parsing generated IR...");
+        store.updateAIProgress(progressId, 3, 90);
 
         // Parse the Compact IR to a Document
         try {
@@ -105,28 +126,47 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
           throw new Error("Generated invalid CAD code. Please try rephrasing your description.");
         }
 
-        useToastStore.getState().addToast(
-          `Generated CAD locally in ${(result.durationMs / 1000).toFixed(1)}s`,
-          "success"
-        );
+        // Complete with result
+        store.completeAIOperation(progressId, {
+          type: "success",
+          title: "Generated locally",
+          description: `Created in ${(result.durationMs / 1000).toFixed(1)}s`,
+          actions: [
+            {
+              label: "Undo",
+              onClick: () => useDocumentStore.getState().undo(),
+              variant: "secondary",
+            },
+          ],
+        });
       } else {
         // Server-based inference (requires authentication)
         if (!isAuthenticated) {
-          useToastStore.getState().addToast(
-            "Sign in to use server-based AI",
-            "error"
-          );
+          store.failAIOperation(progressId, "Sign in to use server-based AI");
           setLoading(false);
           return;
         }
 
         setLoadingStatus("Generating with server...");
+        store.updateAIProgress(progressId, 0, 20);
+
         const ir = await textToCAD(prompt);
+        store.updateAIProgress(progressId, 1, 80);
 
         // Server returns full IR document
         document = ir as Document;
 
-        useToastStore.getState().addToast("Generated CAD from description", "success");
+        store.completeAIOperation(progressId, {
+          type: "success",
+          title: "Generated from server",
+          actions: [
+            {
+              label: "Undo",
+              onClick: () => useDocumentStore.getState().undo(),
+              variant: "secondary",
+            },
+          ],
+        });
       }
 
       // Load the generated document
@@ -139,12 +179,11 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
       };
       useDocumentStore.getState().loadDocument(vcadFile);
       setPrompt("");
-      onOpenChange(false);
     } catch (err) {
       console.error("AI generation failed:", err);
-      useToastStore.getState().addToast(
-        err instanceof Error ? err.message : "AI generation failed",
-        "error"
+      store.failAIOperation(
+        progressId,
+        err instanceof Error ? err.message : "AI generation failed"
       );
     } finally {
       setLoading(false);

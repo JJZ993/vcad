@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Package, Clock, Truck, EnvelopeSimple } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import {
   useOutputStore,
   calculatePrice,
@@ -108,7 +108,7 @@ export function QuotePanel() {
     // Simulate API call
     await new Promise((r) => setTimeout(r, 800));
 
-    useToastStore.getState().addToast("You're on the waitlist!", "success");
+    useNotificationStore.getState().addToast("You're on the waitlist!", "success");
     setEmail("");
     setIsSubmitting(false);
     closeQuotePanel();

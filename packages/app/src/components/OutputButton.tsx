@@ -3,7 +3,7 @@ import { CaretDown, Sparkle, Export, Check } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/utils";
 import { downloadBlob } from "@/lib/download";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import {
   useOutputStore,
   type OutputAction,
@@ -91,14 +91,14 @@ export function OutputButton() {
     if (!scene) return;
     const blob = exportStlBlob(scene);
     downloadBlob(blob, "model.stl");
-    useToastStore.getState().addToast("Exported model.stl", "success");
+    useNotificationStore.getState().addToast("Exported model.stl", "success");
   }
 
   function handleExportGlb() {
     if (!scene) return;
     const blob = exportGltfBlob(scene);
     downloadBlob(blob, "model.glb");
-    useToastStore.getState().addToast("Exported model.glb", "success");
+    useNotificationStore.getState().addToast("Exported model.glb", "success");
   }
 
   function handleManufacture() {
@@ -120,7 +120,7 @@ export function OutputButton() {
         handleExportGlb();
         break;
       case "step":
-        useToastStore.getState().addToast("STEP export coming soon", "info");
+        useNotificationStore.getState().addToast("STEP export coming soon", "info");
         break;
     }
   }

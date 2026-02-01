@@ -31,7 +31,7 @@ import {
 } from "@vcad/core";
 import type { PrimitiveKind, BooleanType } from "@vcad/core";
 import { downloadDxf } from "@/lib/save-load";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import { cn } from "@/lib/utils";
 import { InsertInstanceDialog, AddJointDialog } from "@/components/dialogs";
 import { useOnboardingStore, type GuidedFlowStep } from "@/stores/onboarding-store";
@@ -448,15 +448,15 @@ export function BottomToolbar() {
                   const mesh = scene.parts[0]!.mesh;
                   const projectedView = engine.projectMesh(mesh, viewDirection);
                   if (!projectedView) {
-                    useToastStore.getState().addToast("Failed to project view", "error");
+                    useNotificationStore.getState().addToast("Failed to project view", "error");
                     return;
                   }
                   const dxfData = engine.exportDrawingToDxf(projectedView);
                   downloadDxf(dxfData, `drawing-${viewDirection}.dxf`);
-                  useToastStore.getState().addToast("DXF exported", "success");
+                  useNotificationStore.getState().addToast("DXF exported", "success");
                 } catch (err) {
                   console.error("DXF export failed:", err);
-                  useToastStore.getState().addToast("DXF export failed", "error");
+                  useNotificationStore.getState().addToast("DXF export failed", "error");
                 }
               }}
             >

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useDocumentStore } from "@vcad/core";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import {
   saveDocument,
   acquireLock,
@@ -29,7 +29,7 @@ export function useAutoSave() {
     // Check storage availability
     const available = await isStorageAvailable();
     if (!available) {
-      useToastStore.getState().addToast(
+      useNotificationStore.getState().addToast(
         "Storage full - cannot save",
         "error",
         5000
@@ -40,7 +40,7 @@ export function useAutoSave() {
     // Check for warning
     const warning = await isStorageWarning();
     if (warning) {
-      useToastStore.getState().addToast(
+      useNotificationStore.getState().addToast(
         "Storage nearly full (80%+)",
         "info",
         3000
@@ -61,7 +61,7 @@ export function useAutoSave() {
       markSaved();
     } catch (err) {
       console.error("Auto-save failed:", err);
-      useToastStore.getState().addToast("Auto-save failed", "error");
+      useNotificationStore.getState().addToast("Auto-save failed", "error");
     }
   }, [documentId, documentName, markSaved]);
 
@@ -79,7 +79,7 @@ export function useAutoSave() {
       if (cancelled) return;
 
       if (!acquired) {
-        useToastStore.getState().addToast(
+        useNotificationStore.getState().addToast(
           "Document is open in another tab",
           "info",
           5000
@@ -108,7 +108,7 @@ export function useAutoSave() {
         const refreshed = await refreshLock(documentId);
         if (!refreshed) {
           hasLockRef.current = false;
-          useToastStore.getState().addToast(
+          useNotificationStore.getState().addToast(
             "Lost document lock - another tab may have taken control",
             "error"
           );

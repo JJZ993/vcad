@@ -35,7 +35,7 @@ import {
 } from "@phosphor-icons/react";
 import { fromCompact, type Document } from "@vcad/ir";
 import { generateCAD, isModelLoaded } from "@/lib/browser-inference";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import type { Command, VcadFile } from "@vcad/core";
 import { createCommandRegistry, useUiStore, useDocumentStore, useEngineStore, exportStlBlob, exportGltfBlob, parseVcadFile } from "@vcad/core";
@@ -350,24 +350,48 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
     undoStack.length,
   ]);
 
-  // AI generation handler
+  // AI generation handler with progress tracking
   const handleAIGenerate = useCallback(async (prompt: string) => {
     setAiGenerating(true);
-    setAiStatus("Loading AI model...");
+    onOpenChange(false); // Close palette immediately
+
+    const store = useNotificationStore.getState();
+
+    // Start AI progress with semantic stages
+    const progressId = store.startAIOperation(prompt, [
+      "Loading AI model",
+      "Parsing intent",
+      "Generating geometry",
+      "Validating mesh",
+    ]);
 
     try {
+      // Stage 1: Loading model
+      store.updateAIProgress(progressId, 0, 10);
+
       const result = await generateCAD(
         prompt,
         undefined,
         (_loaded, _total, status) => {
+          // Update progress based on status
+          if (status.includes("Loading") || status.includes("Initializing")) {
+            store.updateAIProgress(progressId, 0, 20);
+          } else if (status.includes("Generating") || status.includes("Processing")) {
+            store.updateAIProgress(progressId, 2, 60);
+          }
           setAiStatus(status);
         }
       );
 
+      // Stage 3: Building geometry
+      store.updateAIProgress(progressId, 2, 80);
       setAiStatus("Building geometry...");
 
       // Parse the Compact IR to a Document
       const generatedDoc: Document = fromCompact(result.ir);
+
+      // Stage 4: Validating
+      store.updateAIProgress(progressId, 3, 95);
 
       // Wrap in VcadFile format
       const vcadFile: VcadFile = {
@@ -378,16 +402,25 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
       };
 
       loadDocument(vcadFile);
-      useToastStore.getState().addToast(
-        `Generated in ${(result.durationMs / 1000).toFixed(1)}s`,
-        "success"
-      );
-      onOpenChange(false);
+
+      // Complete with action result
+      store.completeAIOperation(progressId, {
+        type: "success",
+        title: "Generation complete",
+        description: `Created in ${(result.durationMs / 1000).toFixed(1)}s`,
+        actions: [
+          {
+            label: "Undo",
+            onClick: () => useDocumentStore.getState().undo(),
+            variant: "secondary",
+          },
+        ],
+      });
     } catch (err) {
       console.error("AI generation failed:", err);
-      useToastStore.getState().addToast(
-        err instanceof Error ? err.message : "Generation failed",
-        "error"
+      store.failAIOperation(
+        progressId,
+        err instanceof Error ? err.message : "Generation failed"
       );
     } finally {
       setAiGenerating(false);
@@ -441,7 +474,7 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
         onOpenChange(false);
       } catch (err) {
         console.error("Failed to parse file:", err);
-        useToastStore.getState().addToast("Failed to load file", "error");
+        useNotificationStore.getState().addToast("Failed to load file", "error");
       }
     };
     reader.readAsText(file);

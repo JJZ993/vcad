@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useEffect, useState, useCallback } from "react";
 import { useDocumentStore } from "@vcad/core";
-import { useToastStore } from "@/stores/toast-store";
+import { useNotificationStore } from "@/stores/notification-store";
 import {
   listDocuments,
   loadDocument,
@@ -225,7 +225,7 @@ export function DocumentPicker({
     const id = crypto.randomUUID();
     useDocumentStore.getState().newDocument(id, name);
     onOpenChange(false);
-    useToastStore.getState().addToast(`Created "${name}"`, "success");
+    useNotificationStore.getState().addToast(`Created "${name}"`, "success");
   }, [onOpenChange]);
 
   const handleOpenDocument = useCallback(async () => {
@@ -233,7 +233,7 @@ export function DocumentPicker({
 
     const isLocked = await isDocumentLocked(selectedId);
     if (isLocked) {
-      useToastStore.getState().addToast(
+      useNotificationStore.getState().addToast(
         "Document is open in another tab",
         "error"
       );
@@ -243,7 +243,7 @@ export function DocumentPicker({
     try {
       const stored = await loadDocument(selectedId);
       if (!stored) {
-        useToastStore.getState().addToast("Document not found", "error");
+        useNotificationStore.getState().addToast("Document not found", "error");
         return;
       }
 
@@ -252,13 +252,13 @@ export function DocumentPicker({
       onOpenChange(false);
     } catch (err) {
       console.error("Failed to open document:", err);
-      useToastStore.getState().addToast("Failed to open document", "error");
+      useNotificationStore.getState().addToast("Failed to open document", "error");
     }
   }, [selectedId, onOpenChange]);
 
   const handleDeleteDocument = useCallback(async (id: string) => {
     if (id === currentDocId) {
-      useToastStore.getState().addToast(
+      useNotificationStore.getState().addToast(
         "Cannot delete the current document",
         "error"
       );
@@ -271,10 +271,10 @@ export function DocumentPicker({
       if (selectedId === id) {
         setSelectedId(null);
       }
-      useToastStore.getState().addToast("Document deleted", "success");
+      useNotificationStore.getState().addToast("Document deleted", "success");
     } catch (err) {
       console.error("Failed to delete document:", err);
-      useToastStore.getState().addToast("Failed to delete document", "error");
+      useNotificationStore.getState().addToast("Failed to delete document", "error");
     }
   }, [selectedId, currentDocId]);
 
@@ -291,7 +291,7 @@ export function DocumentPicker({
       }
     } catch (err) {
       console.error("Failed to rename document:", err);
-      useToastStore.getState().addToast("Failed to rename document", "error");
+      useNotificationStore.getState().addToast("Failed to rename document", "error");
     }
   }, [currentDocId]);
 
