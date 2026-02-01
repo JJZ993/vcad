@@ -1,0 +1,114 @@
+---
+title: "Command Palette"
+description: "Quick access to all commands via a searchable keyboard-driven interface"
+order: 12
+---
+
+The command palette provides fast keyboard-driven access to all vcad commands. Instead of navigating menus, type to search and press Enter to execute.
+
+## Opening the Palette
+
+| Platform | Shortcut |
+|----------|----------|
+| Mac | `Cmd+K` |
+| Windows / Linux | `Ctrl+K` |
+
+## Keyboard Navigation
+
+| Key | Action |
+|-----|--------|
+| `Arrow Up` / `Arrow Down` | Move selection |
+| `Enter` | Execute selected command |
+| `Escape` | Close without action |
+
+You can also click a command to execute it, or click outside the palette to close it.
+
+## Searching
+
+Type any part of a command name to filter the list. The search matches both command labels and keywords:
+
+- Type `cyl` to find "Add Cylinder"
+- Type `undo` to find "Undo"
+- Type `stl` to find "Export STL"
+
+Matching text is highlighted in the results. If no commands match, you'll see "No commands found".
+
+## Available Commands
+
+### Primitives
+
+| Command | Shortcut |
+|---------|----------|
+| Add Box | |
+| Add Cylinder | |
+| Add Sphere | |
+
+### Boolean Operations
+
+| Command | Shortcut |
+|---------|----------|
+| Union | `Ctrl+Shift+U` |
+| Difference | `Ctrl+Shift+D` |
+| Intersection | |
+
+### Transform Modes
+
+| Command | Shortcut |
+|---------|----------|
+| Move Mode | |
+| Rotate Mode | |
+| Scale Mode | |
+
+### Edit
+
+| Command | Shortcut |
+|---------|----------|
+| Undo | `Ctrl+Z` / `Cmd+Z` |
+| Redo | `Ctrl+Shift+Z` / `Cmd+Shift+Z` |
+| Delete | |
+| Duplicate | |
+| Deselect All | |
+
+### View
+
+| Command | Shortcut |
+|---------|----------|
+| Toggle Wireframe | |
+| Toggle Grid Snap | |
+| Toggle Sidebar | |
+
+### File
+
+| Command | Shortcut |
+|---------|----------|
+| Save | `Ctrl+S` / `Cmd+S` |
+| Open | `Ctrl+O` / `Cmd+O` |
+| Export STL | |
+| Export GLB | |
+
+### Assembly
+
+| Command | Shortcut |
+|---------|----------|
+| Create Part Definition | |
+| Insert Instance | |
+| Add Fixed Joint | |
+| Add Revolute Joint | |
+| Add Slider Joint | |
+| Set as Ground | |
+
+### Help
+
+| Command | Shortcut |
+|---------|----------|
+| About vcad | |
+
+## Disabled Commands
+
+Some commands require specific conditions to be enabled:
+
+- **Union** and **Difference** require at least 2 parts selected
+- **Delete** requires at least 1 part selected
+- Assembly commands require appropriate selection context
+
+Disabled commands appear dimmed but remain visible so you can discover what's available.

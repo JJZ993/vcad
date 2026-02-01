@@ -1,0 +1,189 @@
+---
+title: "Materials"
+description: "Apply realistic PBR materials to parts for visualization"
+order: 9
+---
+
+Materials give parts realistic appearance using physically based rendering (PBR). Each material defines visual properties like color, metallic reflection, and surface roughness, plus optional physical data for mass calculations.
+
+## Material Properties
+
+Every material has these core properties:
+
+| Property | Type | Range | Description |
+|----------|------|-------|-------------|
+| `color` | `[r, g, b]` | 0.0 - 1.0 | Base color in RGB |
+| `metallic` | `number` | 0.0 - 1.0 | 0 = plastic/dielectric, 1 = metal |
+| `roughness` | `number` | 0.0 - 1.0 | 0 = mirror smooth, 1 = fully rough |
+| `density` | `number` | optional | kg/m^3 for mass calculations |
+
+<Callout type="info">
+The `metallic` property controls how the material reflects light. Metals reflect the environment with their base color tinting the reflection. Non-metals (plastics, wood) have white specular highlights.
+</Callout>
+
+### Roughness Examples
+
+| Value | Appearance |
+|-------|------------|
+| 0.0 - 0.1 | Mirror-like, sharp reflections (chrome, polished glass) |
+| 0.2 - 0.4 | Glossy finish (polished metal, lacquered wood) |
+| 0.5 - 0.7 | Satin/matte finish (brushed metal, plastic) |
+| 0.8 - 1.0 | Fully diffuse (rubber, concrete, foam) |
+
+## Built-in Materials
+
+vcad includes 31 preset materials organized by category.
+
+### Metals
+
+| Key | Name | Density (kg/m^3) |
+|-----|------|------------------|
+| `aluminum` | Aluminum | 2700 |
+| `steel` | Steel | 8000 |
+| `brass` | Brass | 8500 |
+| `copper` | Copper | 8960 |
+| `titanium` | Titanium | 4500 |
+| `chrome` | Chrome | 7190 |
+| `gold` | Gold | 19300 |
+| `silver` | Silver | 10490 |
+
+### Plastics
+
+| Key | Name | Density (kg/m^3) |
+|-----|------|------------------|
+| `abs-white` | ABS White | 1050 |
+| `abs-black` | ABS Black | 1050 |
+| `abs-red` | ABS Red | 1050 |
+| `abs-blue` | ABS Blue | 1050 |
+| `pla` | PLA | 1240 |
+| `petg` | PETG | 1270 |
+| `nylon` | Nylon | 1150 |
+| `resin` | Resin | 1200 |
+| `acrylic` | Acrylic | 1180 |
+| `rubber` | Rubber | 1100 |
+
+### Organic
+
+| Key | Name | Density (kg/m^3) |
+|-----|------|------------------|
+| `oak` | Oak | 750 |
+| `walnut` | Walnut | 650 |
+| `leather` | Leather | 900 |
+| `cork` | Cork | 200 |
+| `bamboo` | Bamboo | 400 |
+
+### Glass
+
+| Key | Name | Density (kg/m^3) |
+|-----|------|------------------|
+| `glass` | Glass | 2500 |
+| `glass-tinted` | Tinted Glass | 2500 |
+
+### Composites
+
+| Key | Name | Density (kg/m^3) |
+|-----|------|------------------|
+| `carbon-fiber` | Carbon Fiber | 1600 |
+| `fiberglass` | Fiberglass | 1800 |
+| `kevlar` | Kevlar | 1440 |
+
+### Other
+
+| Key | Name | Density (kg/m^3) |
+|-----|------|------------------|
+| `concrete` | Concrete | 2400 |
+| `ceramic` | Ceramic | 2300 |
+| `foam` | Foam | 50 |
+
+## Custom Materials
+
+Define custom materials in your document's `materials` dictionary:
+
+```json
+{
+  "materials": {
+    "my-purple-plastic": {
+      "name": "my-purple-plastic",
+      "color": [0.5, 0.2, 0.8],
+      "metallic": 0.0,
+      "roughness": 0.5,
+      "density": 1100
+    }
+  }
+}
+```
+
+<Param name="name" type="string">
+Unique identifier for the material. Use lowercase with hyphens.
+</Param>
+<Param name="color" type="[number, number, number]">
+RGB color values from 0.0 to 1.0.
+</Param>
+<Param name="metallic" type="number">
+Set to 0.0 for plastics, wood, and most non-metals. Set to 0.8-1.0 for metals.
+</Param>
+<Param name="roughness" type="number">
+Surface roughness from 0.0 (mirror) to 1.0 (matte).
+</Param>
+<Param name="density" type="number">
+Optional. Density in kg/m^3 for mass calculations.
+</Param>
+
+## Assigning Materials to Parts
+
+### In the UI
+
+1. Select a part in the viewport or feature tree
+2. Open the **Material Selector** in the properties panel
+3. Click a material to apply it
+
+The material selector provides:
+- **Live preview**: Hover over a material to preview it on the selected part
+- **Recent materials**: Your last 6 used materials appear at the top
+- **Favorites**: Star materials to pin them for quick access
+
+### In Code (MCP)
+
+When creating parts via the MCP server, specify the material key:
+
+```json
+{
+  "parts": [
+    {
+      "name": "bracket",
+      "material": "aluminum",
+      "primitive": {
+        "type": "cube",
+        "size": { "x": 50, "y": 30, "z": 5 }
+      }
+    }
+  ]
+}
+```
+
+### In .vcad Files
+
+Materials are assigned per-part in the document's `roots` array:
+
+```json
+{
+  "roots": [
+    { "root": "op-001", "material": "steel" },
+    { "root": "op-002", "material": "abs-black" }
+  ]
+}
+```
+
+## Mass Calculations
+
+When a material has a `density` value, vcad can calculate part mass:
+
+```
+mass = volume * density
+```
+
+Volume is computed from the part geometry. The **Inspect** panel displays mass when a material with density is assigned.
+
+<Callout type="tip">
+For assemblies, total mass is the sum of all instance masses, accounting for each instance's material assignment.
+</Callout>

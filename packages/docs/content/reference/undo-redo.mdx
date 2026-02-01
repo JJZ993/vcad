@@ -1,0 +1,74 @@
+---
+title: "Undo/Redo"
+description: "Revert and replay document changes"
+order: 13
+---
+
+Undo and redo let you revert mistakes and explore design alternatives without risk. Every document operation can be undone.
+
+## Keyboard Shortcuts
+
+| Action | macOS | Windows/Linux |
+|--------|-------|---------------|
+| Undo | `Cmd+Z` | `Ctrl+Z` |
+| Redo | `Cmd+Shift+Z` | `Ctrl+Shift+Z` |
+
+Shortcuts work when the viewport has focus. They are ignored when typing in input fields (text inputs, parameter fields).
+
+## How It Works
+
+vcad maintains two stacks: an **undo stack** of previous states and a **redo stack** of undone states.
+
+**When you make a change:**
+1. Current state is saved to the undo stack
+2. Redo stack is cleared (new changes start a fresh branch)
+3. Your change is applied
+
+**When you undo:**
+1. Current state is pushed to the redo stack
+2. Previous state is restored from the undo stack
+
+**When you redo:**
+1. Current state is pushed to the undo stack
+2. Next state is restored from the redo stack
+
+<Callout type="info">
+Making any edit after undoing clears the redo stack. You cannot redo after making new changes.
+</Callout>
+
+## Supported Operations
+
+All document mutations are undoable:
+
+- Add, edit, and remove primitives
+- Transform operations (translate, rotate, scale, mirror)
+- Boolean operations (union, difference, intersection)
+- Parameter edits
+- Rename operations
+- Material assignments
+- Sketch operations (extrude, revolve, sweep, loft)
+- Assembly operations (instances, joints)
+- Duplicate operations
+
+## History Limits
+
+vcad stores up to **50 undo steps**. When you exceed 50 operations, the oldest states are dropped.
+
+| Limit | Value |
+|-------|-------|
+| Maximum undo steps | 50 |
+| Redo steps | Unlimited (until next edit) |
+
+<Callout type="tip">
+Save your document frequently if you need to preserve states beyond the 50-step limit.
+</Callout>
+
+## Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| Loading a file | Clears both undo and redo stacks |
+| Rapid undo/redo | Responds immediately, no delay |
+| Undo during preview | Preview is cancelled, document reverts |
+| At oldest state | No further undo possible |
+| At newest state | No redo available |

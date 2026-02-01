@@ -1,0 +1,466 @@
+---
+title: "Sketch Operations"
+description: "Create 3D solids from 2D sketches: extrude, revolve, sweep, loft"
+order: 7
+---
+
+Sketch operations transform 2D profiles into 3D solids. They are essential for creating parts with complex geometry that cannot be achieved with primitives and booleans alone.
+
+## Overview
+
+| Operation | Description | Use Case |
+|-----------|-------------|----------|
+| Extrude | Push profile along a direction | Brackets, plates, structural beams |
+| Revolve | Spin profile around an axis | Bottles, wheels, pulleys |
+| Sweep | Move profile along a path | Pipes, rails, springs |
+| Loft | Blend between multiple profiles | Turbine blades, bottle necks |
+
+All sketch operations require a **closed profile**—a series of connected line and arc segments that form a closed loop.
+
+## Extrude
+
+Sweeps a closed profile along a linear direction to create a prismatic solid.
+
+```rust
+Part::extrude(
+    plane: SketchPlane,
+    origin: Vec3,
+    segments: &[SketchSegment2D],
+    direction: Vec3,
+) -> Part
+```
+
+<Param name="plane" type="SketchPlane">
+The plane containing the sketch (XY, XZ, or YZ).
+</Param>
+<Param name="origin" type="Vec3">
+Origin point of the sketch in 3D space.
+</Param>
+<Param name="segments" type="&[SketchSegment2D]">
+Closed profile geometry (lines, arcs).
+</Param>
+<Param name="direction" type="Vec3">
+Extrusion vector. The length determines the extrusion distance.
+</Param>
+
+**Creates:**
+- 2 cap faces (start and end profiles)
+- N lateral faces (one per profile segment)
+
+```rust
+// L-shaped bracket profile
+let profile = vec![
+    SketchSegment2D::line([0.0, 0.0], [20.0, 0.0]),
+    SketchSegment2D::line([20.0, 0.0], [20.0, 5.0]),
+    SketchSegment2D::line([20.0, 5.0], [5.0, 5.0]),
+    SketchSegment2D::line([5.0, 5.0], [5.0, 30.0]),
+    SketchSegment2D::line([5.0, 30.0], [0.0, 30.0]),
+    SketchSegment2D::line([0.0, 30.0], [0.0, 0.0]),
+];
+
+// Extrude 50mm along Z
+let bracket = Part::extrude(
+    SketchPlane::XY,
+    Vec3::new(0.0, 0.0, 0.0),
+    &profile,
+    Vec3::new(0.0, 0.0, 50.0),
+);
+```
+
+### When to Use Extrude
+
+- Parts with constant cross-section
+- Plates, brackets, structural members
+- Features like bosses and ribs
+- Quick prototyping of mechanical parts
+
+<Callout type="tip">
+Extrusion direction does not need to be perpendicular to the sketch plane. Angled extrusions create sheared geometry.
+</Callout>
+
+## Revolve
+
+Rotates a closed profile around an axis to create a solid of revolution.
+
+```rust
+Part::revolve(
+    plane: SketchPlane,
+    origin: Vec3,
+    segments: &[SketchSegment2D],
+    axis_origin: Vec3,
+    axis_dir: Vec3,
+    angle_deg: f64,
+) -> Part
+```
+
+<Param name="plane" type="SketchPlane">
+The plane containing the sketch.
+</Param>
+<Param name="origin" type="Vec3">
+Origin point of the sketch.
+</Param>
+<Param name="segments" type="&[SketchSegment2D]">
+Closed profile geometry.
+</Param>
+<Param name="axis_origin" type="Vec3">
+A point on the rotation axis.
+</Param>
+<Param name="axis_dir" type="Vec3">
+Direction of the rotation axis.
+</Param>
+<Param name="angle_deg" type="f64">
+Rotation angle in degrees (0-360).
+</Param>
+
+**Creates:**
+- Full 360-degree rotation: closed toroidal/cylindrical surfaces
+- Partial rotation: wedge with cap faces at start/end angles
+
+```rust
+// Wine glass profile (cross-section)
+let profile = vec![
+    SketchSegment2D::line([0.0, 0.0], [30.0, 0.0]),   // base
+    SketchSegment2D::line([30.0, 0.0], [30.0, 5.0]),
+    SketchSegment2D::line([30.0, 5.0], [5.0, 5.0]),
+    SketchSegment2D::line([5.0, 5.0], [3.0, 50.0]),   // stem
+    SketchSegment2D::line([3.0, 50.0], [20.0, 60.0]), // bowl
+    SketchSegment2D::arc([20.0, 60.0], [25.0, 80.0], [22.0, 70.0]),
+    SketchSegment2D::line([25.0, 80.0], [0.0, 80.0]),
+    SketchSegment2D::line([0.0, 80.0], [0.0, 0.0]),
+];
+
+// Full revolution around Y axis
+let glass = Part::revolve(
+    SketchPlane::XY,
+    Vec3::ZERO,
+    &profile,
+    Vec3::new(0.0, 0.0, 0.0),  // axis through origin
+    Vec3::new(0.0, 1.0, 0.0),  // Y axis
+    360.0,
+);
+```
+
+### Partial Revolve
+
+```rust
+// Quarter pie slice
+let pie_slice = Part::revolve(
+    SketchPlane::XY,
+    Vec3::ZERO,
+    &profile,
+    Vec3::ZERO,
+    Vec3::new(0.0, 0.0, 1.0),  // Z axis
+    90.0,  // 90-degree wedge
+);
+```
+
+### When to Use Revolve
+
+- Rotationally symmetric parts (wheels, pulleys, knobs)
+- Turned parts (lathe operations)
+- Bottles, vases, bowls
+- Pie-chart style wedges
+
+<Callout type="warning">
+Keep the profile entirely on one side of the rotation axis. If the profile crosses the axis, the resulting geometry may self-intersect.
+</Callout>
+
+## Sweep
+
+Moves a closed profile along a 3D path curve with optional twist and scale.
+
+```rust
+Part::sweep(
+    plane: SketchPlane,
+    origin: Vec3,
+    segments: &[SketchSegment2D],
+    path: &PathCurve,
+    options: SweepOptions,
+) -> Part
+```
+
+<Param name="plane" type="SketchPlane">
+The plane containing the sketch.
+</Param>
+<Param name="origin" type="Vec3">
+Origin point of the sketch (start of path).
+</Param>
+<Param name="segments" type="&[SketchSegment2D]">
+Closed profile geometry.
+</Param>
+<Param name="path" type="&PathCurve">
+3D path curve to sweep along (line, arc, spline, helix).
+</Param>
+<Param name="options" type="SweepOptions">
+Optional twist and scale parameters.
+</Param>
+
+### SweepOptions
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `twist_angle` | `f64` | 0.0 | Total twist in radians along path |
+| `scale_start` | `f64` | 1.0 | Scale factor at path start |
+| `scale_end` | `f64` | 1.0 | Scale factor at path end |
+
+```rust
+// Curved pipe
+let circle_profile = vec![
+    SketchSegment2D::arc([5.0, 0.0], [-5.0, 0.0], [0.0, 5.0]),
+    SketchSegment2D::arc([-5.0, 0.0], [5.0, 0.0], [0.0, -5.0]),
+];
+
+let curved_path = PathCurve::arc(
+    Vec3::new(0.0, 0.0, 0.0),
+    Vec3::new(50.0, 50.0, 0.0),
+    Vec3::new(50.0, 0.0, 0.0),
+);
+
+let pipe = Part::sweep(
+    SketchPlane::YZ,
+    Vec3::ZERO,
+    &circle_profile,
+    &curved_path,
+    SweepOptions::default(),
+);
+```
+
+### Sweep with Twist
+
+```rust
+// Twisted ribbon
+let rect_profile = vec![
+    SketchSegment2D::line([0.0, -1.0], [0.0, 1.0]),
+    SketchSegment2D::line([0.0, 1.0], [10.0, 1.0]),
+    SketchSegment2D::line([10.0, 1.0], [10.0, -1.0]),
+    SketchSegment2D::line([10.0, -1.0], [0.0, -1.0]),
+];
+
+let straight_path = PathCurve::line(
+    Vec3::new(0.0, 0.0, 0.0),
+    Vec3::new(0.0, 0.0, 100.0),
+);
+
+let ribbon = Part::sweep(
+    SketchPlane::XY,
+    Vec3::ZERO,
+    &rect_profile,
+    &straight_path,
+    SweepOptions {
+        twist_angle: std::f64::consts::PI,  // 180-degree twist
+        ..Default::default()
+    },
+);
+```
+
+### Helix (Spring)
+
+```rust
+// Compression spring
+let wire_profile = vec![
+    SketchSegment2D::arc([1.5, 0.0], [-1.5, 0.0], [0.0, 1.5]),
+    SketchSegment2D::arc([-1.5, 0.0], [1.5, 0.0], [0.0, -1.5]),
+];
+
+let helix = PathCurve::helix(
+    radius: 10.0,
+    pitch: 5.0,   // 5mm per revolution
+    turns: 8.0,
+);
+
+let spring = Part::sweep(
+    SketchPlane::XY,
+    Vec3::new(10.0, 0.0, 0.0),
+    &wire_profile,
+    &helix,
+    SweepOptions::default(),
+);
+```
+
+### When to Use Sweep
+
+- Pipes, tubes, and conduits
+- Rails and extrusions along curves
+- Springs and helical features
+- Handles and curved structural members
+- Wire/cable routing visualization
+
+<Callout type="info">
+Sweep uses rotation-minimizing frames to maintain consistent profile orientation along the path, avoiding the twisting artifacts that can occur with simpler Frenet frames.
+</Callout>
+
+## Loft
+
+Interpolates between multiple profiles at different positions to create a smooth transition solid.
+
+```rust
+Part::loft(
+    profiles: &[LoftProfile],
+    closed: bool,
+) -> Part
+```
+
+<Param name="profiles" type="&[LoftProfile]">
+Two or more profile definitions at different positions.
+</Param>
+<Param name="closed" type="bool">
+If true, connects the last profile back to the first (creates a tube).
+</Param>
+
+### LoftProfile
+
+Each profile contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `plane` | `SketchPlane` | The plane containing the sketch |
+| `origin` | `Vec3` | Origin point in 3D space |
+| `segments` | `Vec<SketchSegment2D>` | Closed profile geometry |
+
+**Requirements:**
+- Minimum 2 profiles
+- All profiles must have the same number of segments
+- Profiles should be at different positions in 3D space
+
+```rust
+// Transition from square to circle
+let square_profile = vec![
+    SketchSegment2D::line([-10.0, -10.0], [10.0, -10.0]),
+    SketchSegment2D::line([10.0, -10.0], [10.0, 10.0]),
+    SketchSegment2D::line([10.0, 10.0], [-10.0, 10.0]),
+    SketchSegment2D::line([-10.0, 10.0], [-10.0, -10.0]),
+];
+
+// Approximate circle with 4 arcs to match segment count
+let circle_profile = vec![
+    SketchSegment2D::arc([-10.0, 0.0], [0.0, -10.0], [-7.0, -7.0]),
+    SketchSegment2D::arc([0.0, -10.0], [10.0, 0.0], [7.0, -7.0]),
+    SketchSegment2D::arc([10.0, 0.0], [0.0, 10.0], [7.0, 7.0]),
+    SketchSegment2D::arc([0.0, 10.0], [-10.0, 0.0], [-7.0, 7.0]),
+];
+
+let adapter = Part::loft(
+    &[
+        LoftProfile {
+            plane: SketchPlane::XY,
+            origin: Vec3::new(0.0, 0.0, 0.0),
+            segments: square_profile,
+        },
+        LoftProfile {
+            plane: SketchPlane::XY,
+            origin: Vec3::new(0.0, 0.0, 50.0),
+            segments: circle_profile,
+        },
+    ],
+    false,
+);
+```
+
+### Multi-Profile Loft
+
+```rust
+// Airfoil transitioning along span
+let profiles = vec![
+    LoftProfile {
+        plane: SketchPlane::XZ,
+        origin: Vec3::new(0.0, 0.0, 0.0),
+        segments: root_airfoil.clone(),
+    },
+    LoftProfile {
+        plane: SketchPlane::XZ,
+        origin: Vec3::new(0.0, 100.0, 5.0),
+        segments: mid_airfoil.clone(),
+    },
+    LoftProfile {
+        plane: SketchPlane::XZ,
+        origin: Vec3::new(0.0, 200.0, 10.0),
+        segments: tip_airfoil.clone(),
+    },
+];
+
+let wing = Part::loft(&profiles, false);
+```
+
+### Closed Loft (Tube)
+
+```rust
+// Torus-like shape
+let profile = create_circle_profile(5.0);
+
+let ring = Part::loft(
+    &[
+        LoftProfile {
+            plane: SketchPlane::YZ,
+            origin: Vec3::new(30.0, 0.0, 0.0),
+            segments: profile.clone(),
+        },
+        LoftProfile {
+            plane: SketchPlane::XZ,
+            origin: Vec3::new(0.0, 30.0, 0.0),
+            segments: profile.clone(),
+        },
+        LoftProfile {
+            plane: SketchPlane::YZ,
+            origin: Vec3::new(-30.0, 0.0, 0.0),
+            segments: profile.clone(),
+        },
+        LoftProfile {
+            plane: SketchPlane::XZ,
+            origin: Vec3::new(0.0, -30.0, 0.0),
+            segments: profile.clone(),
+        },
+    ],
+    true,  // Connect last to first
+);
+```
+
+### When to Use Loft
+
+- Transitioning between different shapes
+- Organic forms (bottles, vases, aerodynamic shapes)
+- Turbine and propeller blades
+- Ductwork and HVAC transitions
+- Ergonomic handles and grips
+
+<Callout type="warning">
+All profiles must have the same segment count. If transitioning between shapes with different numbers of sides, approximate one shape to match the other's segment count.
+</Callout>
+
+## Sketch Segments
+
+Profile geometry is defined using 2D segments:
+
+### Line Segment
+
+```rust
+SketchSegment2D::line(start: [f64; 2], end: [f64; 2])
+```
+
+### Arc Segment
+
+```rust
+SketchSegment2D::arc(start: [f64; 2], end: [f64; 2], mid: [f64; 2])
+```
+
+The `mid` point lies on the arc between start and end, defining the curve direction and radius.
+
+## Edge Cases
+
+| Situation | Behavior |
+|-----------|----------|
+| Empty profile | Operation rejected with error |
+| Open profile | Warning displayed, may produce invalid geometry |
+| Self-intersecting profile | May produce invalid or unexpected geometry |
+| Zero-length extrusion | Prevented by validation |
+| Revolve axis through profile | Creates hollow geometry |
+| Mismatched loft segment counts | Error with specific mismatch info |
+
+## Operation Comparison
+
+| Feature | Extrude | Revolve | Sweep | Loft |
+|---------|---------|---------|-------|------|
+| Profile count | 1 | 1 | 1 | 2+ |
+| Path required | No (linear) | No (circular) | Yes | No |
+| Twist support | No | No | Yes | No |
+| Scale variation | No | No | Yes | Implicit |
+| Profiles at different positions | No | No | No | Yes |

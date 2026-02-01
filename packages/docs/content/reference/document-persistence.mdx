@@ -1,0 +1,153 @@
+---
+title: "Document Persistence"
+description: "Save and load .vcad files with offline-first storage"
+order: 19
+---
+
+vcad automatically saves your work to the browser's local storage. Your documents persist across browser sessions and work fully offline.
+
+## The .vcad File Format
+
+Documents are saved as `.vcad` files, which are JSON containing the complete parametric model:
+
+```json
+{
+  "name": "My Part",
+  "parts": [
+    {
+      "id": "part-1",
+      "name": "Main Body",
+      "ops": [
+        { "type": "box", "width": 100, "height": 50, "depth": 25 },
+        { "type": "translate", "ref": 0, "x": 0, "y": 0, "z": 10 }
+      ]
+    }
+  ],
+  "instances": [...],
+  "joints": [...],
+  "materials": {...},
+  "sketches": [...]
+}
+```
+
+### What's Stored
+
+| Content | Description |
+|---------|-------------|
+| **Parametric DAG** | Operations reference parent indices, enabling non-destructive editing |
+| **Part definitions** | Named parts with their operation sequences |
+| **Instances** | Part placements with transforms for assemblies |
+| **Joints** | Kinematic relationships between instances |
+| **Material assignments** | Per-part or per-face materials |
+| **Sketches** | 2D geometry and constraint data |
+
+## Auto-Save
+
+vcad saves automatically on every change. You never need to manually save.
+
+| Action | What Happens |
+|--------|--------------|
+| Create new document | Generates name ("Untitled 1", "Untitled 2", etc.), saves immediately |
+| Make any edit | Auto-saves to IndexedDB |
+| Rename document | Updates name in storage |
+| Close browser tab | Your work is already saved |
+
+<Callout type="info">
+Auto-save is instant. There is no save delay or debounce. Every change is persisted immediately.
+</Callout>
+
+## Loading Documents
+
+### From the Document List
+
+Open the document list to see all your saved documents, sorted by most recently modified. Click a document to open it.
+
+### From File Import
+
+To load a `.vcad` file from your computer:
+
+1. Use File > Import or drag the file onto the viewport
+2. The file is loaded into a new document
+3. The new document is saved to local storage
+
+## Exporting Documents
+
+To share a document or back it up:
+
+1. Use File > Export or the export button
+2. A `.vcad` file downloads to your computer
+3. Share this file or import it on another device
+
+<Callout type="tip">
+Export your important documents periodically. Browser storage can be cleared by the user or browser cleanup tools.
+</Callout>
+
+## Offline Support
+
+vcad works fully offline after the initial page load. All features remain available:
+
+- Create and edit documents
+- Save and load from local storage
+- Export files to your computer
+- Import files from your computer
+
+No network connection is required for any editing operations.
+
+## Multi-Tab Behavior
+
+vcad coordinates across browser tabs to prevent conflicts when you have the same document open in multiple tabs.
+
+| Scenario | Behavior |
+|----------|----------|
+| Open document in second tab | Second tab shows "locked" warning, opens read-only |
+| Close the editing tab | Lock releases, other tabs can edit |
+| Tab crashes | Lock auto-releases after 30 seconds |
+
+<Callout type="warning">
+Avoid editing the same document in multiple tabs. The lock system prevents data loss but provides a degraded experience.
+</Callout>
+
+## Storage Management
+
+Documents are stored in the browser's IndexedDB. vcad monitors storage usage and warns you when space is low.
+
+| Storage Level | Indicator |
+|---------------|-----------|
+| Normal | No indicator |
+| 80% capacity | Warning message |
+| 95% capacity | Blocks new saves until space is freed |
+
+### Freeing Space
+
+If you run low on storage:
+
+1. Open the document list
+2. Delete documents you no longer need
+3. Export important documents first as backup
+
+### Storage Limits
+
+Browser storage limits vary by browser and device. Typical limits are 50MB-1GB per origin. Large documents (over 10MB) may impact performance.
+
+## Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| **Storage full** | Warning dialog appears, suggests deleting old documents |
+| **IndexedDB unavailable** | Falls back to session-only mode with warning (work is lost on tab close) |
+| **Corrupted file** | Parser validates JSON, shows error on invalid format |
+| **Browser data cleared** | Local documents are lost; keep exports of important work |
+
+## Sync Status
+
+The sync indicator shows the current document state:
+
+| Status | Meaning |
+|--------|---------|
+| `local` | Saved locally, not synced to cloud |
+| `pending` | Changes waiting for cloud sync |
+| `synced` | Fully synchronized with cloud |
+
+<Callout type="info">
+Cloud sync is not yet available. All documents are currently local-only. Keep exports of important work.
+</Callout>

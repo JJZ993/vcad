@@ -1,0 +1,262 @@
+---
+title: "Patterns"
+description: "Repeat geometry in linear or circular arrays"
+order: 4
+---
+
+Patterns create parametric arrays of geometry from a single feature. Instead of manually copying and positioning parts, define the pattern once and let vcad generate all copies.
+
+## Linear Pattern
+
+Creates copies of a part along a direction vector with uniform spacing.
+
+```rust
+.linear_pattern(dx: f64, dy: f64, dz: f64, count: usize) -> Part
+```
+
+<Param name="dx" type="f64">
+Total distance from first to last copy along X axis in millimeters.
+</Param>
+<Param name="dy" type="f64">
+Total distance from first to last copy along Y axis in millimeters.
+</Param>
+<Param name="dz" type="f64">
+Total distance from first to last copy along Z axis in millimeters.
+</Param>
+<Param name="count" type="usize">
+Total number of copies including the original.
+</Param>
+
+The spacing between copies is calculated as `distance / (count - 1)`.
+
+```rust
+// Create 4 holes spaced 30mm apart along X axis
+let hole = centered_cylinder("hole", 3.0, 10.0, 32);
+let row = hole.linear_pattern(90.0, 0.0, 0.0, 4);
+// Creates holes at X = 0, 30, 60, 90
+```
+
+### Diagonal Patterns
+
+Combine direction components for diagonal patterns:
+
+```rust
+// Pattern at 45 degrees in XY plane
+let pin = centered_cylinder("pin", 2.0, 8.0, 24);
+let diagonal = pin.linear_pattern(40.0, 40.0, 0.0, 5);
+```
+
+### 2D Grid Pattern
+
+Chain linear patterns to create grids:
+
+```rust
+let hole = centered_cylinder("hole", 2.5, 10.0, 32);
+
+// 4 columns x 3 rows grid
+let grid = hole
+    .linear_pattern(30.0, 0.0, 0.0, 4)   // 4 copies along X
+    .linear_pattern(0.0, 20.0, 0.0, 3);  // 3 copies along Y
+// Creates 12 holes total
+```
+
+### 3D Grid Pattern
+
+Add a third linear pattern for volumetric arrays:
+
+```rust
+let cube = centered_cube("block", 5.0, 5.0, 5.0);
+
+let lattice = cube
+    .linear_pattern(10.0, 0.0, 0.0, 4)
+    .linear_pattern(0.0, 10.0, 0.0, 4)
+    .linear_pattern(0.0, 0.0, 10.0, 4);
+// Creates 64 cubes in a 4x4x4 grid
+```
+
+## Circular Pattern
+
+Creates copies of a part around the Z axis with uniform angular spacing.
+
+```rust
+.circular_pattern(radius: f64, count: usize) -> Part
+```
+
+<Param name="radius" type="f64">
+Pattern radius. Use 0 to rotate around the origin (part must be pre-positioned).
+</Param>
+<Param name="count" type="usize">
+Number of copies distributed evenly around 360 degrees.
+</Param>
+
+Copies are always distributed evenly across a full 360-degree circle.
+
+```rust
+// 6 holes around a 30mm radius
+let hole = centered_cylinder("hole", 3.0, 10.0, 32)
+    .translate(30.0, 0.0, 0.0);  // Position at desired radius
+let pattern = hole.circular_pattern(0.0, 6);
+```
+
+<Callout type="info">
+When `radius` is 0, the part rotates around the Z axis at the origin. Pre-translate the part to set the pattern radius.
+</Callout>
+
+### Bolt Circle Pattern
+
+For standard bolt patterns, use the `bolt_pattern` helper:
+
+```rust
+bolt_pattern(
+    count: usize,
+    bcd: f64,
+    hole_dia: f64,
+    depth: f64,
+    segments: i32
+) -> Part
+```
+
+<Param name="count" type="usize">
+Number of holes in the pattern.
+</Param>
+<Param name="bcd" type="f64">
+Bolt Circle Diameter in millimeters (not radius).
+</Param>
+<Param name="hole_dia" type="f64">
+Diameter of each hole in millimeters.
+</Param>
+<Param name="depth" type="f64">
+Depth of each hole in millimeters.
+</Param>
+<Param name="segments" type="i32">
+Number of facets per hole circumference.
+</Param>
+
+```rust
+// 6 holes on a 60mm bolt circle diameter
+let holes = bolt_pattern(6, 60.0, 5.5, 10.0, 32);
+let flange = centered_cylinder("flange", 45.0, 8.0, 64) - holes;
+```
+
+<Callout type="tip" title="BCD vs Radius">
+Manufacturers specify bolt patterns using Bolt Circle Diameter (BCD), not radius. A 60mm BCD means holes are at a 30mm radius from center.
+</Callout>
+
+### Offset Start Angle
+
+The first copy is placed at 0 degrees (positive X direction). To offset:
+
+```rust
+// Start pattern at 30 degrees instead of 0
+let slot = centered_cube("slot", 10.0, 2.0, 5.0)
+    .translate(25.0, 0.0, 0.0)
+    .rotate(0.0, 0.0, 30.0);  // Pre-rotate the original
+
+let pattern = slot.circular_pattern(0.0, 6);
+```
+
+### Radial Features
+
+For features that point outward from the center (spokes, slots):
+
+```rust
+// Radial vent slots
+let slot = centered_cube("slot", 15.0, 2.0, 5.0)
+    .translate(20.0, 0.0, 0.0);  // Offset from center
+
+let vents = slot.circular_pattern(0.0, 8);
+```
+
+## Nested Patterns
+
+Patterns can be nested to create complex arrays:
+
+```rust
+// Circular pattern of linear patterns
+let hole = centered_cylinder("hole", 2.0, 10.0, 32);
+
+// Create a row of 3 holes
+let row = hole.linear_pattern(10.0, 0.0, 0.0, 3);
+
+// Position row at radius and repeat around circle
+let pattern = row
+    .translate(30.0, 0.0, 0.0)
+    .circular_pattern(0.0, 6);
+// Creates 18 holes total (3 x 6)
+```
+
+## Pattern Behavior
+
+| Aspect | Behavior |
+|--------|----------|
+| Count includes original | `count=1` produces just the original, `count=4` produces 4 copies |
+| Direction normalized | Linear pattern normalizes direction internally |
+| Parametric updates | Changing pattern parameters updates all instances |
+| Works with any feature | Primitives, booleans, extrudes, other patterns |
+
+## Examples
+
+### Mounting Plate with Hole Grid
+
+```rust
+use vcad::{centered_cube, centered_cylinder};
+
+let plate = centered_cube("plate", 100.0, 80.0, 5.0);
+
+let hole = centered_cylinder("hole", 3.0, 10.0, 32)
+    .translate(-40.0, -30.0, 0.0);  // Start position
+
+let holes = hole
+    .linear_pattern(80.0, 0.0, 0.0, 5)   // 5 holes along X
+    .linear_pattern(0.0, 60.0, 0.0, 4);  // 4 rows along Y
+
+let result = plate - holes;
+```
+
+### Hub with Lightening Holes
+
+```rust
+use vcad::{centered_cylinder, bolt_pattern};
+
+// Main hub body
+let hub = centered_cylinder("hub", 50.0, 15.0, 64);
+
+// Center bore
+let bore = centered_cylinder("bore", 12.0, 20.0, 32);
+
+// Bolt pattern on 70mm BCD
+let bolts = bolt_pattern(8, 70.0, 6.5, 20.0, 32);
+
+// Lightening holes between bolt holes
+let light_hole = centered_cylinder("light", 8.0, 20.0, 32)
+    .translate(25.0, 0.0, 0.0)
+    .rotate(0.0, 0.0, 22.5);  // Offset 22.5 degrees from bolts
+
+let lightening = light_hole.circular_pattern(0.0, 8);
+
+let result = hub - bore - bolts - lightening;
+```
+
+### Linear Rail Mount
+
+```rust
+use vcad::{centered_cube, centered_cylinder};
+
+let rail = centered_cube("rail", 200.0, 20.0, 10.0);
+
+// Countersunk mounting holes
+let hole = centered_cylinder("hole", 2.5, 15.0, 24)
+    .translate(-80.0, 0.0, 0.0);
+
+let holes = hole.linear_pattern(160.0, 0.0, 0.0, 5);
+
+let result = rail - holes;
+```
+
+## Method Reference
+
+| Method | Description |
+|--------|-------------|
+| `.linear_pattern(dx, dy, dz, count)` | Create copies along a direction vector |
+| `.circular_pattern(radius, count)` | Create copies around the Z axis |
+| `bolt_pattern(count, bcd, dia, depth, segs)` | Create a bolt circle hole pattern |

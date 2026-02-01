@@ -1,0 +1,141 @@
+---
+title: "Ray Tracing"
+description: "Pixel-perfect rendering of CAD geometry without tessellation artifacts"
+order: 20
+---
+
+Ray tracing renders your models by casting rays directly against the mathematical surface definitions, producing pixel-perfect edges and curves at any zoom level.
+
+## Why Ray Tracing?
+
+Traditional CAD rendering converts smooth surfaces into triangle meshes (tessellation) before display. This creates visible artifacts:
+
+- **Faceted edges**: Cylinders appear as hexagons, spheres look like geodesic domes
+- **Tessellation lag**: Parameter changes require re-meshing before display
+- **LOD tradeoffs**: Fine meshes use more memory, coarse meshes look jagged
+
+vcad's ray tracer bypasses tessellation entirely. Each pixel casts a ray that intersects the actual mathematical surface, so curves remain perfectly smooth regardless of zoom level.
+
+<Callout type="info">
+Ray tracing requires WebGPU support. Currently available in Chrome, Edge, and other Chromium-based browsers.
+</Callout>
+
+## When to Use Ray Tracing
+
+Ray tracing is ideal for:
+
+- **Precise visual inspection**: Verify edge quality and surface continuity
+- **Presentation renders**: Capture screenshots with perfect silhouettes
+- **High-zoom work**: Examine fine details without seeing mesh artifacts
+- **Curved surfaces**: Cylinders, spheres, cones, and tori look dramatically better
+
+For rapid prototyping or when working with very complex assemblies, standard rendering may be more responsive.
+
+## Enabling Ray Tracing
+
+1. Open **Settings** from the toolbar
+2. Under **Display**, find **Render Mode**
+3. Select **Ray Traced**
+
+If ray tracing is unavailable (no WebGPU), the option will be disabled and vcad will use standard rendering.
+
+## Quality Settings
+
+Three quality levels trade resolution for performance:
+
+| Quality | Resolution | Best For |
+|---------|------------|----------|
+| Draft | 0.5x viewport | Interactive manipulation, orbit/pan |
+| Standard | 1.0x viewport | Normal viewing and editing |
+| High | 2.0x viewport | Precise inspection, screenshots |
+
+vcad automatically uses Draft quality while you move the camera, then switches to your selected quality when idle.
+
+### Changing Quality
+
+1. Open **Settings**
+2. Under **Display**, find **Ray Trace Quality**
+3. Select Draft, Standard, or High
+
+<Callout type="tip">
+Use High quality for final screenshots. The extra resolution captures sharper edges and smoother curves.
+</Callout>
+
+## Performance Considerations
+
+Ray tracing performance depends on several factors:
+
+### Model Complexity
+
+More faces mean more ray intersection tests. Simple primitives render quickly; complex boolean results with many faces take longer.
+
+### Resolution
+
+Higher quality settings render more pixels. If performance drops, try Draft or Standard quality.
+
+### GPU Capability
+
+Ray tracing runs on WebGPU compute shaders. Discrete GPUs perform significantly better than integrated graphics.
+
+### Resolution Cap
+
+To maintain interactivity, resolution is capped at 640x480 equivalent pixels. For very large viewports, the ray-traced image is upscaled.
+
+## Supported Surfaces
+
+The ray tracer handles all vcad surface types:
+
+| Surface | Intersection Method |
+|---------|-------------------|
+| Plane | Analytical (exact) |
+| Cylinder | Analytical (exact) |
+| Sphere | Analytical (exact) |
+| Cone | Analytical (exact) |
+| Torus | Analytical (quartic solver) |
+| NURBS | Iterative (Newton's method) |
+
+All surfaces support trimmed boundaries (faces with holes).
+
+## Face Selection
+
+Ray tracing enables precise face picking. When you click on the model, the ray tracer reports exactly which face is under the cursor.
+
+This is more accurate than mesh-based picking, especially at edges where tessellation can cause incorrect selections.
+
+## Fallback Behavior
+
+If WebGPU is unavailable, vcad automatically falls back to standard tessellated rendering. Your models still display correctly, just with the usual mesh-based quality.
+
+To check if ray tracing is available:
+1. Open **Settings**
+2. Look for **Ray Trace Quality** under Display
+3. If the option is disabled, your browser does not support WebGPU
+
+## Troubleshooting
+
+### Ray tracing option is disabled
+
+Your browser does not support WebGPU. Try:
+- Chrome 113 or later
+- Edge 113 or later
+- Enable WebGPU flags if using an older version
+
+### Rendering is slow
+
+- Switch to Draft quality during editing
+- Reduce viewport size
+- Check if you have a discrete GPU available
+
+### Edges look blocky
+
+This can happen at very high zoom if you hit the resolution cap. The ray tracer limits pixel count for interactivity. For screenshots, export at a higher resolution instead.
+
+## Comparison
+
+| Aspect | Standard Rendering | Ray Tracing |
+|--------|-------------------|-------------|
+| Edge quality | Depends on tessellation | Always pixel-perfect |
+| Curved surfaces | Visible faceting at zoom | Smooth at any zoom |
+| Performance | Faster for complex models | GPU-dependent |
+| Browser support | All browsers | WebGPU required |
+| Parameter updates | Re-tessellation needed | Instant update |

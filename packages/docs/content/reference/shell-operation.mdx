@@ -1,0 +1,186 @@
+---
+title: "Shell Operation"
+description: "Hollow out solid geometry to create thin-walled parts"
+order: 5
+---
+
+The shell operation hollows out a solid by offsetting all faces inward, creating thin-walled parts like enclosures, containers, and housings.
+
+## Basic Usage
+
+Creates a hollow part with uniform wall thickness.
+
+```rust
+.shell(thickness: f64) -> Part
+```
+
+<Param name="thickness" type="f64">
+Wall thickness in millimeters. Must be positive.
+</Param>
+
+```rust
+// Create a hollow box with 2mm walls
+let box = centered_cube("enclosure", 50.0, 40.0, 30.0);
+let hollow = box.shell(2.0);
+```
+
+## How It Works
+
+The shell operation creates two surfaces:
+
+- **Outer shell**: The original solid surface
+- **Inner shell**: An offset surface moved inward by the specified thickness
+
+These surfaces are connected to form a closed, watertight manifold. The result is a hollow part with uniform wall thickness.
+
+```rust
+// Hollow sphere (ball shell)
+let ball = Part::sphere("ball", 25.0, 64);
+let hollow_ball = ball.shell(3.0);
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `thickness` | `f64` | Wall thickness (inward offset) in millimeters |
+
+<Callout type="warning" title="Thickness limits">
+The wall thickness must be less than half the smallest dimension of the part. Larger values may create invalid geometry or self-intersections.
+</Callout>
+
+## Common Use Cases
+
+### Electronics Enclosure
+
+```rust
+// Enclosure with 2mm walls
+let outer = centered_cube("case", 80.0, 60.0, 25.0);
+let enclosure = outer.shell(2.0);
+```
+
+### Cylindrical Container
+
+```rust
+// Cup or tube shape
+let cylinder = Part::cylinder("cup", 30.0, 50.0, 64);
+let cup = cylinder.shell(2.5);
+```
+
+### Lightweight Structure
+
+```rust
+// Reduce material while maintaining shape
+let bracket = make_bracket();  // Your solid bracket
+let lightweight = bracket.shell(1.5);
+```
+
+### Spherical Housing
+
+```rust
+// Ball-shaped enclosure
+let sphere = Part::sphere("dome", 40.0, 64);
+let housing = sphere.shell(2.0);
+```
+
+## Combining with Other Operations
+
+### Shell Then Cut
+
+Create openings in a shelled part:
+
+```rust
+// Box with open top
+let box = centered_cube("box", 50.0, 40.0, 30.0);
+let hollow = box.shell(2.0);
+
+// Cut away the top to create an opening
+let cutter = centered_cube("cut", 60.0, 50.0, 10.0)
+    .translate(0.0, 0.0, 25.0);
+let open_box = hollow - cutter;
+```
+
+### Boolean Then Shell
+
+Shell the result of boolean operations:
+
+```rust
+// L-bracket, then shell
+let vertical = centered_cube("v", 40.0, 5.0, 50.0);
+let horizontal = centered_cube("h", 40.0, 30.0, 5.0);
+let bracket = vertical + horizontal;
+let hollow_bracket = bracket.shell(1.5);
+```
+
+### Shell with Mounting Features
+
+Add features after shelling:
+
+```rust
+let enclosure = centered_cube("case", 100.0, 80.0, 40.0)
+    .shell(2.5);
+
+// Add mounting bosses
+let boss = Part::cylinder("boss", 4.0, 8.0, 32);
+let bosses = boss
+    .translate(40.0, 30.0, -20.0)
+    .circular_pattern(0.0, 4);
+
+let result = enclosure + bosses;
+```
+
+## Edge Cases
+
+| Condition | Behavior |
+|-----------|----------|
+| Zero thickness | Validation error (minimum 0.001mm) |
+| Thickness too large | Warning; may create invalid geometry |
+| Non-manifold input | Operation fails with error |
+| Complex curves | Uses mesh approximation |
+
+<Callout type="tip">
+For best results, use shell on simple geometry. Complex parts with many features may produce unexpected results. Consider shelling first, then adding detail features.
+</Callout>
+
+## Limitations
+
+The current implementation uses mesh-based offsetting:
+
+- Wall thickness is uniform (same on all faces)
+- Very thin walls or complex geometry may have minor approximations
+- Self-intersections are not automatically resolved
+
+Future versions will support:
+
+- Variable thickness per face
+- Open faces (removing faces to create openings)
+- Internal ribs for reinforcement
+
+## Troubleshooting
+
+### Self-Intersection
+
+If the wall thickness is too large relative to the part size, inner surfaces may intersect:
+
+```rust
+// Problem: 10mm walls on a 15mm cube
+let cube = centered_cube("tiny", 15.0, 15.0, 15.0);
+let bad = cube.shell(10.0);  // Inner surfaces collide
+
+// Solution: Use appropriate thickness
+let good = cube.shell(2.0);  // Clean result
+```
+
+### Invalid Input
+
+Shell requires a valid manifold solid:
+
+```rust
+// Ensure input is a closed solid
+let valid_part = Part::cube("box", 30.0, 30.0, 30.0);
+let shelled = valid_part.shell(2.0);  // Works
+```
+
+### Unexpected Wall Thickness
+
+On curved surfaces, the wall thickness is measured along vertex normals. For highly curved areas, this may differ slightly from the specified value.

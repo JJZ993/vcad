@@ -1,0 +1,372 @@
+---
+title: "Assembly & Joints"
+description: "Build multi-part assemblies with kinematic joints for mechanical motion"
+order: 8
+---
+
+Assemblies let you create multi-part models with kinematic relationships. Define parts once, instantiate them multiple times, and connect them with joints that support realistic mechanical motion.
+
+## Concepts
+
+### Part Definitions
+
+A part definition is a reusable template that defines geometry once. Multiple instances can reference the same part definition, sharing the underlying geometry while having independent transforms and materials.
+
+<TypeDef name="PartDef">
+```typescript
+interface PartDef {
+  id: string;               // Unique identifier
+  name?: string;            // Human-readable name
+  root: NodeId;             // Root node of geometry DAG
+  defaultMaterial?: string; // Default material key
+}
+```
+</TypeDef>
+
+<Param name="id" type="string">
+Unique identifier for this part definition.
+</Param>
+<Param name="name" type="string" required={false}>
+Human-readable name displayed in the feature tree.
+</Param>
+<Param name="root" type="NodeId">
+Reference to the root node of the part's geometry.
+</Param>
+<Param name="defaultMaterial" type="string" required={false}>
+Material key applied to instances unless overridden.
+</Param>
+
+### Part Instances
+
+An instance places a part definition in the assembly with its own transform and optional material override.
+
+<TypeDef name="Instance">
+```typescript
+interface Instance {
+  id: string;               // Unique identifier
+  partDefId: string;        // Reference to PartDef
+  name?: string;            // Instance-specific name
+  transform?: Transform3D;  // Override transform
+  material?: string;        // Override material
+}
+```
+</TypeDef>
+
+<Param name="id" type="string">
+Unique identifier for this instance.
+</Param>
+<Param name="partDefId" type="string">
+ID of the part definition this instance uses.
+</Param>
+<Param name="name" type="string" required={false}>
+Display name. Defaults to part definition name with a number suffix.
+</Param>
+<Param name="transform" type="Transform3D" required={false}>
+Position and orientation. Overridden by joints when connected.
+</Param>
+<Param name="material" type="string" required={false}>
+Material key. Overrides the part definition's default material.
+</Param>
+
+## Joints
+
+Joints connect two instances and define how they can move relative to each other. Each joint has:
+
+- A **parent** instance (or world/ground if null)
+- A **child** instance
+- **Anchor points** on both parent and child
+- A **kind** that defines the degrees of freedom
+- A **state** value for the current position/angle
+
+<TypeDef name="Joint">
+```typescript
+interface Joint {
+  id: string;
+  name?: string;
+  parentInstanceId: string | null;  // null = world-grounded
+  childInstanceId: string;
+  parentAnchor: Vec3;               // Anchor point on parent
+  childAnchor: Vec3;                // Anchor point on child
+  kind: JointKind;                  // Type and parameters
+  state: number;                    // Current angle (deg) or position (mm)
+}
+```
+</TypeDef>
+
+### Joint Types
+
+vcad supports five joint types covering common mechanical connections:
+
+| Joint Type | DOF | Description | State Unit |
+|------------|-----|-------------|------------|
+| **Fixed** | 0 | Rigid attachment, no relative motion | n/a |
+| **Revolute** | 1 | Rotation around an axis (hinge, pivot) | degrees |
+| **Slider** | 1 | Translation along an axis (piston, rail) | mm |
+| **Cylindrical** | 2 | Rotation + translation along same axis | degrees (rotation) |
+| **Ball** | 3 | Omnidirectional rotation (ball-and-socket) | n/a |
+
+### Fixed Joint
+
+Rigidly attaches the child to the parent with no relative motion.
+
+```typescript
+kind: { type: "Fixed" }
+```
+
+Use fixed joints to lock parts together or to ground a part to the world.
+
+### Revolute Joint
+
+Allows rotation around a single axis, like a hinge or pivot.
+
+<TypeDef name="Revolute">
+```typescript
+kind: {
+  type: "Revolute",
+  axis: Vec3,           // Rotation axis (normalized)
+  limits?: [number, number]  // [min, max] in degrees
+}
+```
+</TypeDef>
+
+<Param name="axis" type="Vec3">
+The axis of rotation, defined in the parent's coordinate frame.
+</Param>
+<Param name="limits" type="[number, number]" required={false}>
+Optional min/max rotation angles in degrees. Omit for unlimited rotation.
+</Param>
+
+```typescript
+// Door hinge: rotates around Z, limited to 0-90 degrees
+kind: {
+  type: "Revolute",
+  axis: { x: 0, y: 0, z: 1 },
+  limits: [0, 90]
+}
+```
+
+### Slider Joint
+
+Allows translation along a single axis, like a piston or linear rail.
+
+<TypeDef name="Slider">
+```typescript
+kind: {
+  type: "Slider",
+  axis: Vec3,           // Slide direction (normalized)
+  limits?: [number, number]  // [min, max] in mm
+}
+```
+</TypeDef>
+
+<Param name="axis" type="Vec3">
+The direction of motion, defined in the parent's coordinate frame.
+</Param>
+<Param name="limits" type="[number, number]" required={false}>
+Optional min/max positions in millimeters. Omit for unlimited travel.
+</Param>
+
+```typescript
+// Piston: slides along X, 0-100mm travel
+kind: {
+  type: "Slider",
+  axis: { x: 1, y: 0, z: 0 },
+  limits: [0, 100]
+}
+```
+
+### Cylindrical Joint
+
+Combines rotation and translation along the same axis. Has 2 degrees of freedom.
+
+<TypeDef name="Cylindrical">
+```typescript
+kind: {
+  type: "Cylindrical",
+  axis: Vec3
+}
+```
+</TypeDef>
+
+```typescript
+// Screw joint along Z
+kind: {
+  type: "Cylindrical",
+  axis: { x: 0, y: 0, z: 1 }
+}
+```
+
+### Ball Joint
+
+Allows rotation in all directions, like a ball-and-socket joint. Has 3 rotational degrees of freedom.
+
+<TypeDef name="Ball">
+```typescript
+kind: { type: "Ball" }
+```
+</TypeDef>
+
+Ball joints are useful for shoulder joints, trailer hitches, and linkages that need omnidirectional rotation.
+
+## Forward Kinematics
+
+Forward kinematics (FK) computes the world-space position of each instance based on joint states. When you change a joint's state value, FK propagates transforms through the joint chain.
+
+### Ground Instance
+
+Every assembly needs a **ground instance** — one instance that's fixed in world space. This serves as the root of the kinematic chain. All other instances derive their positions through joints connected (directly or indirectly) to the ground.
+
+```typescript
+// Set the base plate as the fixed reference
+setGroundInstance("base-plate-instance-id");
+```
+
+### How FK Works
+
+1. Start from the ground instance (fixed in world space)
+2. Traverse the joint tree using breadth-first search
+3. For each joint, compute the child's transform based on:
+   - Parent's world transform
+   - Joint anchor points
+   - Joint type and current state
+4. Compose transforms: `parent_world * joint_transform * child_local`
+
+### Manipulating Joint State
+
+Adjust joint state values to pose the assembly:
+
+```typescript
+// Rotate arm 45 degrees
+setJointState("arm-joint-id", 45);
+
+// Extend piston to 50mm
+setJointState("piston-joint-id", 50);
+```
+
+The viewport updates in real-time as you scrub joint sliders in the property panel.
+
+## Complete Example
+
+Here's an example of a simple robot arm with two revolute joints:
+
+```typescript
+// Part definitions
+const partDefs = {
+  "base": {
+    id: "base",
+    name: "Base",
+    root: baseGeometryNodeId,
+    defaultMaterial: "steel"
+  },
+  "arm": {
+    id: "arm",
+    name: "Arm Segment",
+    root: armGeometryNodeId,
+    defaultMaterial: "aluminum"
+  }
+};
+
+// Instances
+const instances = [
+  {
+    id: "base-1",
+    partDefId: "base",
+    name: "Base"
+  },
+  {
+    id: "arm-1",
+    partDefId: "arm",
+    name: "Lower Arm"
+  },
+  {
+    id: "arm-2",
+    partDefId: "arm",
+    name: "Upper Arm"
+  }
+];
+
+// Ground the base
+const groundInstanceId = "base-1";
+
+// Joints
+const joints = [
+  {
+    id: "shoulder",
+    name: "Shoulder Joint",
+    parentInstanceId: "base-1",
+    childInstanceId: "arm-1",
+    parentAnchor: { x: 0, y: 0, z: 50 },
+    childAnchor: { x: 0, y: 0, z: 0 },
+    kind: {
+      type: "Revolute",
+      axis: { x: 0, y: 1, z: 0 },
+      limits: [-90, 90]
+    },
+    state: 0
+  },
+  {
+    id: "elbow",
+    name: "Elbow Joint",
+    parentInstanceId: "arm-1",
+    childInstanceId: "arm-2",
+    parentAnchor: { x: 0, y: 0, z: 100 },
+    childAnchor: { x: 0, y: 0, z: 0 },
+    kind: {
+      type: "Revolute",
+      axis: { x: 0, y: 1, z: 0 },
+      limits: [0, 135]
+    },
+    state: 0
+  }
+];
+```
+
+## Document Schema
+
+Assembly data is stored in the `.vcad` document format:
+
+```typescript
+interface Document {
+  // ... existing fields (nodes, materials, roots) ...
+  partDefs?: Record<string, PartDef>;  // Part definitions
+  instances?: Instance[];               // Part instances
+  joints?: Joint[];                     // Kinematic joints
+  groundInstanceId?: string;            // Fixed reference instance
+}
+```
+
+## Feature Tree
+
+Assembly elements appear in the feature tree sidebar:
+
+```
+Document
+├── Part Definitions
+│   ├── Base
+│   └── Arm Segment
+├── Instances
+│   ├── Base (ground)
+│   ├── Lower Arm
+│   └── Upper Arm
+└── Joints
+    ├── Shoulder Joint (Revolute)
+    └── Elbow Joint (Revolute)
+```
+
+## Edge Cases
+
+| Situation | Behavior |
+|-----------|----------|
+| Cyclic joint chains | Detected and reported as error |
+| Joint with no parent | Becomes world-grounded |
+| Deleted instance | All joints referencing it are also deleted |
+| Zero-length axis | Normalized with fallback to Z axis |
+| State outside limits | Clamped to nearest limit |
+
+<Callout type="tip">
+Use the property panel to interactively adjust joint states. The slider shows the current value and respects any configured limits.
+</Callout>
+
+<Callout type="info">
+Forward kinematics only — inverse kinematics (IK) for goal-directed posing is planned for a future release.
+</Callout>

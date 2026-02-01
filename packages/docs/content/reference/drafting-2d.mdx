@@ -1,0 +1,267 @@
+---
+title: "2D Drafting"
+description: "Technical drawings with orthographic projections, dimensions, and GD&T"
+order: 17
+---
+
+2D drafting creates technical drawings from your 3D models. vcad generates orthographic projections, hidden line views, dimensions, and GD&T annotations for manufacturing documentation.
+
+## View Modes
+
+Toggle between 3D and 2D modes using the view mode selector.
+
+| Mode | Display | Controls |
+|------|---------|----------|
+| 3D | Interactive viewport with orbit/pan/zoom | Mouse drag to orbit |
+| 2D | SVG-based technical drawing | Pan and zoom only |
+
+## Orthographic Projections
+
+Standard views project 3D geometry onto 2D planes. Select from the view direction dropdown.
+
+| View | Direction | Shows |
+|------|-----------|-------|
+| Front | Looking along +Y | XZ plane (width x height) |
+| Back | Looking along -Y | XZ plane (mirrored) |
+| Top | Looking along -Z | XY plane (width x depth) |
+| Bottom | Looking along +Z | XY plane (mirrored) |
+| Right | Looking along +X | YZ plane (depth x height) |
+| Left | Looking along -X | YZ plane (mirrored) |
+
+## Isometric Projection
+
+The isometric view provides a 3D-like visualization with configurable angles:
+
+- **Standard Isometric:** 30 degrees azimuth, 30 degrees elevation
+- **Dimetric:** 26.57 degrees (arctan 0.5) for technical drawings
+
+```typescript
+type ViewDirection =
+  | "front" | "back" | "top" | "bottom" | "left" | "right"
+  | "isometric";
+```
+
+## Hidden Line Removal
+
+Edges are classified as visible or hidden based on occlusion:
+
+- **Visible edges:** Solid lines (not blocked by any face)
+- **Hidden edges:** Dashed lines (occluded by geometry)
+
+Toggle hidden line visibility using the "Hidden Lines" control.
+
+### Edge Types
+
+| Type | Description |
+|------|-------------|
+| Sharp | Angle between adjacent faces exceeds threshold (default 30 degrees) |
+| Silhouette | Boundary between front-facing and back-facing faces |
+| Boundary | Edge with only one adjacent face (mesh boundary) |
+
+## Dimensions
+
+Add measurements to your drawings using four dimension types.
+
+### Linear Dimensions
+
+Measure distances between points or along edges.
+
+| Variant | Description |
+|---------|-------------|
+| Horizontal | Distance measured along X axis |
+| Vertical | Distance measured along Y axis |
+| Aligned | Distance along the line connecting two points |
+| Rotated | Distance projected at a specified angle |
+
+<Callout type="tip">
+Use aligned dimensions for angled features and horizontal/vertical for orthogonal measurements.
+</Callout>
+
+### Angular Dimensions
+
+Measure angles between two edges or three points. Useful for chamfers, tapers, and angular features.
+
+### Radial Dimensions
+
+Measure arcs and circles with radius or diameter callouts.
+
+| Type | Symbol | Use Case |
+|------|--------|----------|
+| Radius | R | Internal fillets, arcs |
+| Diameter | Ø | Holes, cylindrical features |
+
+### Ordinate Dimensions
+
+Datum-relative coordinate dimensions for precise feature positioning. Use for hole patterns and features referenced from a common datum.
+
+### Adding Dimensions
+
+1. Enter dimension mode
+2. Select geometry (points, edges, or faces)
+3. Click to place dimension at desired offset
+4. Edit value to add tolerances or overrides
+
+## GD&T (Geometric Dimensioning and Tolerancing)
+
+vcad supports GD&T annotations per ASME Y14.5-2018.
+
+### Form Tolerances
+
+No datum reference required.
+
+| Symbol | Tolerance |
+|--------|-----------|
+| ⏤ | Straightness |
+| ⏥ | Flatness |
+| ○ | Circularity |
+| ⌭ | Cylindricity |
+
+### Profile Tolerances
+
+| Symbol | Tolerance |
+|--------|-----------|
+| ⌒ | Profile of a Line |
+| ⌓ | Profile of a Surface |
+
+### Orientation Tolerances
+
+Require datum reference.
+
+| Symbol | Tolerance |
+|--------|-----------|
+| ∠ | Angularity |
+| ⟂ | Perpendicularity |
+| ∥ | Parallelism |
+
+### Location Tolerances
+
+Require datum reference.
+
+| Symbol | Tolerance |
+|--------|-----------|
+| ⌖ | Position |
+| ◎ | Concentricity |
+| ⌯ | Symmetry |
+
+### Runout Tolerances
+
+Require datum reference.
+
+| Symbol | Tolerance |
+|--------|-----------|
+| ↗ | Circular Runout |
+| ↗↗ | Total Runout |
+
+### Material Conditions
+
+| Modifier | Description |
+|----------|-------------|
+| Ⓜ | MMC (Maximum Material Condition) |
+| Ⓛ | LMC (Least Material Condition) |
+| (none) | RFS (Regardless of Feature Size, implicit) |
+
+### Adding Feature Control Frames
+
+1. Click "Add Feature Control Frame"
+2. Select GD&T symbol from dropdown
+3. Enter tolerance value
+4. Optionally add diameter symbol and material condition
+5. Add datum references (A, B, C) as needed
+6. Click geometry to attach leader line
+
+```rust
+pub struct FeatureControlFrame {
+    pub symbol: GdtSymbol,
+    pub tolerance: f64,
+    pub tolerance_is_diameter: bool,
+    pub material_condition: Option<MaterialCondition>,
+    pub datum_a: Option<DatumRef>,
+    pub datum_b: Option<DatumRef>,
+    pub datum_c: Option<DatumRef>,
+    pub position: Point2D,
+    pub leader_to: Option<GeometryRef>,
+}
+```
+
+## Section Views
+
+Cut through geometry to reveal internal features.
+
+### Section Types
+
+| Type | Cut Plane |
+|------|-----------|
+| Horizontal | Cut at specified Z height |
+| Front | Cut at specified Y depth |
+| Right | Cut at specified X position |
+| Custom | Arbitrary origin and normal |
+
+### Hatch Patterns
+
+Solid regions are filled with crosshatch lines:
+
+- **Default angle:** 45 degrees
+- **Default spacing:** 2mm
+- Holes and internal features correctly excluded from hatching
+
+## Detail Views
+
+Magnify regions to show fine features clearly.
+
+1. Click "Add Detail View"
+2. Draw rectangle around region of interest
+3. Enter scale factor (e.g., 2x)
+4. Position the magnified view on the drawing sheet
+
+Detail views are labeled with letters (A, B, C, etc.) and display the scale factor.
+
+## Drawing Controls
+
+| Control | Action |
+|---------|--------|
+| View Direction | Dropdown: Front, Back, Top, Bottom, Left, Right, Isometric |
+| Hidden Lines | Toggle visibility of dashed hidden lines |
+| Dimensions | Toggle visibility of dimension annotations |
+| Zoom | Scroll wheel or slider (0.1x to 10x) |
+| Pan | Click and drag in 2D mode |
+| Reset View | Button to restore default zoom/pan |
+
+## Drawing Store
+
+The UI state for 2D drawing mode is managed by the drawing store:
+
+```typescript
+interface DrawingState {
+  viewMode: "3d" | "2d";
+  viewDirection: ViewDirection;
+  showHiddenLines: boolean;
+  showDimensions: boolean;
+  zoom: number;
+  pan: { x: number; y: number };
+  detailViews: DetailViewDef[];
+}
+```
+
+## Best Practices
+
+<Callout type="tip" title="View selection">
+Use Front, Top, and Right views for most parts. Add additional views only when needed to show features not visible in the primary views.
+</Callout>
+
+<Callout type="tip" title="Dimensioning">
+Dimension to features, not edges. Place dimensions outside the part outline when possible. Avoid crossing dimension lines.
+</Callout>
+
+<Callout type="tip" title="GD&T">
+Use position tolerance for hole patterns. Apply form tolerances (flatness, cylindricity) to critical mating surfaces. Reference datums in order of importance (A, B, C).
+</Callout>
+
+## Future Enhancements
+
+- DXF export for CAM software
+- PDF export for documentation
+- Drawing sheets with title blocks
+- Multiple views on single sheet
+- Centerlines and center marks
+- Weld symbols per AWS A2.4
+- Surface finish symbols per ISO 1302

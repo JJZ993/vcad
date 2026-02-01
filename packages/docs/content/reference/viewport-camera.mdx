@@ -1,0 +1,159 @@
+---
+title: "Viewport & Camera"
+description: "3D navigation, camera controls, transform gizmo, and snapping"
+order: 10
+---
+
+The viewport is your window into 3D space. It provides intuitive camera controls for viewing models from any angle, plus visual tools for manipulating geometry.
+
+## Camera Controls
+
+Navigate the 3D view with mouse or trackpad. vcad supports two control schemes:
+
+| Action | vcad Default | Fusion-style |
+|--------|--------------|--------------|
+| Orbit | Middle-drag or two-finger swipe | Shift+Middle-drag |
+| Pan | Shift+Middle-drag | Middle-drag |
+| Zoom | Scroll wheel | Scroll wheel |
+
+### Zoom Behavior
+
+Scroll to zoom toward the cursor position (not the screen center). This makes it easy to zoom into specific areas of your model.
+
+Additional zoom settings:
+- **Zoom toward cursor**: On by default, zoom centers on mouse position
+- **Invert direction**: Reverse scroll direction if it feels backwards
+- **Sensitivity**: Adjust zoom speed to your preference
+
+<Callout type="tip">
+On a trackpad, use two-finger swipe to orbit and pinch to zoom.
+</Callout>
+
+### Orbit Momentum
+
+When enabled, the camera continues moving briefly after you release the mouse, giving a smoother feel when exploring models.
+
+## View Presets
+
+Snap to standard views by clicking the orientation gizmo (bottom-right corner) or using keyboard shortcuts.
+
+| View | Description |
+|------|-------------|
+| Front | Looking at XY plane from +Z |
+| Back | Looking at XY plane from -Z |
+| Right | Looking at YZ plane from +X |
+| Left | Looking at YZ plane from -X |
+| Top | Looking at XZ plane from +Y |
+| Bottom | Looking at XZ plane from -Y |
+| Iso | Isometric view from (+X, +Y, +Z) corner |
+| Hero | Presentation angle, good for screenshots |
+
+### Orientation Gizmo
+
+The colored cube in the corner shows your current view orientation:
+- **Red** = X axis
+- **Green** = Y axis
+- **Blue** = Z axis
+
+Click any face to snap the camera to that view. The camera smoothly animates to the new position while keeping the model centered.
+
+### Reset View
+
+Double-click on empty space in the viewport to reset the camera to the default isometric view.
+
+## Camera Animation
+
+Camera movements are animated with smooth transitions:
+- Selecting a part frames it in the viewport
+- Clicking a gizmo face animates to the aligned view
+- View presets transition smoothly
+- No abrupt jumps or jarring motion
+
+The animation uses quaternion interpolation to avoid gimbal lock and ensure predictable rotation.
+
+<Callout type="info">
+During camera animation, some visual effects (ambient occlusion, shadows) are temporarily disabled to maintain smooth frame rates.
+</Callout>
+
+## Transform Gizmo
+
+When you select a part, the transform gizmo appears at its center. Use it to move, rotate, or scale the selection.
+
+### Modes
+
+| Mode | Description | Usage |
+|------|-------------|-------|
+| Translate | Move along axes | Drag colored arrows to move along X (red), Y (green), or Z (blue). Drag colored planes to move in two axes. |
+| Rotate | Rotate around axes | Drag colored rings to rotate around each axis. |
+| Scale | Resize the part | Drag axis handles for non-uniform scale, or center cube for uniform scale. |
+
+Switch modes using the toolbar or keyboard shortcuts.
+
+### Interaction
+
+- **Drag an axis arrow** to constrain movement to that axis
+- **Drag a plane handle** to move freely in that plane
+- **Drag the center** to move/scale uniformly
+
+The gizmo disables orbit controls while dragging, so you can precisely position parts without accidentally rotating the view.
+
+## Snapping
+
+Snapping helps you position parts precisely by constraining transforms to specific increments or geometry.
+
+### Grid Snap
+
+When enabled, translations snap to the grid increment (default 5mm). This makes it easy to align parts without typing exact values.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Grid snap | On | Snap transforms to grid increment |
+| Snap increment | 5mm | Grid spacing for snap |
+
+### Point Snap
+
+When enabled, snap to geometry vertices when dragging. Useful for aligning parts precisely to corners or endpoints.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Point snap | On | Snap to geometry vertices |
+
+<Callout type="tip">
+Hold a modifier key while dragging to temporarily disable snapping for fine adjustments.
+</Callout>
+
+## Display Options
+
+Control how the viewport renders your model:
+
+| Option | Description |
+|--------|-------------|
+| Wireframe mode | Show only edges, no filled faces. Useful for seeing through geometry. |
+| Grid display | Show/hide the ground plane grid. |
+| Axis display | Show/hide the RGB orientation gizmo. |
+
+## Edge Cases
+
+The viewport handles extreme scenarios gracefully:
+
+- **Very large models**: Camera far plane extends to 10,000 units
+- **Very small details**: Near plane at 0.1 units with logarithmic depth buffer prevents z-fighting
+- **Looking straight up/down**: Uses world Z as reference to avoid gimbal lock
+
+## Keyboard Shortcuts
+
+Common viewport shortcuts:
+
+| Shortcut | Action |
+|----------|--------|
+| `1` | Front view |
+| `3` | Right view |
+| `7` | Top view |
+| `5` | Toggle perspective/orthographic |
+| `W` | Translate mode |
+| `E` | Rotate mode |
+| `R` | Scale mode |
+
+<Callout type="info">
+Keyboard shortcuts may vary based on your configuration. Check the keyboard shortcuts panel for your current bindings.
+</Callout>

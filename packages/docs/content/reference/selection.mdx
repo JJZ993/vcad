@@ -1,0 +1,76 @@
+---
+title: "Selection"
+description: "Select and manipulate parts in the viewport"
+order: 11
+---
+
+Selection is the foundation of the vcad workflow. Before performing any operation like transforms, booleans, or deletions, you need to select which parts to operate on.
+
+## Selection Modes
+
+### Single Selection
+
+Click on a part to select it. This replaces any existing selection with the clicked part.
+
+| Action | Result |
+|--------|--------|
+| Click on part | Select that part, deselect all others |
+| Click on empty space | Deselect all parts |
+
+### Hover Preview
+
+Before clicking, hovering over a part shows a highlight preview. This lets you see exactly what will be selected.
+
+## Multi-Selection
+
+Hold **Shift** while clicking to add or remove parts from the current selection.
+
+| Action | Result |
+|--------|--------|
+| Shift+click unselected part | Add to selection |
+| Shift+click selected part | Remove from selection |
+
+This enables you to build up a selection of multiple parts for batch operations.
+
+## Keyboard Modifiers
+
+| Modifier | Action | Effect |
+|----------|--------|--------|
+| None | Click | Replace selection with clicked part |
+| Shift | Click | Toggle part in/out of selection |
+| None | Click empty | Clear all selection |
+
+## Visual Feedback
+
+Parts display different visual states based on selection and hover:
+
+| State | Appearance |
+|-------|------------|
+| Default | Normal appearance |
+| Hover | Highlight outline |
+| Selected | Blue selection outline |
+| Hover + Selected | Both outlines |
+
+## Feature Tree Sync
+
+Selection state is synchronized between the viewport and the feature tree panel:
+
+- Clicking a part in the viewport highlights it in the feature tree
+- Clicking a row in the feature tree selects the part in the viewport
+- Multi-selection works in both directions
+
+This makes it easy to find and select parts regardless of where they appear in your model.
+
+## Edge Cases
+
+### Overlapping Parts
+
+When multiple parts overlap at the click position, the frontmost part (closest to the camera) is selected.
+
+### During Gizmo Drag
+
+While dragging a transform gizmo, selection is locked. Clicks are ignored until the drag completes. This prevents accidental selection changes during transforms.
+
+<Callout type="tip">
+If you need to select a part that is obscured by other geometry, use the feature tree to select it by name.
+</Callout>
