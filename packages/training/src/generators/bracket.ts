@@ -195,10 +195,10 @@ export class BracketGenerator implements PartGenerator {
       const rotIdx = lines.length;
       lines.push(`R ${cylIdx} 0 90 0`);
 
-      // Position on leg 2
+      // Position on leg 2 (centered in thickness)
       const transIdx = lines.length;
       lines.push(
-        `T ${rotIdx} ${fmt(p.leg1Length + p.thickness / 2)} ${fmt(hole.y)} ${fmt(hole.x)}`,
+        `T ${rotIdx} ${fmt(p.leg1Length - p.thickness / 2)} ${fmt(hole.y)} ${fmt(hole.x)}`,
       );
 
       const diffIdx = lines.length;

@@ -28,10 +28,19 @@ The input is in "Compact IR" format - a text representation of 3D geometry:
 - C x y z = Cube with dimensions x×y×z mm
 - Y r h = Cylinder with radius r mm and height h mm
 - S r = Sphere with radius r mm
+- K r_bot r_top h = Cone with bottom radius, top radius, height
 - T n x y z = Translate node n by (x,y,z) mm
 - R n x y z = Rotate node n by (x,y,z) degrees
+- X n sx sy sz = Scale node n by (sx,sy,sz) factors
 - U a b = Union (combine) nodes a and b
 - D a b = Difference (subtract b from a)
+- I a b = Intersection of nodes a and b
+- LP n dx dy dz count spacing = Linear pattern along direction
+- CP n ox oy oz dx dy dz count angle = Circular pattern around axis
+- SH n t = Shell node n with wall thickness t
+- SK ... END = 2D sketch profile
+- E n dx dy dz = Extrude sketch along direction
+- V n ox oy oz dx dy dz angle = Revolve sketch around axis
 
 Output ONLY a brief description of the physical part (1-2 sentences max). Do NOT explain the IR format or mention "Compact IR".`;
 
@@ -327,6 +336,201 @@ export function generateSyntheticDescription(part: GeneratedPart): string {
         return `${sd}mm sensor mount bracket`;
       }
       return `${w}x${h}mm adjustable mount plate`;
+    }
+
+    // New generators for expanded IR coverage
+
+    case "ball": {
+      const r = params.radius as number;
+      const type = params.ballType as string;
+
+      switch (type) {
+        case "sphere":
+          return `${r * 2}mm solid ball`;
+        case "dome":
+          return `${r * 2}mm dome/hemisphere`;
+        case "drilled":
+          const holeDiam = params.holeDiameter as number;
+          return `${r * 2}mm ball with ${holeDiam}mm through-hole`;
+        case "knob":
+          return `${r * 2}mm spherical knob with flat base`;
+        case "handle":
+          return `${r * 2}mm ball handle with stem`;
+        default:
+          return `${r * 2}mm spherical part`;
+      }
+    }
+
+    case "funnel": {
+      const bottomR = params.bottomRadius as number;
+      const topR = params.topRadius as number;
+      const h = params.height as number;
+      const type = params.funnelType as string;
+
+      switch (type) {
+        case "cone":
+          return `${bottomR * 2}mm base ${h}mm tall cone`;
+        case "frustum":
+          return `${bottomR * 2}mm to ${topR * 2}mm truncated cone ${h}mm tall`;
+        case "adapter":
+          return `conical adapter ${bottomR * 2}mm to ${topR * 2}mm`;
+        case "countersink":
+          return `countersunk hole plate`;
+        case "hopper":
+          return `${bottomR * 2}mm hollow funnel/hopper`;
+        default:
+          return `conical part ${h}mm tall`;
+      }
+    }
+
+    case "clip": {
+      const type = params.clipType as string;
+
+      switch (type) {
+        case "saddle":
+          const pipeDiam = params.pipeDiameter as number;
+          return `pipe saddle for ${pipeDiam}mm pipe`;
+        case "rounded":
+          return `rounded corner block`;
+        case "quarter":
+          return `quarter-round trim profile`;
+        case "channel":
+          return `stepped channel block`;
+        case "lens":
+          return `lens-shaped intersection`;
+        default:
+          return `intersection-based clip`;
+      }
+    }
+
+    case "scaled": {
+      const type = params.scaledType as string;
+      const baseSize = params.baseSize as number;
+
+      switch (type) {
+        case "ellipse":
+          return `${baseSize}mm elliptical disc`;
+        case "stretched":
+          return `stretched rectangular block`;
+        case "ellipsoid":
+          return `${baseSize}mm ellipsoid`;
+        case "tapered":
+          return `tapered stepped block`;
+        case "oval":
+          return `oval cross-section tube`;
+        default:
+          return `scaled geometric part`;
+      }
+    }
+
+    case "array": {
+      const type = params.arrayType as string;
+      const count = params.count as number;
+      const length = params.length as number;
+
+      switch (type) {
+        case "rail":
+          return `${length}mm rail with ${count} evenly-spaced holes`;
+        case "din":
+          return `${length}mm DIN rail mounting strip with ${count} slots`;
+        case "rack":
+          return `${length}mm toothed rack with ${count} teeth`;
+        case "perforated":
+          return `${length}mm perforated bar with ${count} holes`;
+        case "slotted":
+          return `${length}mm slotted plate with ${count} slots`;
+        default:
+          return `linear pattern part with ${count} features`;
+      }
+    }
+
+    case "radial": {
+      const type = params.radialType as string;
+      const count = params.count as number;
+      const outerDiam = params.outerDiameter as number;
+
+      switch (type) {
+        case "boltCircle":
+          return `${outerDiam}mm flange with ${count}-bolt pattern`;
+        case "spoked":
+          return `${outerDiam}mm ${count}-spoke wheel`;
+        case "fan":
+          return `${count}-blade fan impeller`;
+        case "ventilation":
+          return `${outerDiam}mm ventilation disc with ${count} holes`;
+        case "star":
+          return `${count}-point star shape`;
+        default:
+          return `circular pattern with ${count} elements`;
+      }
+    }
+
+    case "hollow": {
+      const type = params.hollowType as string;
+      const wallThickness = params.wallThickness as number;
+
+      switch (type) {
+        case "box":
+          const w = params.outerWidth as number;
+          const d = params.outerDepth as number;
+          const h = params.outerHeight as number;
+          return `${w}x${d}x${h}mm hollow box ${wallThickness}mm walls`;
+        case "tube":
+          const od = params.outerDiameter as number;
+          const th = params.outerHeight as number;
+          return `${od}mm diameter ${th}mm tall tube ${wallThickness}mm wall`;
+        case "cup":
+          return `cup/container with ${wallThickness}mm walls`;
+        case "housing":
+          return `electronics housing with mounting tabs`;
+        case "domeShell":
+          return `dome shell ${wallThickness}mm thick`;
+        default:
+          return `hollow shelled part`;
+      }
+    }
+
+    case "profile": {
+      const type = params.profileType as string;
+      const length = params.length as number;
+
+      switch (type) {
+        case "lChannel":
+          return `${length}mm L-channel extrusion`;
+        case "tSlot":
+          return `${length}mm T-slot profile`;
+        case "cChannel":
+          return `${length}mm C-channel extrusion`;
+        case "iBeam":
+          return `${length}mm I-beam profile`;
+        case "polygon":
+          const sides = params.sides as number;
+          return `${length}mm ${sides}-sided polygon extrusion`;
+        default:
+          return `${length}mm extruded profile`;
+      }
+    }
+
+    case "turned": {
+      const type = params.turnedType as string;
+      const h = params.height as number;
+
+      switch (type) {
+        case "bottle":
+          return `${h}mm tall bottle/vase shape`;
+        case "pulley":
+          const maxR = params.maxRadius as number;
+          return `${maxR * 2}mm pulley with V-groove`;
+        case "knob":
+          return `${h}mm tall turned knob`;
+        case "steppedShaft":
+          const steps = params.steps as number;
+          return `${h}mm ${steps}-step turned shaft`;
+        case "bowl":
+          return `${h}mm tall bowl shape`;
+        default:
+          return `${h}mm revolved/turned part`;
+      }
     }
 
     default:

@@ -12,12 +12,23 @@ import {
   ShaftGenerator,
   EnclosureGenerator,
   MountGenerator,
+  // New generators
+  BallGenerator,
+  FunnelGenerator,
+  ClipGenerator,
+  ScaledGenerator,
+  ArrayGenerator,
+  RadialGenerator,
+  HollowGenerator,
+  ProfileGenerator,
+  TurnedGenerator,
   generators,
   generatorFamilies,
   generateRandomPart,
 } from "../generators/index.js";
 import { validateExample } from "../validate.js";
 import { generateSyntheticDescription } from "../annotate.js";
+import { generateConversation, generateConversations, toShareGPTFormat } from "../conversation.js";
 
 describe("PlateGenerator", () => {
   const gen = new PlateGenerator();
@@ -182,8 +193,226 @@ describe("MountGenerator", () => {
   });
 });
 
+// ============================================================================
+// New Generator Tests (Expanded IR Coverage)
+// ============================================================================
+
+describe("BallGenerator", () => {
+  const gen = new BallGenerator();
+
+  it("generates simple sphere", () => {
+    const part = gen.generate({ ballType: "sphere" });
+    expect(part.compact).toMatch(/^S \d/); // Starts with sphere
+    expect(part.complexity).toBe(1);
+  });
+
+  it("generates dome with intersection", () => {
+    const part = gen.generate({ ballType: "dome" });
+    expect(part.compact).toContain("I"); // Intersection for dome
+  });
+
+  it("generates drilled ball", () => {
+    const part = gen.generate({ ballType: "drilled" });
+    expect(part.compact).toContain("D"); // Difference for hole
+    expect(part.compact).toContain("Y"); // Cylinder for hole
+  });
+
+  it("generates handle ball", () => {
+    const part = gen.generate({ ballType: "handle" });
+    expect(part.compact).toContain("U"); // Union with stem
+  });
+});
+
+describe("FunnelGenerator", () => {
+  const gen = new FunnelGenerator();
+
+  it("generates simple cone", () => {
+    const part = gen.generate({ funnelType: "cone" });
+    expect(part.compact).toMatch(/^K \d/); // Starts with cone
+    expect(part.compact).toContain(" 0 "); // Zero top radius for pointed
+  });
+
+  it("generates frustum", () => {
+    const part = gen.generate({ funnelType: "frustum", topRadius: 10 });
+    expect(part.compact).toMatch(/^K \d/);
+  });
+
+  it("generates adapter with union", () => {
+    const part = gen.generate({ funnelType: "adapter", topRadius: 10 });
+    expect(part.compact).toContain("U"); // Union with cylinder
+  });
+
+  it("generates hopper with difference", () => {
+    const part = gen.generate({ funnelType: "hopper" });
+    expect(part.compact).toContain("D"); // Hollow cone
+  });
+});
+
+describe("ClipGenerator", () => {
+  const gen = new ClipGenerator();
+
+  it("generates saddle with intersection", () => {
+    const part = gen.generate({ clipType: "saddle" });
+    expect(part.compact).toContain("I"); // Intersection
+  });
+
+  it("generates rounded block", () => {
+    const part = gen.generate({ clipType: "rounded" });
+    expect(part.compact).toContain("C"); // Cube
+    expect(part.compact).toContain("S"); // Sphere
+    expect(part.compact).toContain("I"); // Intersection
+  });
+
+  it("generates lens shape", () => {
+    const part = gen.generate({ clipType: "lens" });
+    expect((part.compact.match(/S \d/g) || []).length).toBe(2); // Two spheres
+    expect(part.compact).toContain("I"); // Intersection
+  });
+});
+
+describe("ScaledGenerator", () => {
+  const gen = new ScaledGenerator();
+
+  it("generates ellipse with scale", () => {
+    const part = gen.generate({ scaledType: "ellipse" });
+    expect(part.compact).toContain("X"); // Scale operation
+    expect(part.compact).toContain("Y"); // Cylinder base
+  });
+
+  it("generates ellipsoid", () => {
+    const part = gen.generate({ scaledType: "ellipsoid" });
+    expect(part.compact).toContain("S"); // Sphere
+    expect(part.compact).toContain("X"); // Scale
+  });
+
+  it("generates oval tube", () => {
+    const part = gen.generate({ scaledType: "oval" });
+    expect(part.compact).toContain("D"); // Hollow
+    expect(part.compact).toContain("X"); // Scale
+  });
+});
+
+describe("ArrayGenerator", () => {
+  const gen = new ArrayGenerator();
+
+  it("generates rail with linear pattern", () => {
+    const part = gen.generate({ arrayType: "rail", count: 5 });
+    expect(part.compact).toContain("LP"); // Linear pattern
+    expect(part.compact).toContain("5 "); // Count
+  });
+
+  it("generates rack with union pattern", () => {
+    const part = gen.generate({ arrayType: "rack", count: 6 });
+    expect(part.compact).toContain("LP");
+    expect(part.compact).toContain("U"); // Union teeth with base
+  });
+
+  it("generates perforated bar", () => {
+    const part = gen.generate({ arrayType: "perforated", count: 4 });
+    expect(part.compact).toContain("LP");
+    expect(part.compact).toContain("D"); // Subtract holes
+  });
+});
+
+describe("RadialGenerator", () => {
+  const gen = new RadialGenerator();
+
+  it("generates bolt circle with circular pattern", () => {
+    const part = gen.generate({ radialType: "boltCircle", count: 6 });
+    expect(part.compact).toContain("CP"); // Circular pattern
+    expect(part.compact).toContain("6 "); // Count
+  });
+
+  it("generates spoked wheel", () => {
+    const part = gen.generate({ radialType: "spoked", count: 5 });
+    expect(part.compact).toContain("CP");
+    expect(part.compact).toContain("U"); // Hub + spokes + rim
+  });
+
+  it("generates star pattern", () => {
+    const part = gen.generate({ radialType: "star", count: 5 });
+    expect(part.compact).toContain("CP 2"); // Pattern of points
+  });
+});
+
+describe("HollowGenerator", () => {
+  const gen = new HollowGenerator();
+
+  it("generates hollow box with shell", () => {
+    const part = gen.generate({ hollowType: "box" });
+    expect(part.compact).toContain("SH"); // Shell operation
+    expect(part.compact).toContain("C"); // Cube base
+  });
+
+  it("generates tube with shell", () => {
+    const part = gen.generate({ hollowType: "tube" });
+    expect(part.compact).toContain("SH");
+    expect(part.compact).toContain("Y"); // Cylinder base
+  });
+
+  it("generates dome shell", () => {
+    const part = gen.generate({ hollowType: "domeShell" });
+    expect(part.compact).toContain("S"); // Sphere
+    expect(part.compact).toContain("I"); // Intersection for hemisphere
+    expect(part.compact).toContain("SH"); // Shell
+  });
+});
+
+describe("ProfileGenerator", () => {
+  const gen = new ProfileGenerator();
+
+  it("generates L-channel with sketch and extrude", () => {
+    const part = gen.generate({ profileType: "lChannel" });
+    expect(part.compact).toContain("SK"); // Sketch
+    expect(part.compact).toContain("L "); // Line segments
+    expect(part.compact).toContain("END");
+    expect(part.compact).toContain("E "); // Extrude
+  });
+
+  it("generates T-slot profile", () => {
+    const part = gen.generate({ profileType: "tSlot" });
+    expect(part.compact).toContain("SK");
+    expect(part.compact).toContain("E ");
+  });
+
+  it("generates polygon extrusion", () => {
+    const part = gen.generate({ profileType: "polygon", sides: 6 });
+    expect(part.compact).toContain("SK");
+    // Should have 6 line segments
+    const lineCount = (part.compact.match(/^L /gm) || []).length;
+    expect(lineCount).toBe(6);
+  });
+});
+
+describe("TurnedGenerator", () => {
+  const gen = new TurnedGenerator();
+
+  it("generates bottle with sketch and revolve", () => {
+    const part = gen.generate({ turnedType: "bottle" });
+    expect(part.compact).toContain("SK"); // Sketch
+    expect(part.compact).toContain("V "); // Revolve
+  });
+
+  it("generates pulley", () => {
+    const part = gen.generate({ turnedType: "pulley" });
+    expect(part.compact).toContain("V ");
+    expect(part.compact).toContain("360"); // Full revolution
+  });
+
+  it("generates bowl", () => {
+    const part = gen.generate({ turnedType: "bowl" });
+    expect(part.compact).toContain("SK");
+    expect(part.compact).toContain("V ");
+  });
+});
+
+// ============================================================================
+// Registry Tests (Updated for 16 families)
+// ============================================================================
+
 describe("Generator Registry", () => {
   it("has all expected families", () => {
+    // Original families
     expect(generatorFamilies).toContain("plate");
     expect(generatorFamilies).toContain("spacer");
     expect(generatorFamilies).toContain("bracket");
@@ -191,7 +420,17 @@ describe("Generator Registry", () => {
     expect(generatorFamilies).toContain("shaft");
     expect(generatorFamilies).toContain("enclosure");
     expect(generatorFamilies).toContain("mount");
-    expect(generatorFamilies.length).toBe(7);
+    // New families
+    expect(generatorFamilies).toContain("ball");
+    expect(generatorFamilies).toContain("funnel");
+    expect(generatorFamilies).toContain("clip");
+    expect(generatorFamilies).toContain("scaled");
+    expect(generatorFamilies).toContain("array");
+    expect(generatorFamilies).toContain("radial");
+    expect(generatorFamilies).toContain("hollow");
+    expect(generatorFamilies).toContain("profile");
+    expect(generatorFamilies).toContain("turned");
+    expect(generatorFamilies.length).toBe(16);
   });
 
   it("all generators produce valid IR", () => {
@@ -296,5 +535,64 @@ describe("Random Generation Consistency", () => {
     expect(part.params.depth).toBe(60);
     expect(part.params.thickness).toBe(5);
     expect(part.compact).toContain("C 100 60 5");
+  });
+});
+
+// ============================================================================
+// Conversation Generator Tests
+// ============================================================================
+
+describe("Conversation Generator", () => {
+  it("generates multi-turn conversation", () => {
+    const gen = new PlateGenerator();
+    const conv = generateConversation(gen, 3);
+
+    expect(conv.family).toBe("plate");
+    expect(conv.turns).toBeGreaterThanOrEqual(2);
+    expect(conv.conversation.length).toBeGreaterThanOrEqual(4); // At least 2 turn pairs
+  });
+
+  it("alternates user and assistant roles", () => {
+    const gen = new PlateGenerator();
+    const conv = generateConversation(gen, 2);
+
+    for (let i = 0; i < conv.conversation.length; i++) {
+      const expectedRole = i % 2 === 0 ? "user" : "assistant";
+      expect(conv.conversation[i].role).toBe(expectedRole);
+    }
+  });
+
+  it("generates valid IR in assistant responses", () => {
+    const gen = new PlateGenerator();
+    const conv = generateConversation(gen, 2);
+
+    // Check that assistant responses are valid IR
+    for (const turn of conv.conversation) {
+      if (turn.role === "assistant") {
+        const doc = fromCompact(turn.content);
+        expect(doc.roots.length).toBe(1);
+      }
+    }
+  });
+
+  it("generates multiple conversations", () => {
+    const convs = generateConversations(10, {
+      families: ["plate", "ball"],
+      minTurns: 2,
+      maxTurns: 3,
+    });
+
+    expect(convs.length).toBe(10);
+    expect(convs.every(c => c.family === "plate" || c.family === "ball")).toBe(true);
+  });
+
+  it("converts to ShareGPT format", () => {
+    const gen = new PlateGenerator();
+    const conv = generateConversation(gen, 2);
+    const sharegpt = toShareGPTFormat(conv);
+
+    expect(sharegpt.conversations.length).toBe(conv.conversation.length);
+    expect(sharegpt.conversations[0].from).toBe("human");
+    expect(sharegpt.conversations[1].from).toBe("gpt");
   });
 });

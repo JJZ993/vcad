@@ -39,6 +39,18 @@ import {
   createHuggingFaceInferModel,
   DEFAULT_MODELS,
 } from "./infer.js";
+import {
+  generateConversations,
+  toShareGPTFormat,
+  type ConversationExample,
+} from "./conversation.js";
+import {
+  generateImageIRPairs,
+  writeMetadata,
+  computeMultimodalStats,
+  type ImageIRPair,
+} from "./multimodal.js";
+import { Renderer } from "./render.js";
 
 const program = new Command();
 
@@ -654,9 +666,16 @@ function stratifiedSplit(
     const trainEnd = Math.floor(familyExamples.length * trainRatio);
     const valEnd = Math.floor(familyExamples.length * (trainRatio + valRatio));
 
-    train.push(...familyExamples.slice(0, trainEnd));
-    val.push(...familyExamples.slice(trainEnd, valEnd));
-    test.push(...familyExamples.slice(valEnd));
+    // Use for loop instead of spread to avoid stack overflow with large arrays
+    for (let i = 0; i < trainEnd; i++) {
+      train.push(familyExamples[i]);
+    }
+    for (let i = trainEnd; i < valEnd; i++) {
+      val.push(familyExamples[i]);
+    }
+    for (let i = valEnd; i < familyExamples.length; i++) {
+      test.push(familyExamples[i]);
+    }
   }
 
   // Shuffle the final arrays to mix families
@@ -831,6 +850,347 @@ program
       console.error(`Inference failed: ${(error as Error).message}`);
       process.exit(1);
     }
+  });
+
+/**
+ * Generate-conversations command - creates multi-turn conversation data.
+ */
+program
+  .command("generate-conversations")
+  .description("Generate multi-turn conversation training data")
+  .option("-c, --count <count>", "Number of conversations to generate", "1000")
+  .option("-o, --output <path>", "Output file path", "data/conversations.jsonl")
+  .option("-f, --families <families>", "Comma-separated list of families", "all")
+  .option("--min-turns <turns>", "Minimum turns per conversation", "2")
+  .option("--max-turns <turns>", "Maximum turns per conversation", "4")
+  .option("--sharegpt", "Output in ShareGPT format", false)
+  .action(async (options) => {
+    const count = parseInt(options.count, 10);
+    const outputPath = path.resolve(options.output);
+    const minTurns = parseInt(options.minTurns, 10);
+    const maxTurns = parseInt(options.maxTurns, 10);
+
+    // Ensure output directory exists
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+    const families =
+      options.families === "all"
+        ? generatorFamilies
+        : (options.families as string).split(",").map((f: string) => f.trim());
+
+    console.log(`Generating ${count} conversations`);
+    console.log(`  Families: ${families.join(", ")}`);
+    console.log(`  Turns: ${minTurns}-${maxTurns}`);
+
+    const conversations = generateConversations(count, {
+      families,
+      minTurns,
+      maxTurns,
+      onProgress: (completed, total) => {
+        process.stdout.write(`\r  Progress: ${completed}/${total}`);
+      },
+    });
+    console.log("");
+
+    // Write to JSONL
+    const output = fs.createWriteStream(outputPath);
+    for (const conv of conversations) {
+      if (options.sharegpt) {
+        output.write(JSON.stringify(toShareGPTFormat(conv)) + "\n");
+      } else {
+        output.write(JSON.stringify(conv) + "\n");
+      }
+    }
+    output.end();
+
+    // Print stats
+    const avgTurns = conversations.reduce((sum, c) => sum + c.turns, 0) / conversations.length;
+    const byFamily: Record<string, number> = {};
+    for (const conv of conversations) {
+      byFamily[conv.family] = (byFamily[conv.family] || 0) + 1;
+    }
+
+    console.log(`\nWrote ${conversations.length} conversations to ${outputPath}`);
+    console.log(`  Average turns: ${avgTurns.toFixed(1)}`);
+    console.log(`  By family:`);
+    for (const [family, familyCount] of Object.entries(byFamily).sort((a, b) => b[1] - a[1])) {
+      console.log(`    ${family}: ${familyCount}`);
+    }
+  });
+
+/**
+ * Convert-conversations command - flattens multi-turn conversations to single-turn training examples.
+ * Each turn in a conversation becomes a separate training example with full context.
+ */
+program
+  .command("convert-conversations")
+  .description("Convert multi-turn conversations to flat training examples")
+  .requiredOption("-i, --input <path>", "Input conversations JSONL file")
+  .option("-o, --output <path>", "Output training JSONL file", "data/annotated/conversations-flat.jsonl")
+  .option("--include-context", "Include previous turns as context in the prompt", true)
+  .action(async (options) => {
+    const inputPath = path.resolve(options.input);
+    const outputPath = path.resolve(options.output);
+    const includeContext = options.includeContext as boolean;
+
+    // Ensure output directory exists
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+    console.log(`Converting conversations from ${inputPath}`);
+    console.log(`  Include context: ${includeContext}`);
+
+    // Read conversations
+    const conversations: ConversationExample[] = [];
+    const fileStream = fs.createReadStream(inputPath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
+
+    for await (const line of rl) {
+      if (line.trim()) {
+        conversations.push(JSON.parse(line) as ConversationExample);
+      }
+    }
+
+    console.log(`  Read ${conversations.length} conversations`);
+
+    // Convert to flat training examples
+    const output = fs.createWriteStream(outputPath);
+    let totalExamples = 0;
+
+    for (const conv of conversations) {
+      const turns = conv.conversation;
+      let context: string[] = [];
+
+      // Process each user-assistant pair
+      for (let i = 0; i < turns.length; i += 2) {
+        const userTurn = turns[i];
+        const assistantTurn = turns[i + 1];
+
+        if (!userTurn || !assistantTurn) continue;
+        if (userTurn.role !== "user" || assistantTurn.role !== "assistant") continue;
+
+        // Build the prompt with context
+        let text: string;
+        if (includeContext && context.length > 0) {
+          // Format: "Previous: <context>\n\nNow: <current request>"
+          text = `Previous:\n${context.join("\n")}\n\nNow: ${userTurn.content}`;
+        } else {
+          text = userTurn.content;
+        }
+
+        // Write training example
+        const example: TrainingExample = {
+          text,
+          ir: assistantTurn.content,
+          family: conv.family,
+          complexity: conv.turns,
+        };
+        output.write(JSON.stringify(example) + "\n");
+        totalExamples++;
+
+        // Add to context for next turn
+        context.push(`User: ${userTurn.content}`);
+        context.push(`Assistant: ${assistantTurn.content}`);
+      }
+    }
+
+    output.end();
+    console.log(`\nWrote ${totalExamples} training examples to ${outputPath}`);
+  });
+
+/**
+ * Generate-images command - creates multimodal image-IR pairs.
+ */
+program
+  .command("generate-images")
+  .description("Generate multimodal image-IR training pairs")
+  .option("-c, --count <count>", "Number of parts to render", "100")
+  .option("-o, --output <dir>", "Output directory", "data/multimodal")
+  .option("-f, --families <families>", "Comma-separated list of families", "all")
+  .option("--width <pixels>", "Image width", "512")
+  .option("--height <pixels>", "Image height", "512")
+  .option("--views <views>", "Comma-separated views (isometric,front,side,top,random)", "isometric")
+  .action(async (options) => {
+    const count = parseInt(options.count, 10);
+    const outputDir = path.resolve(options.output);
+    const width = parseInt(options.width, 10);
+    const height = parseInt(options.height, 10);
+    const views = (options.views as string).split(",").map((v: string) => v.trim()) as any[];
+
+    const families =
+      options.families === "all"
+        ? generatorFamilies
+        : (options.families as string).split(",").map((f: string) => f.trim());
+
+    console.log(`Generating ${count} image-IR pairs`);
+    console.log(`  Families: ${families.join(", ")}`);
+    console.log(`  Views: ${views.join(", ")}`);
+    console.log(`  Size: ${width}x${height}`);
+    console.log(`  Output: ${outputDir}`);
+
+    // Generate parts
+    console.log("\n=== Step 1: Generate parts ===");
+    const parts: GeneratedPart[] = [];
+    const countsPerFamily = distributeCount(count, families);
+
+    for (const family of families) {
+      const generator = generators[family];
+      if (!generator) {
+        console.warn(`  Warning: Unknown family '${family}', skipping`);
+        continue;
+      }
+      const familyCount = countsPerFamily[family] || 0;
+      for (let i = 0; i < familyCount; i++) {
+        parts.push(generator.generate());
+      }
+    }
+    console.log(`  Generated ${parts.length} parts`);
+
+    // Load engine
+    console.log("\n=== Step 2: Load engine ===");
+    let engine;
+    try {
+      const { Engine } = await import("@vcad/engine");
+      engine = await Engine.init();
+      console.log("  Engine loaded");
+    } catch (error) {
+      console.error(`  Error loading engine: ${(error as Error).message}`);
+      console.error("  Make sure @vcad/engine is built: npm run build -w @vcad/engine");
+      process.exit(1);
+    }
+
+    // Generate images
+    console.log("\n=== Step 3: Render images ===");
+    let pairs: ImageIRPair[];
+    try {
+      pairs = await generateImageIRPairs(parts, engine, {
+        outputDir,
+        width,
+        height,
+        views,
+        onProgress: (completed, total, errors) => {
+          process.stdout.write(`\r  Progress: ${completed}/${total} (${errors} errors)`);
+        },
+      });
+      console.log("");
+    } catch (error) {
+      console.error(`\n  Error: ${(error as Error).message}`);
+      console.error("  Make sure puppeteer is installed: npm install puppeteer");
+      process.exit(1);
+    }
+
+    // Write metadata
+    const metadataPath = path.join(outputDir, "metadata.jsonl");
+    writeMetadata(pairs, metadataPath);
+
+    // Print stats
+    const stats = computeMultimodalStats(pairs, outputDir);
+    console.log(`\n=== Results ===`);
+    console.log(`  Total pairs: ${stats.totalPairs}`);
+    console.log(`  Avg image size: ${(stats.avgImageSizeBytes / 1024).toFixed(1)} KB`);
+    console.log(`  By family:`);
+    for (const [family, familyCount] of Object.entries(stats.byFamily).sort((a, b) => b[1] - a[1])) {
+      console.log(`    ${family}: ${familyCount}`);
+    }
+    console.log(`  By view:`);
+    for (const [view, viewCount] of Object.entries(stats.byView)) {
+      console.log(`    ${view}: ${viewCount}`);
+    }
+    console.log(`\n  Metadata: ${metadataPath}`);
+    console.log(`  Images: ${path.join(outputDir, "images/")}`);
+  });
+
+/**
+ * Render-test command - test rendering pipeline with a few examples.
+ */
+program
+  .command("render-test")
+  .description("Test the rendering pipeline with a few examples")
+  .option("-n, --count <count>", "Number of test renders", "5")
+  .option("-o, --output <dir>", "Output directory", "data/test-renders")
+  .option("-f, --family <family>", "Part family to test", "plate")
+  .action(async (options) => {
+    const count = parseInt(options.count, 10);
+    const outputDir = path.resolve(options.output);
+    const family = options.family as string;
+
+    console.log(`Testing render pipeline with ${count} ${family} parts`);
+
+    // Ensure output directory exists
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    // Get generator
+    const generator = generators[family];
+    if (!generator) {
+      console.error(`Unknown family: ${family}`);
+      process.exit(1);
+    }
+
+    // Generate parts
+    const parts: GeneratedPart[] = [];
+    for (let i = 0; i < count; i++) {
+      parts.push(generator.generate());
+    }
+
+    // Load engine
+    console.log("Loading engine...");
+    let engine;
+    try {
+      const { Engine } = await import("@vcad/engine");
+      engine = await Engine.init();
+    } catch (error) {
+      console.error(`Error loading engine: ${(error as Error).message}`);
+      process.exit(1);
+    }
+
+    // Initialize renderer
+    console.log("Initializing renderer...");
+    const renderer = new Renderer();
+    try {
+      await renderer.init();
+    } catch (error) {
+      console.error(`Error initializing renderer: ${(error as Error).message}`);
+      console.error("Make sure puppeteer is installed: npm install puppeteer");
+      process.exit(1);
+    }
+
+    // Render each part
+    const { fromCompact } = await import("@vcad/ir");
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      console.log(`\nRendering ${i + 1}/${count}...`);
+      console.log(`  IR:\n${part.compact.split("\n").map(l => "    " + l).join("\n")}`);
+
+      try {
+        const doc = fromCompact(part.compact);
+        const scene = engine.evaluate(doc);
+
+        if (!scene.parts || scene.parts.length === 0) {
+          console.log("  Error: No geometry produced");
+          continue;
+        }
+
+        const mesh = scene.parts[0].mesh;
+        console.log(`  Mesh: ${mesh.positions.length / 3} vertices, ${mesh.indices.length / 3} triangles`);
+
+        const result = await renderer.render(mesh.positions, mesh.indices, {
+          width: 512,
+          height: 512,
+          view: "isometric",
+        });
+
+        const imagePath = path.join(outputDir, `${family}_${i}.png`);
+        fs.writeFileSync(imagePath, result.image);
+        console.log(`  Saved: ${imagePath} (${result.durationMs.toFixed(0)}ms)`);
+      } catch (error) {
+        console.log(`  Error: ${(error as Error).message}`);
+      }
+    }
+
+    await renderer.close();
+    console.log("\nDone!");
   });
 
 program.parse();
