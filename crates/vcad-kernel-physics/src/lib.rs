@@ -1,0 +1,42 @@
+#![warn(missing_docs)]
+
+//! Physics simulation for vcad robotics using Rapier3d.
+//!
+//! This crate provides physics simulation capabilities for robot assemblies,
+//! enabling dynamics simulation, collision detection, and reinforcement learning
+//! through a gym-like interface.
+//!
+//! # Features
+//!
+//! - Convert vcad assemblies to physics simulation
+//! - Joint dynamics with position/velocity/torque control
+//! - Collision detection using convex hulls or trimesh
+//! - Gym-style observation/action API for RL training
+//!
+//! # Example
+//!
+//! ```ignore
+//! use vcad_kernel_physics::{PhysicsWorld, Action, RobotEnv};
+//!
+//! // Load a document with assembly data
+//! let doc = vcad_ir::Document::from_json(&json_str).unwrap();
+//!
+//! // Create physics world
+//! let mut world = PhysicsWorld::from_document(&doc).unwrap();
+//!
+//! // Step simulation
+//! world.step(1.0 / 60.0);
+//!
+//! // Control joints directly
+//! world.set_joint_position("joint1", 45.0);  // 45 degrees
+//! ```
+
+mod colliders;
+mod error;
+mod gym;
+mod joints;
+mod world;
+
+pub use error::PhysicsError;
+pub use gym::{Action, Observation, RobotEnv};
+pub use world::{JointState, PhysicsWorld};

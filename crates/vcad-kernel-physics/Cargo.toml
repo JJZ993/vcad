@@ -1,0 +1,19 @@
+[package]
+name = "vcad-kernel-physics"
+description = "Physics simulation for vcad robotics using Rapier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vcad-ir = { workspace = true }
+vcad-kernel = { workspace = true }
+vcad-kernel-tessellate = { workspace = true }
+rapier3d = "0.23"
+parry3d = "0.18"
+nalgebra = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
