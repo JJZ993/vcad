@@ -204,3 +204,33 @@ vcad info input.vcad                # Show document info
 1. Add variant to `CsgOp` in `crates/vcad-ir/src/lib.rs`
 2. Mirror in `packages/ir/src/index.ts`
 3. Add evaluation logic in `packages/engine/src/evaluate.ts`
+
+## Changelog
+
+The changelog lives at `/CHANGELOG.json` (not markdown). Update it when:
+- Adding user-facing features (category: `feat`)
+- Fixing user-facing bugs (category: `fix`)
+- Making breaking changes (category: `breaking`)
+- Significant performance improvements (category: `perf`)
+
+Skip changelog for:
+- Internal refactors
+- Test-only changes
+- Documentation updates (unless significant)
+- Dependency bumps
+
+Entry format:
+```json
+{
+  "id": "YYYY-MM-DD-short-slug",
+  "version": "current version from package.json",
+  "date": "YYYY-MM-DD",
+  "category": "feat|fix|breaking|perf|docs",
+  "title": "Short title (max 60 chars)",
+  "summary": "One sentence description (max 200 chars)",
+  "features": ["relevant", "tags"],
+  "mcpTools": ["if", "applicable"]
+}
+```
+
+Add new entries at the **top** of the `entries` array. The schema at `/changelog.schema.json` validates the format.

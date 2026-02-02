@@ -90,3 +90,43 @@ body {
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* Changelog highlight animation */
+.changelog-highlight {
+  animation: changelog-pulse 1s ease-in-out infinite;
+  box-shadow: 0 0 0 2px var(--color-accent);
+  position: relative;
+  z-index: 100;
+}
+
+@keyframes changelog-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px var(--color-accent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px var(--color-accent), 0 0 12px var(--color-accent);
+  }
+}
+
+/* Changelog tooltip */
+.changelog-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: changelog-tooltip-in 0.2s ease-out;
+  white-space: nowrap;
+}
+
+@keyframes changelog-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}

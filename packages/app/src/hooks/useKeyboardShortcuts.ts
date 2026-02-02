@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useUiStore, useDocumentStore, useSketchStore } from "@vcad/core";
 import { useNotificationStore } from "../stores/notification-store";
 import { useLogStore } from "../stores/log-store";
+import { useChangelogStore } from "../stores/changelog-store";
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -49,6 +50,13 @@ export function useKeyboardShortcuts() {
       if (e.key === "`") {
         e.preventDefault();
         useLogStore.getState().togglePanel();
+        return;
+      }
+
+      // What's New panel: ?
+      if (e.key === "?" && !mod) {
+        e.preventDefault();
+        useChangelogStore.getState().togglePanel();
         return;
       }
 

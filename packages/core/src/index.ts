@@ -110,3 +110,19 @@ export type {
   LogSourceName,
   LogSubscriber,
 } from "./logger.js";
+
+// Changelog
+export {
+  changelog,
+  CURRENT_VERSION,
+  getEntriesSince,
+  getEntriesForVersion,
+  getEntriesByCategory,
+  getEntriesForTool,
+} from "./changelog/index.js";
+export type {
+  Changelog,
+  ChangelogEntry,
+  ChangelogCategory,
+  TryItAction,
+} from "./changelog/index.js";

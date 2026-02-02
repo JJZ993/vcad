@@ -19,6 +19,7 @@ import {
   Sparkle,
   FolderOpen,
   CaretRight,
+  Rocket,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -35,6 +36,7 @@ import { useCameraSettingsStore } from "@/stores/camera-settings-store";
 import { CONTROL_PRESETS } from "@/types/camera-controls";
 import { SignInButton, UserMenu, triggerSync } from "@vcad/auth";
 import { useBackgroundLuminance } from "@/hooks/useBackgroundLuminance";
+import { useChangelogStore } from "@/stores/changelog-store";
 
 interface CornerIconsProps {
   onAboutOpen: () => void;
@@ -94,6 +96,33 @@ function ViewButton({
 }
 
 
+function WhatsNewMenuItem({ onClose }: { onClose: () => void }) {
+  const openPanel = useChangelogStore((s) => s.openPanel);
+  const getUnreadCount = useChangelogStore((s) => s.getUnreadCount);
+  const unreadCount = getUnreadCount();
+
+  return (
+    <button
+      onClick={() => {
+        openPanel();
+        onClose();
+      }}
+      className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover"
+    >
+      <Rocket size={14} className="text-accent" />
+      <span>What's New</span>
+      {unreadCount > 0 && (
+        <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold bg-accent text-white rounded-full min-w-[18px] text-center">
+          {unreadCount}
+        </span>
+      )}
+      {unreadCount === 0 && (
+        <span className="ml-auto text-text-muted text-[10px]">?</span>
+      )}
+    </button>
+  );
+}
+
 function SettingsMenu({ onAboutOpen, onOpen }: { onAboutOpen: () => void; onOpen: () => void }) {
   const [open, setOpen] = useState(false);
   const [showAllExamples, setShowAllExamples] = useState(false);
@@ -152,16 +181,25 @@ function SettingsMenu({ onAboutOpen, onOpen }: { onAboutOpen: () => void; onOpen
   const themeLabel = theme === "system" ? "System" : theme === "light" ? "Light" : "Dark";
   const ThemeIcon = theme === "system" ? Desktop : theme === "light" ? Sun : Moon;
 
+  // Changelog badge
+  const getUnreadCount = useChangelogStore((s) => s.getUnreadCount);
+  const unreadCount = getUnreadCount();
+
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
           className={cn(
-            "flex h-8 w-8 items-center justify-center",
+            "relative flex h-8 w-8 items-center justify-center",
             "text-text-muted/70 hover:text-text hover:bg-hover",
           )}
         >
           <DotsThree size={20} weight="bold" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold bg-accent text-white rounded-full">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -196,6 +234,12 @@ function SettingsMenu({ onAboutOpen, onOpen }: { onAboutOpen: () => void; onOpen
             <span>Chat</span>
             <span className="ml-auto text-text-muted text-[10px]">⌘K</span>
           </button>
+
+          {/* Divider */}
+          <div className="my-2 border-t border-border" />
+
+          {/* What's New */}
+          <WhatsNewMenuItem onClose={() => setOpen(false)} />
 
           {/* Divider */}
           <div className="my-2 border-t border-border" />

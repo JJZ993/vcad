@@ -25,6 +25,7 @@ import {
   gymClose,
   gymCloseSchema,
 } from "./tools/gym.js";
+import { getChangelog, getChangelogSchema } from "./tools/changelog.js";
 
 export async function createServer(): Promise<Server> {
   // Initialize the WASM engine
@@ -123,6 +124,13 @@ export async function createServer(): Promise<Server> {
         description: "Close and clean up a simulation environment.",
         inputSchema: gymCloseSchema,
       },
+      {
+        name: "get_changelog",
+        description:
+          "Query vcad changelog by version, category, feature, or MCP tool. " +
+          "Returns recent changes, new features, breaking changes, and migration guides.",
+        inputSchema: getChangelogSchema,
+      },
     ],
   }));
 
@@ -161,6 +169,9 @@ export async function createServer(): Promise<Server> {
 
         case "gym_close":
           return gymClose(args);
+
+        case "get_changelog":
+          return getChangelog(args);
 
         default:
           return {

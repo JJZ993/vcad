@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "files": ["dist"],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc && cp ../../CHANGELOG.json dist/"
   },
   "dependencies": {
     "@vcad/engine": "^0.1.0",
