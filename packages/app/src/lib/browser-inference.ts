@@ -11,8 +11,8 @@ const DB_VERSION = 1;
 const STORE_NAME = "models";
 
 // Model configuration
-const DEFAULT_MODEL_ID = "Xenova/Qwen2.5-0.5B-Instruct";
-const MODEL_CACHE_KEY = "text-to-cad-model";
+const DEFAULT_MODEL_ID = "campedersen/cad0-0.5b-onnx";
+const MODEL_CACHE_KEY = "cad0-model";
 
 /** System prompt for CAD generation. */
 const SYSTEM_PROMPT = `You are a CAD code generator. Generate "Compact IR" - a text representation of 3D geometry.
