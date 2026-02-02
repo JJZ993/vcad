@@ -52,6 +52,7 @@ image = (
         "accelerate==1.2.1",
         "wandb==0.19.1",
         "hf_transfer",
+        "fastapi[standard]",
     )
     .pip_install(
         "flash-attn",
@@ -70,7 +71,7 @@ image = (
         modal.Secret.from_name("huggingface-secret"),
         modal.Secret.from_name("wandb-secret"),
     ],
-    timeout=60 * 60 * 6,  # 6 hours
+    timeout=60 * 60 * 12,  # 12 hours
 )
 def train(
     model_name: str = "Qwen/Qwen2.5-Coder-7B",
@@ -128,8 +129,8 @@ def train(
         ),
     )
 
-    # Run training
-    output_path = train_model(config)
+    # Run training (pass volume for checkpoint commits)
+    output_path = train_model(config, volume=volume)
 
     # Commit volume changes
     volume.commit()

@@ -17,6 +17,7 @@ from transformers import (
     TrainingArguments,
 )
 from trl import SFTTrainer
+from transformers import TrainerCallback
 
 from config import Config, ModelConfig, TrainingConfig, DataConfig
 from data import (
@@ -25,6 +26,20 @@ from data import (
     create_data_collator,
     analyze_dataset,
 )
+
+
+class VolumeCommitCallback(TrainerCallback):
+    """Callback to commit Modal volume after each checkpoint save."""
+
+    def __init__(self, volume):
+        self.volume = volume
+
+    def on_save(self, args, state, control, **kwargs):
+        """Commit volume after each checkpoint is saved."""
+        if self.volume is not None:
+            print(f"\n[Checkpoint {state.global_step}] Committing volume...")
+            self.volume.commit()
+            print(f"[Checkpoint {state.global_step}] Volume committed.")
 
 
 def setup_quantization(config: ModelConfig) -> Optional[BitsAndBytesConfig]:
@@ -140,12 +155,13 @@ def create_training_arguments(config: TrainingConfig) -> TrainingArguments:
     )
 
 
-def train_model(config: Config) -> str:
+def train_model(config: Config, volume=None) -> str:
     """
     Train the cad0 model.
 
     Args:
         config: Combined configuration object
+        volume: Optional Modal volume to commit after each checkpoint
 
     Returns:
         Path to the saved model
@@ -209,6 +225,11 @@ def train_model(config: Config) -> str:
         max_seq_length=config.training.max_seq_length,
         packing=config.training.packing,
     )
+    # Setup callbacks
+    callbacks = []
+    if volume is not None:
+        callbacks.append(VolumeCommitCallback(volume))
+
     trainer = SFTTrainer(
         model=model,
         processing_class=tokenizer,
@@ -216,6 +237,7 @@ def train_model(config: Config) -> str:
         eval_dataset=val_dataset,
         args=sft_config,
         formatting_func=formatting_func,
+        callbacks=callbacks,
     )
 
     # Train
