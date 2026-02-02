@@ -80,7 +80,7 @@ export type { Command, CommandRegistry, CommandActions } from "./commands.js";
 export { exportStlBuffer, exportStlBlob } from "./utils/export-stl.js";
 export { exportGltfBuffer, exportGltfBlob } from "./utils/export-gltf.js";
 export { exportStepBuffer, exportStepBlob } from "./utils/export-step.js";
-export { serializeDocument, parseVcadFile } from "./utils/save-load.js";
+export { serializeDocument, parseVcadFile, deriveParts } from "./utils/save-load.js";
 export type { VcadFile as VcadFileFormat } from "./utils/save-load.js";
 export { computeVolume, computeMass, formatMass, formatVolume } from "./utils/geometry.js";
 export { parseStl } from "./utils/import-stl.js";
