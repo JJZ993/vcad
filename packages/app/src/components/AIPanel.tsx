@@ -33,7 +33,8 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState("");
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [inferenceMode, setInferenceMode] = useState<InferenceMode>("auto");
+  // Default to server since cad0-mini isn't published yet
+  const [inferenceMode, setInferenceMode] = useState<InferenceMode>("server");
   const [browserAvailable, setBrowserAvailable] = useState(true);
   const [modelStatus, setModelStatus] = useState<{
     loaded: boolean;
@@ -68,12 +69,12 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
   }, [open]);
 
   // Determine effective inference mode
+  // Note: Browser mode (cad0-mini) not available until distillation is complete
   const effectiveMode: "browser" | "server" = (() => {
-    if (inferenceMode === "browser") return "browser";
     if (inferenceMode === "server") return "server";
-    // Auto mode: prefer server (faster, better model), fallback to browser
-    if (serverAvailable) return "server";
-    return "browser";
+    if (inferenceMode === "browser" && browserAvailable) return "browser";
+    // Auto/default: use server (cad0-mini not published yet)
+    return "server";
   })();
 
   const handleGenerate = async () => {
@@ -277,14 +278,15 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
             </button>
             <button
               onClick={() => setInferenceMode("browser")}
-              disabled={loading || !browserAvailable}
+              disabled={true} // cad0-mini not published yet
               className={cn(
                 "flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
                 inferenceMode === "browser"
                   ? "bg-accent text-white"
                   : "bg-bg text-text-muted hover:text-text",
-                !browserAvailable && "opacity-50 cursor-not-allowed"
+                "opacity-50 cursor-not-allowed"
               )}
+              title="Coming soon: local browser inference"
             >
               <Desktop size={10} />
               Local

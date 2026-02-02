@@ -62,7 +62,7 @@ import {
 import type { PrimitiveKind, BooleanType } from "@vcad/core";
 import { downloadBlob } from "@/lib/download";
 import { useNotificationStore } from "@/stores/notification-store";
-import { generateCAD, isModelLoaded } from "@/lib/browser-inference";
+import { generateCADServer } from "@/lib/server-inference";
 import { fromCompact, type Document } from "@vcad/ir";
 import type { VcadFile } from "@vcad/core";
 import { cn } from "@/lib/utils";
@@ -237,34 +237,26 @@ function CommandDropdown() {
 
     const store = useNotificationStore.getState();
     const progressId = store.startAIOperation(prompt, [
-      "Loading AI model",
-      "Parsing intent",
+      "Connecting to server",
       "Generating geometry",
-      "Validating mesh",
+      "Building mesh",
     ]);
 
     try {
       store.updateAIProgress(progressId, 0, 10);
+      setAiStatus("Connecting to server...");
 
-      const result = await generateCAD(
-        prompt,
-        undefined,
-        (_loaded, _total, status) => {
-          if (status.includes("Loading") || status.includes("Initializing")) {
-            store.updateAIProgress(progressId, 0, 20);
-          } else if (status.includes("Generating") || status.includes("Processing")) {
-            store.updateAIProgress(progressId, 2, 60);
-          }
-          setAiStatus(status);
-        }
-      );
+      const result = await generateCADServer(prompt, {
+        temperature: 0.1,
+        maxTokens: 128,
+      });
 
-      store.updateAIProgress(progressId, 2, 80);
+      store.updateAIProgress(progressId, 1, 80);
       setAiStatus("Building geometry...");
 
       const generatedDoc: Document = fromCompact(result.ir);
 
-      store.updateAIProgress(progressId, 3, 95);
+      store.updateAIProgress(progressId, 2, 95);
 
       const vcadFile: VcadFile = {
         document: generatedDoc,
@@ -717,7 +709,7 @@ function CommandDropdown() {
                     Generate: <span className="text-accent">{aiPrompt}</span>
                   </span>
                   <kbd className="bg-border/50 px-1 py-0.5 text-[9px] text-text-muted">
-                    {isModelLoaded() ? "ready" : "↓350MB"}
+                    server
                   </kbd>
                 </button>
               </>

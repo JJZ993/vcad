@@ -34,7 +34,7 @@ import {
   Plus,
 } from "@phosphor-icons/react";
 import { fromCompact, type Document } from "@vcad/ir";
-import { generateCAD, isModelLoaded } from "@/lib/browser-inference";
+import { generateCADServer } from "@/lib/server-inference";
 import { useNotificationStore } from "@/stores/notification-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import type { Command, VcadFile } from "@vcad/core";
@@ -384,39 +384,30 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
 
     // Start AI progress with semantic stages
     const progressId = store.startAIOperation(prompt, [
-      "Loading AI model",
-      "Parsing intent",
+      "Connecting to server",
       "Generating geometry",
-      "Validating mesh",
+      "Building mesh",
     ]);
 
     try {
-      // Stage 1: Loading model
+      // Stage 1: Connecting
       store.updateAIProgress(progressId, 0, 10);
+      setAiStatus("Connecting to server...");
 
-      const result = await generateCAD(
-        prompt,
-        undefined,
-        (_loaded, _total, status) => {
-          // Update progress based on status
-          if (status.includes("Loading") || status.includes("Initializing")) {
-            store.updateAIProgress(progressId, 0, 20);
-          } else if (status.includes("Generating") || status.includes("Processing")) {
-            store.updateAIProgress(progressId, 2, 60);
-          }
-          setAiStatus(status);
-        }
-      );
+      const result = await generateCADServer(prompt, {
+        temperature: 0.1,
+        maxTokens: 128,
+      });
 
-      // Stage 3: Building geometry
-      store.updateAIProgress(progressId, 2, 80);
+      // Stage 2: Building geometry
+      store.updateAIProgress(progressId, 1, 80);
       setAiStatus("Building geometry...");
 
       // Parse the Compact IR to a Document
       const generatedDoc: Document = fromCompact(result.ir);
 
-      // Stage 4: Validating
-      store.updateAIProgress(progressId, 3, 95);
+      // Stage 3: Validating
+      store.updateAIProgress(progressId, 2, 95);
 
       // Wrap in VcadFile format
       const vcadFile: VcadFile = {
@@ -778,7 +769,7 @@ export function CommandPalette({ open, onOpenChange, onAboutOpen }: CommandPalet
                       Generate: <span className="text-accent">{aiPrompt}</span>
                     </span>
                     <kbd className="bg-border/50 px-1.5 py-0.5 text-[10px] text-text-muted">
-                      {isModelLoaded() ? "ready" : "↓350MB"}
+                      server
                     </kbd>
                   </button>
                 )}

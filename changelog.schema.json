@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["version", "entries"],
+  "properties": {
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "version", "date", "category", "title", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "category": { "enum": ["feat", "fix", "breaking", "perf", "docs"] },
+          "title": { "type": "string", "maxLength": 60 },
+          "summary": { "type": "string", "maxLength": 200 },
+          "details": { "type": "string" },
+          "features": { "type": "array", "items": { "type": "string" } },
+          "mcpTools": { "type": "array", "items": { "type": "string" } },
+          "tryIt": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["type", "exampleId"],
+                "properties": {
+                  "type": { "const": "load-example" },
+                  "exampleId": { "type": "string" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["type", "panel"],
+                "properties": {
+                  "type": { "const": "open-panel" },
+                  "panel": { "type": "string" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["type", "selector"],
+                "properties": {
+                  "type": { "const": "highlight-ui" },
+                  "selector": { "type": "string" },
+                  "tooltip": { "type": "string" }
+                }
+              }
+            ]
+          },
+          "breaking": {
+            "type": "object",
+            "properties": {
+              "description": { "type": "string" },
+              "migration": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

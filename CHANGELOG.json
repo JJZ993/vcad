@@ -1,0 +1,70 @@
+{
+  "$schema": "./changelog.schema.json",
+  "version": "0.8.0",
+  "entries": [
+    {
+      "id": "2026-02-01-physics-simulation",
+      "version": "0.8.0",
+      "date": "2026-02-01",
+      "category": "feat",
+      "title": "Physics Simulation",
+      "summary": "Simulate assemblies with Rapier3D physics. Train RL agents via gym-style MCP interface.",
+      "details": "## What's New\n\n- **Rigid body dynamics** - Parts become physical objects with mass and inertia\n- **Joint support** - Revolute, prismatic, cylindrical, ball, and fixed joints\n- **Gym-style RL interface** - `reset()`, `step(action)`, `observe()` for training\n- **Three action types** - Torque, position targets, velocity targets\n- **MCP integration** - Full programmatic control via MCP tools",
+      "features": ["physics", "assembly", "mcp", "simulation"],
+      "mcpTools": ["create_robot_env", "gym_step", "gym_reset", "gym_observe", "gym_close"],
+      "tryIt": { "type": "load-example", "exampleId": "robot-arm" }
+    },
+    {
+      "id": "2026-01-28-ray-tracing",
+      "version": "0.7.4",
+      "date": "2026-01-28",
+      "category": "feat",
+      "title": "Direct BRep Ray Tracing",
+      "summary": "Pixel-perfect rendering without tessellation. Toggle between standard and ray-traced modes.",
+      "details": "## What's New\n\n- **Analytic ray-surface intersection** for all surface types\n- **WebGPU compute shader pipeline** for real-time performance\n- **BVH acceleration** with SAH construction\n- **Trimmed surface handling** for complex geometry\n- **Debug modes** - View normals, face IDs, lighting",
+      "features": ["rendering", "raytrace", "gpu"],
+      "tryIt": { "type": "highlight-ui", "selector": "[data-raytrace-toggle]", "tooltip": "Click to toggle ray tracing" }
+    },
+    {
+      "id": "2026-01-25-step-import",
+      "version": "0.7.3",
+      "date": "2026-01-25",
+      "category": "feat",
+      "title": "STEP File Import",
+      "summary": "Import AP203/AP214 STEP files from Fusion 360, SolidWorks, Onshape, and more.",
+      "details": "## What's New\n\n- **Drag-and-drop import** - Drop .step or .stp files onto the canvas\n- **File picker support** - Use Open dialog or Cmd+O\n- **Multi-solid support** - Import assemblies with multiple parts\n- **GPU mesh processing** - Fast normal computation with creased edges",
+      "features": ["import", "step", "interop"],
+      "mcpTools": ["import_step"]
+    },
+    {
+      "id": "2026-01-20-sketch-constraints",
+      "version": "0.7.2",
+      "date": "2026-01-20",
+      "category": "feat",
+      "title": "Sketch Constraints",
+      "summary": "Full parametric sketching with geometric constraints and automatic solving.",
+      "details": "## What's New\n\n- **12 constraint types** - Coincident, horizontal, vertical, parallel, perpendicular, tangent, distance, length, radius, angle, equal length, fixed\n- **Levenberg-Marquardt solver** with adaptive damping\n- **Visual feedback** - Green when fully constrained, yellow when under-constrained\n- **Dimension editing** - Click constraints to modify values",
+      "features": ["sketch", "constraints", "parametric"]
+    },
+    {
+      "id": "2026-01-15-assembly-joints",
+      "version": "0.7.1",
+      "date": "2026-01-15",
+      "category": "feat",
+      "title": "Assembly Mode with Joints",
+      "summary": "Create assemblies with instances and kinematic joints for motion simulation.",
+      "details": "## What's New\n\n- **Part instances** - Reference parts multiple times with different transforms\n- **Joint types** - Revolute, prismatic, cylindrical, ball, fixed\n- **Forward kinematics** - Scrub joint values to preview motion\n- **Feature tree integration** - Hierarchical view of parts, instances, joints",
+      "features": ["assembly", "joints", "kinematics"]
+    },
+    {
+      "id": "2026-01-10-sweeps-lofts",
+      "version": "0.7.0",
+      "date": "2026-01-10",
+      "category": "feat",
+      "title": "Sweep and Loft Operations",
+      "summary": "Create complex geometry by sweeping sketches along paths or interpolating between profiles.",
+      "details": "## What's New\n\n- **Sweep** - Extrude sketches along line or helix paths\n- **Loft** - Interpolate between multiple sketch profiles\n- **Path control** - Define custom sweep trajectories\n- **Profile alignment** - Automatic orientation along paths",
+      "features": ["sweep", "loft", "modeling"]
+    }
+  ]
+}
