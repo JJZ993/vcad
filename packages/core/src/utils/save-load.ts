@@ -308,66 +308,47 @@ function walkTransformChain(document: Document, rootNodeId: NodeId): TransformCh
   const rootNode = document.nodes[String(rootNodeId)];
   if (!rootNode) return null;
 
+  // translateNodeId should always match the document root entry.
   let translateNodeId = rootNodeId;
   let rotateNodeId = rootNodeId;
   let scaleNodeId = rootNodeId;
+
+  let currentNode = rootNode;
   let coreNodeId = rootNodeId;
-  let currentOp = rootNode.op;
+  let coreOp = rootNode.op;
 
-  // Walk down through transforms
-  if (currentOp.type === "Translate") {
-    translateNodeId = rootNodeId;
-    const childNode = document.nodes[String(currentOp.child)];
-    if (childNode) {
-      currentOp = childNode.op;
-      coreNodeId = currentOp.type === "Translate" ? currentOp.child : childNode.id;
+  let sawRotate = false;
+  let sawScale = false;
 
-      if (currentOp.type === "Rotate") {
-        rotateNodeId = childNode.id;
-        const childNode2 = document.nodes[String(currentOp.child)];
-        if (childNode2) {
-          currentOp = childNode2.op;
-          coreNodeId = childNode2.id;
-
-          if (currentOp.type === "Scale") {
-            scaleNodeId = childNode2.id;
-            const childNode3 = document.nodes[String(currentOp.child)];
-            if (childNode3) {
-              coreNodeId = childNode3.id;
-              currentOp = childNode3.op;
-            }
-          }
-        }
-      } else if (currentOp.type === "Scale") {
-        scaleNodeId = childNode.id;
-        rotateNodeId = childNode.id; // No rotate, use scale as placeholder
-        const childNode2 = document.nodes[String(currentOp.child)];
-        if (childNode2) {
-          coreNodeId = childNode2.id;
-          currentOp = childNode2.op;
-        }
-      }
+  // Walk down through any contiguous transform nodes in the chain.
+  while (
+    currentNode.op.type === "Translate" ||
+    currentNode.op.type === "Rotate" ||
+    currentNode.op.type === "Scale"
+  ) {
+    if (currentNode.op.type === "Rotate" && !sawRotate) {
+      rotateNodeId = currentNode.id;
+      sawRotate = true;
     }
+    if (currentNode.op.type === "Scale" && !sawScale) {
+      scaleNodeId = currentNode.id;
+      sawScale = true;
+    }
+
+    const childNode = document.nodes[String(currentNode.op.child)];
+    if (!childNode) {
+      // Dangling transform; treat this transform as the core.
+      coreNodeId = currentNode.id;
+      coreOp = currentNode.op;
+      return { translateNodeId, rotateNodeId, scaleNodeId, coreNodeId, coreOp };
+    }
+
+    currentNode = childNode;
+    coreNodeId = currentNode.id;
+    coreOp = currentNode.op;
   }
 
-  // If root is not a transform, treat it as the core directly
-  if (rootNode.op.type !== "Translate" && rootNode.op.type !== "Rotate" && rootNode.op.type !== "Scale") {
-    return {
-      translateNodeId: rootNodeId,
-      rotateNodeId: rootNodeId,
-      scaleNodeId: rootNodeId,
-      coreNodeId: rootNodeId,
-      coreOp: rootNode.op,
-    };
-  }
-
-  return {
-    translateNodeId,
-    rotateNodeId,
-    scaleNodeId,
-    coreNodeId,
-    coreOp: currentOp,
-  };
+  return { translateNodeId, rotateNodeId, scaleNodeId, coreNodeId, coreOp };
 }
 
 /**
