@@ -4,16 +4,13 @@ import { cn } from "@/lib/utils";
 import { useDocumentStore } from "@vcad/core";
 import { useNotificationStore } from "@/stores/notification-store";
 import { fromCompact, type Document } from "@vcad/ir";
-import {
-  useAuth,
-  textToCAD,
-} from "@vcad/auth";
 import type { VcadFile } from "@vcad/core";
 import {
   generateCAD,
   getInferenceStatus,
   type ProgressCallback,
 } from "@/lib/browser-inference";
+import { generateCADServer, checkServerHealth } from "@/lib/server-inference";
 
 interface AIPanelProps {
   open: boolean;
@@ -45,11 +42,12 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
     size: number;
   } | null>(null);
 
-  const { isAuthenticated } = useAuth();
+  const [serverAvailable, setServerAvailable] = useState<boolean | null>(null);
 
-  // Check browser inference availability on mount
+  // Check browser and server inference availability on mount
   useEffect(() => {
     if (open) {
+      // Check browser inference
       getInferenceStatus()
         .then((status) => {
           setModelStatus({
@@ -63,6 +61,9 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
         .catch(() => {
           setBrowserAvailable(false);
         });
+
+      // Check server inference
+      checkServerHealth().then(setServerAvailable);
     }
   }, [open]);
 
@@ -70,8 +71,8 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
   const effectiveMode: "browser" | "server" = (() => {
     if (inferenceMode === "browser") return "browser";
     if (inferenceMode === "server") return "server";
-    // Auto mode: prefer server if authenticated, otherwise browser
-    if (isAuthenticated) return "server";
+    // Auto mode: prefer server (faster, better model), fallback to browser
+    if (serverAvailable) return "server";
     return "browser";
   })();
 
@@ -140,25 +141,35 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
           ],
         });
       } else {
-        // Server-based inference (requires authentication)
-        if (!isAuthenticated) {
-          store.failAIOperation(progressId, "Sign in to use server-based AI");
-          setLoading(false);
-          return;
-        }
+        // Server-based inference (cad0 on Modal)
+        setLoadingStatus("Connecting to server...");
+        store.updateAIProgress(progressId, 0, 10);
 
-        setLoadingStatus("Generating with server...");
-        store.updateAIProgress(progressId, 0, 20);
+        setLoadingStatus("Generating geometry...");
+        store.updateAIProgress(progressId, 1, 30);
 
-        const ir = await textToCAD(prompt);
+        const result = await generateCADServer(prompt, {
+          temperature: 0.1,
+          maxTokens: 128,
+        });
+
         store.updateAIProgress(progressId, 1, 80);
 
-        // Server returns full IR document
-        document = ir as Document;
+        setLoadingStatus("Parsing generated IR...");
+        store.updateAIProgress(progressId, 2, 90);
+
+        // Parse the Compact IR to a Document
+        try {
+          document = fromCompact(result.ir);
+        } catch (parseError) {
+          console.error("Failed to parse generated IR:", result.ir);
+          throw new Error("Generated invalid CAD code. Please try rephrasing your description.");
+        }
 
         store.completeAIOperation(progressId, {
           type: "success",
           title: "Generated from server",
+          description: `Created in ${(result.durationMs / 1000).toFixed(1)}s (${result.tokens} tokens)`,
           actions: [
             {
               label: "Undo",
@@ -280,15 +291,15 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
             </button>
             <button
               onClick={() => setInferenceMode("server")}
-              disabled={loading || !isAuthenticated}
+              disabled={loading || serverAvailable === false}
               className={cn(
                 "flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
                 inferenceMode === "server"
                   ? "bg-accent text-white"
                   : "bg-bg text-text-muted hover:text-text",
-                !isAuthenticated && "opacity-50 cursor-not-allowed"
+                serverAvailable === false && "opacity-50 cursor-not-allowed"
               )}
-              title={!isAuthenticated ? "Sign in to use server inference" : undefined}
+              title={serverAvailable === false ? "Server unavailable" : "Uses cad0 (7B model)"}
             >
               <CloudArrowDown size={10} />
               Server
@@ -296,12 +307,22 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
           </div>
         </div>
 
-        {/* Model download warning */}
+        {/* Model download warning (browser mode) */}
         {showModelDownloadWarning && (
           <div className="flex items-start gap-2 p-2 mb-3 text-xs bg-warning/10 border border-warning/20 rounded">
             <Warning size={14} className="text-warning mt-0.5 shrink-0" />
             <span className="text-text-muted">
               First use will download ~{modelSizeMB}MB model. Subsequent uses are instant.
+            </span>
+          </div>
+        )}
+
+        {/* Server cold start warning */}
+        {effectiveMode === "server" && (
+          <div className="flex items-start gap-2 p-2 mb-3 text-xs bg-surface-hover border border-border rounded">
+            <CloudArrowDown size={14} className="text-text-muted mt-0.5 shrink-0" />
+            <span className="text-text-muted">
+              First request may take ~30s (cold start). Subsequent requests are faster.
             </span>
           </div>
         )}
@@ -326,7 +347,9 @@ export function AIPanel({ open, onOpenChange }: AIPanelProps) {
 
         <div className="flex justify-between items-center mt-4">
           <span className="text-[10px] text-text-muted">
-            {effectiveMode === "browser" ? "Runs locally in your browser" : "Uses cloud AI"}
+            {effectiveMode === "browser"
+              ? "Local: cad0-mini (0.5B)"
+              : "Server: cad0 (7B)"}
           </span>
           <div className="flex gap-2">
             <button
