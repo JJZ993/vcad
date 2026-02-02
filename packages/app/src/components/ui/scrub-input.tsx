@@ -15,6 +15,8 @@ interface ScrubInputProps {
   max?: number;
   unit?: string;
   className?: string;
+  /** Compact mode for inline tree display (smaller, no unit text) */
+  compact?: boolean;
 }
 
 export function ScrubInput({
@@ -26,6 +28,7 @@ export function ScrubInput({
   max = Infinity,
   unit,
   className,
+  compact = false,
 }: ScrubInputProps) {
   const [text, setText] = useState(String(round(value)));
   const [isEditing, setIsEditing] = useState(false);
@@ -111,7 +114,10 @@ export function ScrubInput({
 
   return (
     <label className={cn("flex items-center gap-1.5 text-xs", className)}>
-      <span className="w-4 shrink-0 text-text-muted text-[10px] font-medium">{label}</span>
+      <span className={cn(
+        "shrink-0 text-text-muted font-medium",
+        compact ? "text-[9px] w-3" : "text-[10px] w-4"
+      )}>{label}</span>
       <input
         ref={inputRef}
         type="text"
@@ -129,13 +135,14 @@ export function ScrubInput({
         onDoubleClick={handleDoubleClick}
         readOnly={!isEditing}
         className={cn(
-          "flex-1 min-w-0 bg-card border border-border px-2 py-1 text-xs text-text outline-none transition-colors",
+          "flex-1 min-w-0 bg-card border border-border text-xs text-text outline-none transition-colors",
           "hover:border-text-muted focus:border-accent",
           !isEditing && "cursor-ew-resize select-none",
           isScrubbing && "cursor-ew-resize",
+          compact ? "px-1 py-0.5 text-[10px]" : "px-2 py-1",
         )}
       />
-      {unit && <span className="text-[10px] text-text-muted shrink-0">{unit}</span>}
+      {unit && !compact && <span className="text-[10px] text-text-muted shrink-0">{unit}</span>}
     </label>
   );
 }
