@@ -639,7 +639,7 @@ function CommandDropdown() {
       )}
       <Popover.Portal>
         <Popover.Content
-          className="z-50 w-80 bg-surface"
+          className="bottom-toolbar-menu z-50 w-80 bg-surface"
           sideOffset={4}
           side="top"
           align="start"
@@ -896,7 +896,7 @@ function TabDropdown({
       )}
       <Popover.Portal>
         <Popover.Content
-          className="z-50 bg-surface p-2"
+          className="bottom-toolbar-menu z-50 bg-surface p-2"
           sideOffset={4}
           side="top"
           align="center"
@@ -1007,7 +1007,7 @@ function MoreDropdown({
       )}
       <Popover.Portal>
         <Popover.Content
-          className="z-50 bg-surface p-2"
+          className="bottom-toolbar-menu z-50 bg-surface p-2"
           sideOffset={4}
           side="top"
           align="center"
@@ -1755,6 +1755,7 @@ export function BottomToolbar() {
       <div
         ref={toolbarRef}
         className={cn(
+          "bottom-toolbar",
           "fixed bottom-4 left-1/2 -translate-x-1/2 z-50",
           "flex items-center gap-0.5 pointer-events-auto",
           "bg-surface/95 backdrop-blur-sm",

@@ -130,3 +130,23 @@ body {
     transform: translateX(-50%) translateY(0);
   }
 }
+
+/* Bottom toolbar: remove focus outlines in the bar and its menus */
+.bottom-toolbar,
+.bottom-toolbar-menu {
+  outline: none;
+}
+
+.bottom-toolbar :is(button, [role="button"], input, select, textarea),
+.bottom-toolbar-menu :is(button, [role="button"], input, select, textarea) {
+  outline: none;
+  box-shadow: none;
+}
+
+.bottom-toolbar :is(button, [role="button"], input, select, textarea):focus,
+.bottom-toolbar :is(button, [role="button"], input, select, textarea):focus-visible,
+.bottom-toolbar-menu :is(button, [role="button"], input, select, textarea):focus,
+.bottom-toolbar-menu :is(button, [role="button"], input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
