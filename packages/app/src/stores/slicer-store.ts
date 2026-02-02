@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SliceResult } from "@vcad/kernel-wasm";
 
 export type InfillPattern = "grid" | "lines" | "triangles" | "honeycomb" | "gyroid";
 
@@ -41,9 +42,11 @@ interface SlicerStore {
   isSlicing: boolean;
   sliceError: string | null;
   stats: SliceStats | null;
+  sliceResult: SliceResult | null;
   setSlicing: (slicing: boolean) => void;
   setSliceError: (error: string | null) => void;
   setStats: (stats: SliceStats | null) => void;
+  setSliceResult: (result: SliceResult | null) => void;
 
   // Preview
   previewLayerIndex: number;
@@ -82,9 +85,11 @@ export const useSlicerStore = create<SlicerStore>((set) => ({
   isSlicing: false,
   sliceError: null,
   stats: null,
+  sliceResult: null,
   setSlicing: (slicing) => set({ isSlicing: slicing }),
   setSliceError: (error) => set({ sliceError: error }),
   setStats: (stats) => set({ stats }),
+  setSliceResult: (result) => set({ sliceResult: result }),
 
   // Preview
   previewLayerIndex: 0,

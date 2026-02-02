@@ -73,6 +73,278 @@ export class RayTracer {
 if (Symbol.dispose) RayTracer.prototype[Symbol.dispose] = RayTracer.prototype.free;
 
 /**
+ * Slice result for WASM.
+ */
+export class SliceResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SliceResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SliceResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SliceResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sliceresult_free(ptr, 0);
+    }
+    /**
+     * Get filament weight in grams.
+     * @returns {number}
+     */
+    get filamentGrams() {
+        const ret = wasm.sliceresult_filamentGrams(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get filament usage in mm.
+     * @returns {number}
+     */
+    get filamentMm() {
+        const ret = wasm.sliceresult_filamentMm(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get layer data for preview.
+     * @param {number} layer_index
+     * @returns {any}
+     */
+    getLayerPreview(layer_index) {
+        const ret = wasm.sliceresult_getLayerPreview(this.__wbg_ptr, layer_index);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Get number of layers.
+     * @returns {number}
+     */
+    get layerCount() {
+        const ret = wasm.sliceresult_layerCount(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get estimated print time in seconds.
+     * @returns {number}
+     */
+    get printTimeSeconds() {
+        const ret = wasm.sliceresult_printTimeSeconds(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get stats as JSON.
+     * @returns {string}
+     */
+    statsJson() {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.sliceresult_statsJson(this.__wbg_ptr);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) SliceResult.prototype[Symbol.dispose] = SliceResult.prototype.free;
+
+/**
+ * Slicer settings for WASM.
+ */
+export class SlicerSettings {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SlicerSettings.prototype);
+        obj.__wbg_ptr = ptr;
+        SlicerSettingsFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SlicerSettingsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_slicersettings_free(ptr, 0);
+    }
+    /**
+     * First layer height (mm).
+     * @returns {number}
+     */
+    get first_layer_height() {
+        const ret = wasm.__wbg_get_slicersettings_first_layer_height(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Infill density (0-1).
+     * @returns {number}
+     */
+    get infill_density() {
+        const ret = wasm.__wbg_get_slicersettings_infill_density(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Infill pattern (0=Grid, 1=Lines, 2=Triangles, 3=Honeycomb, 4=Gyroid).
+     * @returns {number}
+     */
+    get infill_pattern() {
+        const ret = wasm.__wbg_get_slicersettings_infill_pattern(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Layer height (mm).
+     * @returns {number}
+     */
+    get layer_height() {
+        const ret = wasm.__wbg_get_slicersettings_layer_height(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Line width (mm).
+     * @returns {number}
+     */
+    get line_width() {
+        const ret = wasm.__wbg_get_slicersettings_line_width(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Nozzle diameter (mm).
+     * @returns {number}
+     */
+    get nozzle_diameter() {
+        const ret = wasm.__wbg_get_slicersettings_nozzle_diameter(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Support angle threshold.
+     * @returns {number}
+     */
+    get support_angle() {
+        const ret = wasm.__wbg_get_slicersettings_support_angle(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Enable support.
+     * @returns {boolean}
+     */
+    get support_enabled() {
+        const ret = wasm.__wbg_get_slicersettings_support_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Wall count.
+     * @returns {number}
+     */
+    get wall_count() {
+        const ret = wasm.__wbg_get_slicersettings_wall_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * First layer height (mm).
+     * @param {number} arg0
+     */
+    set first_layer_height(arg0) {
+        wasm.__wbg_set_slicersettings_first_layer_height(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Infill density (0-1).
+     * @param {number} arg0
+     */
+    set infill_density(arg0) {
+        wasm.__wbg_set_slicersettings_infill_density(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Infill pattern (0=Grid, 1=Lines, 2=Triangles, 3=Honeycomb, 4=Gyroid).
+     * @param {number} arg0
+     */
+    set infill_pattern(arg0) {
+        wasm.__wbg_set_slicersettings_infill_pattern(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Layer height (mm).
+     * @param {number} arg0
+     */
+    set layer_height(arg0) {
+        wasm.__wbg_set_slicersettings_layer_height(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Line width (mm).
+     * @param {number} arg0
+     */
+    set line_width(arg0) {
+        wasm.__wbg_set_slicersettings_line_width(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Nozzle diameter (mm).
+     * @param {number} arg0
+     */
+    set nozzle_diameter(arg0) {
+        wasm.__wbg_set_slicersettings_nozzle_diameter(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Support angle threshold.
+     * @param {number} arg0
+     */
+    set support_angle(arg0) {
+        wasm.__wbg_set_slicersettings_support_angle(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Enable support.
+     * @param {boolean} arg0
+     */
+    set support_enabled(arg0) {
+        wasm.__wbg_set_slicersettings_support_enabled(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Wall count.
+     * @param {number} arg0
+     */
+    set wall_count(arg0) {
+        wasm.__wbg_set_slicersettings_wall_count(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Create from JSON.
+     * @param {string} json
+     * @returns {SlicerSettings}
+     */
+    static fromJson(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.slicersettings_fromJson(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return SlicerSettings.__wrap(ret[0]);
+    }
+    /**
+     * Create default settings.
+     */
+    constructor() {
+        const ret = wasm.slicersettings_new();
+        this.__wbg_ptr = ret >>> 0;
+        SlicerSettingsFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) SlicerSettings.prototype[Symbol.dispose] = SlicerSettings.prototype.free;
+
+/**
  * A 3D solid geometry object.
  *
  * Create solids from primitives, combine with boolean operations,
@@ -823,6 +1095,48 @@ export function exportProjectedViewToDxf(view_json) {
 }
 
 /**
+ * Generate G-code from slice result.
+ * @param {SliceResult} result
+ * @param {string} printer_profile
+ * @param {number} print_temp
+ * @param {number} bed_temp
+ * @returns {string}
+ */
+export function generateGcode(result, printer_profile, print_temp, bed_temp) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        _assertClass(result, SliceResult);
+        const ptr0 = passStringToWasm0(printer_profile, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.generateGcode(result.__wbg_ptr, ptr0, len0, print_temp, bed_temp);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * Get available printer profiles.
+ * @returns {any}
+ */
+export function getSlicerPrinterProfiles() {
+    const ret = wasm.getSlicerPrinterProfiles();
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * Import solids from STEP file bytes.
  *
  * Returns a JS array of mesh data for each imported body.
@@ -877,6 +1191,15 @@ export function isGpuAvailable() {
  */
 export function isPhysicsAvailable() {
     const ret = wasm.isGpuAvailable();
+    return ret !== 0;
+}
+
+/**
+ * Check if slicer is available.
+ * @returns {boolean}
+ */
+export function isSlicerAvailable() {
+    const ret = wasm.isSlicerAvailable();
     return ret !== 0;
 }
 
@@ -1151,6 +1474,43 @@ export function sectionMesh(mesh_js, plane_json, hatch_json) {
 }
 
 /**
+ * Slice a mesh from vertices and indices.
+ * @param {Float32Array} vertices
+ * @param {Uint32Array} indices
+ * @param {SlicerSettings} settings
+ * @returns {SliceResult}
+ */
+export function sliceMesh(vertices, indices, settings) {
+    const ptr0 = passArrayF32ToWasm0(vertices, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(indices, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    _assertClass(settings, SlicerSettings);
+    const ret = wasm.sliceMesh(ptr0, len0, ptr1, len1, settings.__wbg_ptr);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return SliceResult.__wrap(ret[0]);
+}
+
+/**
+ * Slice a solid.
+ * @param {Solid} solid
+ * @param {SlicerSettings} settings
+ * @param {number | null} [segments]
+ * @returns {SliceResult}
+ */
+export function sliceSolid(solid, settings, segments) {
+    _assertClass(solid, Solid);
+    _assertClass(settings, SlicerSettings);
+    const ret = wasm.sliceSolid(solid.__wbg_ptr, settings.__wbg_ptr, isLikeNone(segments) ? 0x100000001 : (segments) >>> 0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return SliceResult.__wrap(ret[0]);
+}
+
+/**
  * Convert a vcad IR Document (JSON) to compact IR text format.
  *
  * # Arguments
@@ -1299,6 +1659,9 @@ function __wbg_get_imports() {
             } finally {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
+        },
+        __wbg_error_9a7fe3f932034cde: function(arg0) {
+            console.error(arg0);
         },
         __wbg_get_9b94d73e6221f75c: function(arg0, arg1) {
             const ret = arg0[arg1 >>> 0];
@@ -1463,7 +1826,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 174, function: Function { arguments: [Externref], shim_idx: 175, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 179, function: Function { arguments: [Externref], shim_idx: 180, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__ha1c57de1520edab9, wasm_bindgen__convert__closures_____invoke__h4889c924fd29fd81);
             return ret;
         },
@@ -1517,6 +1880,12 @@ const PhysicsSimFinalization = (typeof FinalizationRegistry === 'undefined')
 const RayTracerFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_raytracer_free(ptr >>> 0, 1));
+const SliceResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sliceresult_free(ptr >>> 0, 1));
+const SlicerSettingsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_slicersettings_free(ptr >>> 0, 1));
 const SolidFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_solid_free(ptr >>> 0, 1));

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   X,
   Printer,
@@ -7,7 +7,7 @@ import {
   Export,
   Spinner,
 } from "@phosphor-icons/react";
-import { useSlicerStore, formatDuration } from "@/stores/slicer-store";
+import { useSlicerStore, formatDuration, infillPatternToId } from "@/stores/slicer-store";
 import { usePrinterStore } from "@/stores/printer-store";
 import { useEngineStore } from "@vcad/core";
 import { useNotificationStore } from "@/stores/notification-store";
@@ -15,11 +15,22 @@ import { SlicerSettings } from "./SlicerSettings";
 import { PrinterSelect } from "./PrinterSelect";
 import { PrinterStatus } from "./PrinterStatus";
 import { PrintPreview } from "./PrintPreview";
+import type { SliceResult } from "@vcad/kernel-wasm";
 
 type Tab = "settings" | "preview" | "printer";
 
+// Cache for the WASM module
+let wasmModule: typeof import("@vcad/kernel-wasm") | null = null;
+
+async function loadSlicerWasm(): Promise<typeof import("@vcad/kernel-wasm")> {
+  if (wasmModule) return wasmModule;
+  wasmModule = await import("@vcad/kernel-wasm");
+  return wasmModule;
+}
+
 export function PrintPanel() {
   const [activeTab, setActiveTab] = useState<Tab>("settings");
+  const sliceResultRef = useRef<SliceResult | null>(null);
 
   const closePrintPanel = useSlicerStore((s) => s.closePrintPanel);
   const isSlicing = useSlicerStore((s) => s.isSlicing);
@@ -29,6 +40,8 @@ export function PrintPanel() {
   const sliceError = useSlicerStore((s) => s.sliceError);
   const setSliceError = useSlicerStore((s) => s.setSliceError);
   const setCurrentLayerPreview = useSlicerStore((s) => s.setCurrentLayerPreview);
+  const setSliceResult = useSlicerStore((s) => s.setSliceResult);
+  const slicerSettings = useSlicerStore((s) => s.settings);
 
   const selectedPrinter = usePrinterStore((s) => s.selectedPrinter);
   const connectionState = usePrinterStore((s) => s.connectionState);
@@ -36,6 +49,7 @@ export function PrintPanel() {
   const bedTemp = usePrinterStore((s) => s.bedTemp);
   const setPrintTemp = usePrinterStore((s) => s.setPrintTemp);
   const setBedTemp = usePrinterStore((s) => s.setBedTemp);
+  const selectedProfile = usePrinterStore((s) => s.selectedProfile);
 
   const scene = useEngineStore((s) => s.scene);
   const engine = useEngineStore((s) => s.engine);
@@ -44,7 +58,7 @@ export function PrintPanel() {
 
   const hasMesh = scene?.parts && scene.parts.length > 0;
 
-  async function handleSlice() {
+  const handleSlice = useCallback(async () => {
     if (!engine || !scene?.parts?.length) {
       addToast("No model to slice", "error");
       return;
@@ -53,36 +67,85 @@ export function PrintPanel() {
     setSlicing(true);
     setSliceError(null);
     setStats(null);
+    setSliceResult(null);
+    sliceResultRef.current = null;
 
     try {
-      // Call the slicer WASM module
-      // This would be the actual WASM call in production
-      // For now, simulate slicing
-      await new Promise((r) => setTimeout(r, 1500));
+      // Load WASM module
+      const wasm = await loadSlicerWasm();
 
-      // Mock stats
-      const mockStats = {
-        layerCount: 150,
-        printTimeSeconds: 7200,
-        filamentMm: 5000,
-        filamentGrams: 23.4,
-        boundsMin: [0, 0, 0] as [number, number, number],
-        boundsMax: [50, 50, 30] as [number, number, number],
-      };
-      setStats(mockStats);
+      // Check if slicer is available
+      if (typeof wasm.isSlicerAvailable !== "function" || !wasm.isSlicerAvailable()) {
+        throw new Error("Slicer not available in this WASM build");
+      }
 
-      // Mock layer preview for first layer
-      setCurrentLayerPreview({
-        z: 0.2,
-        index: 0,
-        outerPerimeters: [[[0, 0], [50, 0], [50, 50], [0, 50]]],
-        innerPerimeters: [[[2, 2], [48, 2], [48, 48], [2, 48]]],
-        infill: [
-          [[5, 5], [45, 5]],
-          [[5, 10], [45, 10]],
-          [[5, 15], [45, 15]],
-        ],
+      // Combine all part meshes into one
+      let totalVerts = 0;
+      let totalIndices = 0;
+      for (const part of scene.parts) {
+        totalVerts += part.mesh.positions.length;
+        totalIndices += part.mesh.indices.length;
+      }
+
+      const combinedVerts = new Float32Array(totalVerts);
+      const combinedIndices = new Uint32Array(totalIndices);
+      let vertOffset = 0;
+      let indexOffset = 0;
+      let vertCount = 0;
+
+      for (const part of scene.parts) {
+        combinedVerts.set(part.mesh.positions, vertOffset);
+        // Adjust indices for the vertex offset
+        const numVerts = part.mesh.positions.length / 3;
+        const indices = part.mesh.indices;
+        for (let i = 0; i < indices.length; i++) {
+          combinedIndices[indexOffset + i] = (indices[i] ?? 0) + vertCount;
+        }
+        vertOffset += part.mesh.positions.length;
+        indexOffset += indices.length;
+        vertCount += numVerts;
+      }
+
+      // Create slicer settings
+      const settings = new wasm.SlicerSettings();
+      settings.layer_height = slicerSettings.layerHeight;
+      settings.first_layer_height = slicerSettings.firstLayerHeight;
+      settings.nozzle_diameter = slicerSettings.nozzleDiameter;
+      settings.line_width = slicerSettings.lineWidth;
+      settings.wall_count = slicerSettings.wallCount;
+      settings.infill_density = slicerSettings.infillDensity;
+      settings.infill_pattern = infillPatternToId(slicerSettings.infillPattern);
+      settings.support_enabled = slicerSettings.supportEnabled;
+      settings.support_angle = slicerSettings.supportAngle;
+
+      // Slice the mesh
+      const result = wasm.sliceMesh(combinedVerts, combinedIndices, settings);
+      sliceResultRef.current = result;
+      setSliceResult(result);
+
+      // Extract stats
+      const statsJson = result.statsJson();
+      const parsedStats = JSON.parse(statsJson);
+      setStats({
+        layerCount: result.layerCount,
+        printTimeSeconds: result.printTimeSeconds,
+        filamentMm: result.filamentMm,
+        filamentGrams: result.filamentGrams,
+        boundsMin: parsedStats.bounds_min || [0, 0, 0],
+        boundsMax: parsedStats.bounds_max || [0, 0, 0],
       });
+
+      // Get first layer preview
+      if (result.layerCount > 0) {
+        const layerPreview = result.getLayerPreview(0);
+        setCurrentLayerPreview({
+          z: layerPreview.z,
+          index: layerPreview.index,
+          outerPerimeters: layerPreview.outer_perimeters,
+          innerPerimeters: layerPreview.inner_perimeters,
+          infill: layerPreview.infill,
+        });
+      }
 
       addToast("Slicing complete", "success");
       setActiveTab("preview");
@@ -93,21 +156,18 @@ export function PrintPanel() {
     } finally {
       setSlicing(false);
     }
-  }
+  }, [engine, scene, slicerSettings, addToast, setSlicing, setSliceError, setStats, setSliceResult, setCurrentLayerPreview]);
 
-  async function handleExportGcode() {
-    if (!stats) return;
+  const handleExportGcode = useCallback(async () => {
+    const result = sliceResultRef.current;
+    if (!result || !stats) return;
 
     try {
-      // In production, this would call the WASM gcode generator
-      const gcode = `; Generated by vcad
-; Layers: ${stats.layerCount}
-; Time: ${formatDuration(stats.printTimeSeconds)}
-G28 ; Home
-M104 S${printTemp} ; Set nozzle temp
-M140 S${bedTemp} ; Set bed temp
-; ... rest of gcode
-`;
+      // Load WASM module
+      const wasm = await loadSlicerWasm();
+
+      // Generate G-code using WASM
+      const gcode = wasm.generateGcode(result, selectedProfile, printTemp, bedTemp);
 
       // Download the file
       const blob = new Blob([gcode], { type: "text/plain" });
@@ -120,9 +180,10 @@ M140 S${bedTemp} ; Set bed temp
 
       addToast("G-code exported", "success");
     } catch (err) {
+      console.error("Export failed:", err);
       addToast("Export failed", "error");
     }
-  }
+  }, [stats, selectedProfile, printTemp, bedTemp, addToast]);
 
   async function handleStartPrint() {
     if (!selectedPrinter || connectionState !== "connected") {

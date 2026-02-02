@@ -1,4 +1,4 @@
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -78,8 +78,31 @@ export function PrintPreview({ width = 300, height = 200 }: PrintPreviewProps) {
   const stats = useSlicerStore((s) => s.stats);
   const previewLayerIndex = useSlicerStore((s) => s.previewLayerIndex);
   const setPreviewLayerIndex = useSlicerStore((s) => s.setPreviewLayerIndex);
+  const setCurrentLayerPreview = useSlicerStore((s) => s.setCurrentLayerPreview);
+  const sliceResult = useSlicerStore((s) => s.sliceResult);
 
   const layerCount = stats?.layerCount ?? 0;
+
+  const handleLayerChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const index = parseInt(e.target.value);
+    setPreviewLayerIndex(index);
+
+    // Fetch layer preview from slice result
+    if (sliceResult && index < sliceResult.layerCount) {
+      try {
+        const layerPreview = sliceResult.getLayerPreview(index);
+        setCurrentLayerPreview({
+          z: layerPreview.z,
+          index: layerPreview.index,
+          outerPerimeters: layerPreview.outer_perimeters,
+          innerPerimeters: layerPreview.inner_perimeters,
+          infill: layerPreview.infill,
+        });
+      } catch (err) {
+        console.error("Failed to get layer preview:", err);
+      }
+    }
+  }, [sliceResult, setPreviewLayerIndex, setCurrentLayerPreview]);
 
   return (
     <div className="space-y-2">
@@ -117,7 +140,7 @@ export function PrintPreview({ width = 300, height = 200 }: PrintPreviewProps) {
             min="0"
             max={layerCount - 1}
             value={previewLayerIndex}
-            onChange={(e) => setPreviewLayerIndex(parseInt(e.target.value))}
+            onChange={handleLayerChange}
             className="w-full h-2 accent-accent"
           />
         </div>

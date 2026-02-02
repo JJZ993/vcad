@@ -2,58 +2,15 @@
 /* eslint-disable */
 
 /**
- * Physics simulation for robot assemblies.
- *
- * When compiled without the physics feature, only the constructor is available
- * and it will throw an error. Use isPhysicsAvailable() to check at runtime.
+ * Stub PhysicsSim when physics feature is not enabled.
  */
 export class PhysicsSim {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Create a new physics simulation from a vcad document JSON.
+     * Returns an error when physics feature is not enabled.
      */
-    constructor(doc_json: string, end_effector_ids: string[], dt?: number | null, substeps?: number | null);
-    /**
-     * Reset the environment to initial state.
-     */
-    reset(): any;
-    /**
-     * Step the simulation with torque action.
-     */
-    stepTorque(torques: Float64Array): any;
-    /**
-     * Step the simulation with position targets.
-     */
-    stepPosition(targets: Float64Array): any;
-    /**
-     * Step the simulation with velocity targets.
-     */
-    stepVelocity(targets: Float64Array): any;
-    /**
-     * Get current observation without stepping.
-     */
-    observe(): any;
-    /**
-     * Get the number of joints.
-     */
-    numJoints(): number;
-    /**
-     * Get the observation dimension.
-     */
-    observationDim(): number;
-    /**
-     * Get the action dimension.
-     */
-    actionDim(): number;
-    /**
-     * Set the maximum episode length.
-     */
-    setMaxSteps(max_steps: number): void;
-    /**
-     * Set the random seed.
-     */
-    setSeed(seed: bigint): void;
+    constructor(_doc_json: string, _end_effector_ids: string[], _dt?: number | null, _substeps?: number | null);
 }
 
 /**
@@ -67,6 +24,91 @@ export class RayTracer {
      * Returns an error when raytrace feature is not enabled.
      */
     static create(): RayTracer;
+}
+
+/**
+ * Slice result for WASM.
+ */
+export class SliceResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Get layer data for preview.
+     */
+    getLayerPreview(layer_index: number): any;
+    /**
+     * Get stats as JSON.
+     */
+    statsJson(): string;
+    /**
+     * Get filament weight in grams.
+     */
+    readonly filamentGrams: number;
+    /**
+     * Get filament usage in mm.
+     */
+    readonly filamentMm: number;
+    /**
+     * Get number of layers.
+     */
+    readonly layerCount: number;
+    /**
+     * Get estimated print time in seconds.
+     */
+    readonly printTimeSeconds: number;
+}
+
+/**
+ * Slicer settings for WASM.
+ */
+export class SlicerSettings {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Create from JSON.
+     */
+    static fromJson(json: string): SlicerSettings;
+    /**
+     * Create default settings.
+     */
+    constructor();
+    /**
+     * First layer height (mm).
+     */
+    first_layer_height: number;
+    /**
+     * Infill density (0-1).
+     */
+    infill_density: number;
+    /**
+     * Infill pattern (0=Grid, 1=Lines, 2=Triangles, 3=Honeycomb, 4=Gyroid).
+     */
+    infill_pattern: number;
+    /**
+     * Layer height (mm).
+     */
+    layer_height: number;
+    /**
+     * Line width (mm).
+     */
+    line_width: number;
+    /**
+     * Nozzle diameter (mm).
+     */
+    nozzle_diameter: number;
+    /**
+     * Support angle threshold.
+     */
+    support_angle: number;
+    /**
+     * Enable support.
+     */
+    support_enabled: boolean;
+    /**
+     * Wall count.
+     */
+    wall_count: number;
 }
 
 /**
@@ -421,6 +463,16 @@ export function evaluateCompactIR(compact_ir: string): Solid;
 export function exportProjectedViewToDxf(view_json: string): Uint8Array;
 
 /**
+ * Generate G-code from slice result.
+ */
+export function generateGcode(result: SliceResult, printer_profile: string, print_temp: number, bed_temp: number): string;
+
+/**
+ * Get available printer profiles.
+ */
+export function getSlicerPrinterProfiles(): any;
+
+/**
  * Import solids from STEP file bytes.
  *
  * Returns a JS array of mesh data for each imported body.
@@ -453,6 +505,11 @@ export function isGpuAvailable(): boolean;
  * Check if physics simulation is available.
  */
 export function isPhysicsAvailable(): boolean;
+
+/**
+ * Check if slicer is available.
+ */
+export function isSlicerAvailable(): boolean;
 
 /**
  * Chamfer all edges of a solid by the given distance.
@@ -569,6 +626,16 @@ export function projectMesh(mesh_js: any, view_direction: string): any;
 export function sectionMesh(mesh_js: any, plane_json: string, hatch_json?: string | null): any;
 
 /**
+ * Slice a mesh from vertices and indices.
+ */
+export function sliceMesh(vertices: Float32Array, indices: Uint32Array, settings: SlicerSettings): SliceResult;
+
+/**
+ * Slice a solid.
+ */
+export function sliceSolid(solid: Solid, settings: SlicerSettings, segments?: number | null): SliceResult;
+
+/**
  * Convert a vcad IR Document (JSON) to compact IR text format.
  *
  * # Arguments
@@ -663,6 +730,39 @@ export interface InitOutput {
     readonly solid_fillet: (a: number, b: number) => number;
     readonly solid_shell: (a: number, b: number) => number;
     readonly solid_circularPattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
+    readonly __wbg_get_slicersettings_first_layer_height: (a: number) => number;
+    readonly __wbg_get_slicersettings_infill_density: (a: number) => number;
+    readonly __wbg_get_slicersettings_infill_pattern: (a: number) => number;
+    readonly __wbg_get_slicersettings_layer_height: (a: number) => number;
+    readonly __wbg_get_slicersettings_line_width: (a: number) => number;
+    readonly __wbg_get_slicersettings_nozzle_diameter: (a: number) => number;
+    readonly __wbg_get_slicersettings_support_angle: (a: number) => number;
+    readonly __wbg_get_slicersettings_support_enabled: (a: number) => number;
+    readonly __wbg_get_slicersettings_wall_count: (a: number) => number;
+    readonly __wbg_set_slicersettings_first_layer_height: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_infill_density: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_infill_pattern: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_layer_height: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_line_width: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_nozzle_diameter: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_support_angle: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_support_enabled: (a: number, b: number) => void;
+    readonly __wbg_set_slicersettings_wall_count: (a: number, b: number) => void;
+    readonly __wbg_sliceresult_free: (a: number, b: number) => void;
+    readonly __wbg_slicersettings_free: (a: number, b: number) => void;
+    readonly generateGcode: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly getSlicerPrinterProfiles: () => [number, number, number];
+    readonly isSlicerAvailable: () => number;
+    readonly sliceMesh: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly sliceSolid: (a: number, b: number, c: number) => [number, number, number];
+    readonly sliceresult_filamentGrams: (a: number) => number;
+    readonly sliceresult_filamentMm: (a: number) => number;
+    readonly sliceresult_getLayerPreview: (a: number, b: number) => [number, number, number];
+    readonly sliceresult_layerCount: (a: number) => number;
+    readonly sliceresult_printTimeSeconds: (a: number) => number;
+    readonly sliceresult_statsJson: (a: number) => [number, number, number, number];
+    readonly slicersettings_fromJson: (a: number, b: number) => [number, number, number];
+    readonly slicersettings_new: () => number;
     readonly wasm_bindgen__closure__destroy__ha1c57de1520edab9: (a: number, b: number) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h90946713c829438a: (a: number, b: number, c: any, d: any) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h4889c924fd29fd81: (a: number, b: number, c: any) => void;

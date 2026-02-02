@@ -11,11 +11,13 @@
   "files": [
     "vcad_kernel_wasm_bg.wasm",
     "vcad_kernel_wasm.js",
+    "vcad_kernel_wasm_bg.js",
     "vcad_kernel_wasm.d.ts"
   ],
   "main": "vcad_kernel_wasm.js",
   "types": "vcad_kernel_wasm.d.ts",
   "sideEffects": [
+    "./vcad_kernel_wasm.js",
     "./snippets/*"
   ]
 }
