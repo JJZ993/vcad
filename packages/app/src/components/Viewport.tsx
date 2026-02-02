@@ -213,6 +213,7 @@ export function Viewport() {
           logarithmicDepthBuffer: true,
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.0,
+          preserveDrawingBuffer: true, // Required for pixel sampling (adaptive UI)
         }}
         style={{ background: isDark ? BG_DARK : BG_LIGHT }}
       >

@@ -17,6 +17,8 @@ import {
   DiscordLogo,
   Mouse,
   Sparkle,
+  FolderOpen,
+  CaretRight,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -24,7 +26,7 @@ import {
   useDocumentStore,
   useUiStore,
 } from "@vcad/core";
-import { FloppyDisk, FolderOpen } from "@phosphor-icons/react";
+import { FloppyDisk } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { examples } from "@/data/examples";
 import { OutputButton } from "./OutputButton";
@@ -32,6 +34,7 @@ import { CameraSettingsPanel } from "./CameraSettingsPanel";
 import { useCameraSettingsStore } from "@/stores/camera-settings-store";
 import { CONTROL_PRESETS } from "@/types/camera-controls";
 import { SignInButton, UserMenu, triggerSync } from "@vcad/auth";
+import { useBackgroundLuminance } from "@/hooks/useBackgroundLuminance";
 
 interface CornerIconsProps {
   onAboutOpen: () => void;
@@ -91,7 +94,7 @@ function ViewButton({
 }
 
 
-function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
+function SettingsMenu({ onAboutOpen, onOpen }: { onAboutOpen: () => void; onOpen: () => void }) {
   const [open, setOpen] = useState(false);
   const [showAllExamples, setShowAllExamples] = useState(false);
 
@@ -121,6 +124,9 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
   const setRaytraceQuality = useUiStore((s) => s.setRaytraceQuality);
   const setRaytraceDebugMode = useUiStore((s) => s.setRaytraceDebugMode);
   const setRaytraceEdgesEnabled = useUiStore((s) => s.setRaytraceEdgesEnabled);
+  const toggleCommandPalette = useUiStore((s) => s.toggleCommandPalette);
+  const theme = useUiStore((s) => s.theme);
+  const toggleTheme = useUiStore((s) => s.toggleTheme);
 
   // Camera settings
   const controlSchemeId = useCameraSettingsStore((s) => s.controlSchemeId);
@@ -144,6 +150,9 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
     window.dispatchEvent(new CustomEvent(`vcad:camera-${preset}`));
   }
 
+  const themeLabel = theme === "system" ? "System" : theme === "light" ? "Light" : "Dark";
+  const ThemeIcon = theme === "system" ? Desktop : theme === "light" ? Sun : Moon;
+
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
@@ -158,10 +167,99 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          className="z-50 w-56 border border-border bg-surface p-2 shadow-xl"
+          className="z-50 w-56 border border-border bg-surface p-2 shadow-xl max-h-[80vh] overflow-y-auto"
           sideOffset={8}
           align="end"
         >
+          {/* File Section */}
+          <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+            File
+          </div>
+          <button
+            onClick={() => {
+              onOpen();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover"
+          >
+            <FolderOpen size={14} />
+            <span>Open File</span>
+            <span className="ml-auto text-text-muted text-[10px]">⌘O</span>
+          </button>
+          <button
+            onClick={() => {
+              toggleCommandPalette();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover"
+          >
+            <Command size={14} />
+            <span>Command Palette</span>
+            <span className="ml-auto text-text-muted text-[10px]">⌘K</span>
+          </button>
+
+          {/* Divider */}
+          <div className="my-2 border-t border-border" />
+
+          {/* Appearance Section */}
+          <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+            Appearance
+          </div>
+
+          {/* Theme submenu */}
+          <Popover.Root>
+            <Popover.Trigger asChild>
+              <button className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover">
+                <ThemeIcon size={14} />
+                <span>Theme</span>
+                <span className="ml-auto text-text-muted">
+                  {themeLabel} <CaretRight size={10} className="inline" />
+                </span>
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                className="z-50 border border-border bg-surface p-1.5 shadow-xl"
+                side="right"
+                sideOffset={4}
+                align="start"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    onClick={() => {
+                      while (useUiStore.getState().theme !== "system") toggleTheme();
+                    }}
+                    className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-hover"
+                  >
+                    <Desktop size={14} />
+                    <span className={theme === "system" ? "text-accent" : ""}>System</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      while (useUiStore.getState().theme !== "light") toggleTheme();
+                    }}
+                    className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-hover"
+                  >
+                    <Sun size={14} />
+                    <span className={theme === "light" ? "text-accent" : ""}>Light</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      while (useUiStore.getState().theme !== "dark") toggleTheme();
+                    }}
+                    className="flex items-center gap-2 px-2 py-1 text-xs text-text hover:bg-hover"
+                  >
+                    <Moon size={14} />
+                    <span className={theme === "dark" ? "text-accent" : ""}>Dark</span>
+                  </button>
+                </div>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+
+          {/* Divider */}
+          <div className="my-2 border-t border-border" />
+
           {/* Examples Section */}
           <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
             Try an Example
@@ -441,6 +539,32 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
             <Info size={14} />
             <span>About</span>
           </button>
+
+          {/* Divider */}
+          <div className="my-2 border-t border-border" />
+
+          {/* External Links Section */}
+          <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+            Links
+          </div>
+          <a
+            href="https://github.com/ecto/vcad"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover"
+          >
+            <GithubLogo size={14} />
+            <span>GitHub</span>
+          </a>
+          <a
+            href="https://discord.gg/ZU8QHnFAc2"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-text hover:bg-hover"
+          >
+            <DiscordLogo size={14} />
+            <span>Discord</span>
+          </a>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -449,16 +573,22 @@ function SettingsMenu({ onAboutOpen }: { onAboutOpen: () => void }) {
 
 export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
   const isDirty = useDocumentStore((s) => s.isDirty);
-  const theme = useUiStore((s) => s.theme);
-  const toggleTheme = useUiStore((s) => s.toggleTheme);
-  const toggleCommandPalette = useUiStore((s) => s.toggleCommandPalette);
   const toggleFeatureTree = useUiStore((s) => s.toggleFeatureTree);
   const featureTreeOpen = useUiStore((s) => s.featureTreeOpen);
+  const isOrbiting = useUiStore((s) => s.isOrbiting);
+
+  // Adaptive text based on background luminance
+  const bgLuminance = useBackgroundLuminance();
+  const logoColor = bgLuminance === "light" ? "text-gray-900" : "text-white";
 
   return (
     <>
       {/* Top-left: hamburger + logo - with safe area padding */}
-      <div className="absolute z-20 flex items-center gap-2 top-[max(0.75rem,var(--safe-top))] left-[max(0.75rem,var(--safe-left))]">
+      <div className={cn(
+        "absolute z-20 flex items-center gap-2 top-[max(0.75rem,var(--safe-top))] left-[max(0.75rem,var(--safe-left))]",
+        "transition-all duration-300",
+        isOrbiting && "opacity-0 pointer-events-none"
+      )}>
         <IconButton
           tooltip="Toggle sidebar (`)"
           onClick={toggleFeatureTree}
@@ -467,80 +597,26 @@ export function CornerIcons({ onAboutOpen, onSave, onOpen }: CornerIconsProps) {
           <List size={20} />
         </IconButton>
         <div className="flex items-center gap-1 pl-1">
-          <span className="text-sm font-bold tracking-tighter text-text">
+          <span className={cn("text-sm font-bold tracking-tighter transition-colors duration-300", logoColor)}>
             vcad<span className="text-accent">.</span>
           </span>
           {isDirty && <span className="text-accent text-xs">*</span>}
         </div>
       </div>
 
-      {/* Top-right: file actions, utilities, settings, BUILD - with safe area padding */}
-      <div className="absolute z-20 flex items-center gap-1 top-[max(0.75rem,var(--safe-top))] right-[max(0.75rem,var(--safe-right))]">
-        {/* File actions - always visible */}
+      {/* Top-right: save, settings, auth, BUILD - with safe area padding */}
+      <div className={cn(
+        "absolute z-20 flex items-center gap-1 top-[max(0.75rem,var(--safe-top))] right-[max(0.75rem,var(--safe-right))]",
+        "transition-opacity duration-200",
+        isOrbiting && "opacity-0 pointer-events-none"
+      )}>
+        {/* Save - always visible */}
         <IconButton tooltip="Save (Cmd+S)" onClick={onSave}>
           <FloppyDisk size={18} />
         </IconButton>
-        <IconButton tooltip="Open (Cmd+O)" onClick={onOpen}>
-          <FolderOpen size={18} />
-        </IconButton>
 
-        {/* Desktop-only icons */}
-        <div className="hidden sm:flex items-center gap-1">
-          <IconButton
-            tooltip="Command palette (Cmd+K)"
-            onClick={toggleCommandPalette}
-          >
-            <Command size={18} />
-          </IconButton>
-          <IconButton
-            tooltip={
-              theme === "system"
-                ? "Theme: System (click for Light)"
-                : theme === "light"
-                ? "Theme: Light (click for Dark)"
-                : "Theme: Dark (click for System)"
-            }
-            onClick={toggleTheme}
-          >
-            {theme === "system" ? (
-              <Desktop size={18} />
-            ) : theme === "light" ? (
-              <Sun size={18} />
-            ) : (
-              <Moon size={18} />
-            )}
-          </IconButton>
-
-          {/* External links */}
-          <Tooltip content="GitHub">
-            <a
-              href="https://github.com/ecto/vcad"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(
-                "flex h-8 w-8 items-center justify-center",
-                "text-text-muted/70 hover:text-text hover:bg-hover",
-              )}
-            >
-              <GithubLogo size={18} />
-            </a>
-          </Tooltip>
-          <Tooltip content="Discord">
-            <a
-              href="https://discord.gg/ZU8QHnFAc2"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(
-                "flex h-8 w-8 items-center justify-center",
-                "text-text-muted/70 hover:text-text hover:bg-hover",
-              )}
-            >
-              <DiscordLogo size={18} />
-            </a>
-          </Tooltip>
-        </div>
-
-        <SettingsMenu onAboutOpen={onAboutOpen} />
+        {/* Settings menu (includes Open, Theme, Cmd+K, GitHub, Discord) */}
+        <SettingsMenu onAboutOpen={onAboutOpen} onOpen={onOpen} />
 
         {/* Auth: Sign in button or user menu */}
         <SignInButton className={cn(

@@ -55,6 +55,8 @@ import { getPartSummary } from "./tree/part-summary";
 import { InlineCubeDimensions, InlineCylinderDimensions, InlineSphereDimensions } from "./tree/InlineDimensions";
 import { InlinePositionSection, InlineRotationSection } from "./tree/InlineTransform";
 import { InlineMaterial } from "./tree/InlineMaterial";
+import { SceneSection } from "./tree/SceneSection";
+import { useBackgroundLuminance } from "@/hooks/useBackgroundLuminance";
 
 const KIND_ICONS: Record<PrimitiveKind, typeof Cube> = {
   cube: Cube,
@@ -722,10 +724,14 @@ export function FeatureTree() {
   const document = useDocumentStore((s) => s.document);
   const reorderPart = useDocumentStore((s) => s.reorderPart);
   const featureTreeOpen = useUiStore((s) => s.featureTreeOpen);
+  const isOrbiting = useUiStore((s) => s.isOrbiting);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [inlineExpandedIds, setInlineExpandedIds] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Sample background luminance to adapt text color
+  const bgLuminance = useBackgroundLuminance();
 
   // Check if this is an assembly document
   const hasInstances = document.instances && document.instances.length > 0;
@@ -801,64 +807,83 @@ export function FeatureTree() {
     });
   }
 
-  const hasContent = hasInstances || parts.length > 0;
+  // Always show if feature tree is open - scene section is always available
+  if (!featureTreeOpen) return null;
 
-  // Don't render if hidden or no content
-  if (!featureTreeOpen || !hasContent) return null;
+  const hasGeometry = hasInstances || parts.length > 0;
+
+  // Adaptive colors based on background luminance
+  const textColor = bgLuminance === "light" ? "text-gray-900" : "text-white";
 
   return (
     <div
       className={cn(
-        // Transparent overlay panel (Fusion 360 style)
+        // Floating overlay - no background, adaptive text
         "absolute top-14 left-3 z-10 w-48",
         "max-h-[calc(100vh-120px)]",
         "flex flex-col",
         "pointer-events-auto",
+        "transition-all duration-300",
+        textColor,
+        isOrbiting && "opacity-0 pointer-events-none",
       )}
     >
       {/* Body - no background, just content */}
       <div className="overflow-y-auto scrollbar-thin">
         <ContextMenu>
           <div className="space-y-0.5">
-            {/* Assembly mode: show instances and joints */}
-            {hasInstances ? (
-              <AssemblyTree
-                instances={document.instances!}
-                joints={document.joints ?? []}
-                groundInstanceId={document.groundInstanceId}
-              />
-            ) : (
-              /* Parts mode with drag-and-drop */
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={partIds}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {parts.map((part) => (
-                    <SortableTreeNode
-                      key={part.id}
-                      id={part.id}
-                      part={part}
-                      depth={0}
-                      expandedIds={expandedIds}
-                      toggleExpanded={toggleExpanded}
-                      consumedParts={consumedParts}
-                      renamingId={renamingId}
-                      setRenamingId={setRenamingId}
-                      inlineExpandedIds={inlineExpandedIds}
-                      toggleInlineExpanded={toggleInlineExpanded}
-                    />
-                  ))}
-                </SortableContext>
-                <DragOverlay dropAnimation={null}>
-                  {activePart && <DragPreview part={activePart} />}
-                </DragOverlay>
-              </DndContext>
+            {/* Scene section - always at top */}
+            <SceneSection />
+
+            {/* Separator and geometry when present */}
+            {hasGeometry && (
+              <>
+                <div className="border-t border-border/30 my-1" />
+
+                {/* Assembly mode: show instances and joints */}
+                {hasInstances ? (
+                  <AssemblyTree
+                    instances={document.instances!}
+                    joints={document.joints ?? []}
+                    groundInstanceId={document.groundInstanceId}
+                  />
+                ) : (
+                  /* Parts mode with drag-and-drop */
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={partIds}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted/70 px-2 pt-1">
+                        Parts
+                      </div>
+                      {parts.map((part) => (
+                        <SortableTreeNode
+                          key={part.id}
+                          id={part.id}
+                          part={part}
+                          depth={0}
+                          expandedIds={expandedIds}
+                          toggleExpanded={toggleExpanded}
+                          consumedParts={consumedParts}
+                          renamingId={renamingId}
+                          setRenamingId={setRenamingId}
+                          inlineExpandedIds={inlineExpandedIds}
+                          toggleInlineExpanded={toggleInlineExpanded}
+                        />
+                      ))}
+                    </SortableContext>
+                    <DragOverlay dropAnimation={null}>
+                      {activePart && <DragPreview part={activePart} />}
+                    </DragOverlay>
+                  </DndContext>
+                )}
+              </>
             )}
           </div>
         </ContextMenu>
