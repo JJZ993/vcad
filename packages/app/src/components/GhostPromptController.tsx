@@ -16,19 +16,19 @@ export function GhostPromptController() {
     if (!enabled) return null;
 
     if (parts.length === 0) {
-      return "Add a shape to start";
+      return "Open Create to add a shape";
     }
 
     if (parts.length === 1) {
-      return "Try adding another shape";
+      return "Open Create to add another shape";
     }
 
     if (parts.length >= 2 && selectedPartIds.size === 0) {
-      return "Select two parts for a boolean operation";
+      return "Select two parts to combine them";
     }
 
     if (selectedPartIds.size === 2) {
-      return "Union, Difference, or Intersection?";
+      return "Open Combine to merge or cut";
     }
 
     return null;

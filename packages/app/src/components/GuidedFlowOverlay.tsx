@@ -10,11 +10,11 @@ interface StepInfo {
 
 const STEP_INFO: Record<Exclude<GuidedFlowStep, null>, StepInfo> = {
   "add-cube": {
-    instruction: "Click the Box button",
+    instruction: "Open Create → click Box",
     detail: "Add your first shape to the scene",
   },
   "add-cylinder": {
-    instruction: "Now add a Cylinder",
+    instruction: "Open Create → add a Cylinder",
     detail: "We'll subtract this from the cube",
   },
   "position-cylinder": {
@@ -22,8 +22,8 @@ const STEP_INFO: Record<Exclude<GuidedFlowStep, null>, StepInfo> = {
     detail: "Drag the green arrow on the gizmo",
   },
   subtract: {
-    instruction: "Click Subtract",
-    detail: "The minus icon in the toolbar",
+    instruction: "Open Combine → click Difference",
+    detail: "Select both parts first (⌘-click or drag)",
   },
   celebrate: {
     instruction: "You made your first part!",
