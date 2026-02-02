@@ -42,7 +42,6 @@ import {
   ArrowsHorizontal,
   Eye,
   EyeSlash,
-  DotsSixVertical,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -143,8 +142,8 @@ interface TreeNodeProps {
   /** IDs of parts that are expanded for inline editing */
   inlineExpandedIds: Set<string>;
   toggleInlineExpanded: (id: string) => void;
-  /** Drag handle listeners (only for depth 0) */
-  dragHandleProps?: React.HTMLAttributes<HTMLButtonElement>;
+  /** Drag listeners (only for depth 0) */
+  dragListeners?: React.HTMLAttributes<HTMLElement>;
   /** Whether this node is being dragged */
   isDragging?: boolean;
 }
@@ -159,7 +158,7 @@ function TreeNode({
   setRenamingId,
   inlineExpandedIds,
   toggleInlineExpanded,
-  dragHandleProps,
+  dragListeners,
   isDragging,
 }: TreeNodeProps) {
   const selectedPartIds = useUiStore((s) => s.selectedPartIds);
@@ -257,17 +256,8 @@ function TreeNode({
         onDoubleClick={() => depth === 0 && setRenamingId(part.id)}
         onMouseEnter={() => setHoveredPartId(part.id)}
         onMouseLeave={() => setHoveredPartId(null)}
+        {...(depth === 0 ? dragListeners : {})}
       >
-        {/* Drag handle (only at depth 0) */}
-        {depth === 0 && dragHandleProps && (
-          <button
-            {...dragHandleProps}
-            className="shrink-0 p-0.5 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 text-text-muted hover:text-text"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <DotsSixVertical size={10} />
-          </button>
-        )}
         {/* Expand caret for boolean children OR inline dimensions */}
         {(hasChildren || canInlineExpand) ? (
           <button
@@ -298,7 +288,7 @@ function TreeNode({
             onDone={() => setRenamingId(null)}
           />
         ) : (
-          <span className="flex-1 truncate">
+          <span className="flex-1 overflow-hidden whitespace-nowrap">
             {part.name}
             {/* Show summary when not inline expanded */}
             {!isInlineExpanded && summary && (
@@ -378,7 +368,7 @@ function TreeNode({
 }
 
 /** Sortable wrapper for TreeNode at depth 0 */
-interface SortableTreeNodeProps extends Omit<TreeNodeProps, "dragHandleProps" | "isDragging"> {
+interface SortableTreeNodeProps extends Omit<TreeNodeProps, "dragListeners" | "isDragging"> {
   id: string;
 }
 
@@ -401,7 +391,7 @@ function SortableTreeNode({ id, ...props }: SortableTreeNodeProps) {
     <div ref={setNodeRef} style={style} {...attributes}>
       <TreeNode
         {...props}
-        dragHandleProps={listeners}
+        dragListeners={listeners}
         isDragging={isDragging}
       />
     </div>
@@ -524,7 +514,7 @@ function InstanceNode({ instance, joint, isGround, onRename }: InstanceNodeProps
           onMouseLeave={() => setHoveredPartId(null)}
         >
           <Package size={14} className="shrink-0" />
-          <span className="flex-1 truncate">
+          <span className="flex-1 overflow-hidden whitespace-nowrap">
             {displayName}
             <span className="text-text-muted/70">{jointSuffix}</span>
           </span>
@@ -622,7 +612,7 @@ function JointNode({ joint, instancesById }: JointNodeProps) {
           onMouseLeave={() => setHoveredPartId(null)}
         >
           <Icon size={14} className="shrink-0" />
-          <span className="flex-1 truncate">
+          <span className="flex-1 overflow-hidden whitespace-nowrap">
             {displayName}
             <span className="text-text-muted/70">{stateDisplay}</span>
           </span>
@@ -814,11 +804,11 @@ export function FeatureTree() {
     <div
       className={cn(
         // Floating overlay with background
-        "absolute top-14 left-3 z-10 w-48",
+        "absolute top-14 left-3 z-10 w-56",
         "max-h-[calc(100vh-120px)]",
         "flex flex-col",
         "pointer-events-auto",
-        "bg-surface/95 backdrop-blur-sm shadow-lg",
+        "bg-surface/95 backdrop-blur-sm",
         "p-2",
         "transition-all duration-300",
         isOrbiting && "opacity-0 pointer-events-none",
