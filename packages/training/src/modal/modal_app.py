@@ -330,6 +330,102 @@ def debug_volume():
         print(f"First 100 chars: {first_line[:100]}")
 
 
+# ============================================================
+# Inference endpoint for API
+# ============================================================
+
+@app.cls(
+    image=image,
+    gpu="A10G",  # Cheaper than A100 for inference
+    volumes={"/data": volume},
+    secrets=[modal.Secret.from_name("huggingface-secret")],
+    container_idle_timeout=300,  # Keep warm for 5 min
+)
+class Inference:
+    """Inference endpoint with model caching."""
+
+    @modal.enter()
+    def load_model(self):
+        """Load model once when container starts."""
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        model_path = "/data/checkpoints/merged"
+        print(f"Loading model from {model_path}...")
+
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+        )
+        print("Model loaded!")
+
+    @modal.web_endpoint(method="POST")
+    def infer(self, request: dict):
+        """
+        Generate Compact IR from a text prompt.
+
+        Request body:
+            {"prompt": "design description", "temperature": 0.1, "max_tokens": 256}
+
+        Returns:
+            {"ir": "generated compact IR", "tokens": 42}
+        """
+        import torch
+
+        prompt = request.get("prompt", "")
+        temperature = request.get("temperature", 0.1)
+        max_tokens = request.get("max_tokens", 256)
+
+        if not prompt:
+            return {"error": "prompt required"}, 400
+
+        # Format prompt
+        system = "You are a CAD assistant. Generate Compact IR code for the given design."
+        formatted = f"Design: {prompt}\n\nCompact IR:\n"
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": formatted},
+        ]
+
+        # Tokenize
+        text = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        inputs = self.tokenizer(text, return_tensors="pt").to(self.model.device)
+
+        # Generate
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                temperature=temperature if temperature > 0 else None,
+                do_sample=temperature > 0,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
+
+        # Decode
+        generated = outputs[0][inputs["input_ids"].shape[1]:]
+        ir = self.tokenizer.decode(generated, skip_special_tokens=True)
+
+        # Clean up
+        ir = ir.strip()
+        if ir.startswith("```"):
+            ir = ir.split("```")[1].strip()
+            if ir.startswith("ir") or ir.startswith("text"):
+                ir = ir.split("\n", 1)[1] if "\n" in ir else ir
+
+        return {"ir": ir, "tokens": len(generated)}
+
+
 @app.local_entrypoint()
 def main(
     action: str = "train",

@@ -10,8 +10,12 @@ const supabase = createClient(
 );
 
 // Model configuration via env vars - easy to swap providers
-const MODEL_PROVIDER = process.env.AI_PROVIDER || "anthropic";
+// Options: "modal" (cad0), "anthropic", "openai"
+const MODEL_PROVIDER = process.env.AI_PROVIDER || "modal";
 const MODEL_ID = process.env.AI_MODEL || "claude-sonnet-4-20250514";
+
+// Modal endpoint for cad0 model
+const MODAL_ENDPOINT = process.env.MODAL_INFERENCE_URL || "https://ecto--cad0-training-inference-infer.modal.run";
 
 function getModel() {
   if (MODEL_PROVIDER === "openai") {
@@ -26,6 +30,33 @@ function getModel() {
     apiKey: process.env.ANTHROPIC_API_KEY!,
   });
   return anthropic(MODEL_ID);
+}
+
+/**
+ * Call Modal inference endpoint for cad0 model.
+ */
+async function callModalInference(prompt: string): Promise<string> {
+  const response = await fetch(MODAL_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      temperature: 0.1,
+      max_tokens: 512,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Modal inference failed: ${error}`);
+  }
+
+  const result = await response.json();
+  if (result.error) {
+    throw new Error(result.error);
+  }
+
+  return result.ir;
 }
 
 const SYSTEM_PROMPT = `You are a CAD assistant for vcad, an open-source parametric CAD system.
@@ -121,6 +152,15 @@ export default async function handler(
   }
 
   try {
+    // Use Modal (cad0) or fall back to Claude/OpenAI
+    if (MODEL_PROVIDER === "modal") {
+      // cad0 returns Compact IR text format
+      const compactIR = await callModalInference(prompt);
+      res.status(200).json({ ir: compactIR, format: "compact" });
+      return;
+    }
+
+    // Claude/OpenAI return JSON IR format
     const { text } = await generateText({
       model: getModel(),
       system: SYSTEM_PROMPT,
@@ -152,7 +192,7 @@ export default async function handler(
       throw new Error("Invalid IR format");
     }
 
-    res.status(200).json({ ir });
+    res.status(200).json({ ir, format: "json" });
   } catch (error) {
     console.error("AI inference failed:", error);
     res.status(500).json({
