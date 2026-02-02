@@ -56,7 +56,6 @@ import { InlineCubeDimensions, InlineCylinderDimensions, InlineSphereDimensions 
 import { InlinePositionSection, InlineRotationSection } from "./tree/InlineTransform";
 import { InlineMaterial } from "./tree/InlineMaterial";
 import { SceneSection } from "./tree/SceneSection";
-import { useBackgroundLuminance } from "@/hooks/useBackgroundLuminance";
 
 const KIND_ICONS: Record<PrimitiveKind, typeof Cube> = {
   cube: Cube,
@@ -731,7 +730,6 @@ export function FeatureTree() {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // Sample background luminance to adapt text color
-  const bgLuminance = useBackgroundLuminance();
 
   // Check if this is an assembly document
   const hasInstances = document.instances && document.instances.length > 0;
@@ -812,23 +810,20 @@ export function FeatureTree() {
 
   const hasGeometry = hasInstances || parts.length > 0;
 
-  // Adaptive colors based on background luminance
-  const textColor = bgLuminance === "light" ? "text-gray-900" : "text-white";
-
   return (
     <div
       className={cn(
-        // Floating overlay - no background, adaptive text
+        // Floating overlay with background
         "absolute top-14 left-3 z-10 w-48",
         "max-h-[calc(100vh-120px)]",
         "flex flex-col",
         "pointer-events-auto",
+        "bg-surface/95 backdrop-blur-sm shadow-lg",
+        "p-2",
         "transition-all duration-300",
-        textColor,
         isOrbiting && "opacity-0 pointer-events-none",
       )}
     >
-      {/* Body - no background, just content */}
       <div className="overflow-y-auto scrollbar-thin">
         <ContextMenu>
           <div className="space-y-0.5">

@@ -88,6 +88,21 @@ function ErrorScreen({ message }: { message: string }) {
   );
 }
 
+/** Wrapper that conditionally shows FeatureTree and PropertyPanel */
+function FeatureTreeWithPropertyPanel({ sketchActive }: { sketchActive: boolean }) {
+  const featureTreeOpen = useUiStore((s) => s.featureTreeOpen);
+
+  if (sketchActive) return null;
+
+  return (
+    <>
+      <FeatureTree />
+      {/* Only show PropertyPanel when feature tree is closed (fallback for mobile/minimal mode) */}
+      {!featureTreeOpen && <PropertyPanel />}
+    </>
+  );
+}
+
 export function App() {
   useEngine();
   useKeyboardShortcuts();
@@ -305,18 +320,21 @@ export function App() {
     setDocumentPickerOpen(true);
   }, []);
 
-  // Listen for save/open/documents custom events from keyboard shortcuts
+  // Listen for save/open/documents/about custom events from keyboard shortcuts
   useEffect(() => {
     const onSave = () => handleSave();
     const onOpen = () => handleOpen();
     const onDocuments = () => handleOpenDocuments();
+    const onAbout = () => setAboutOpen(true);
     window.addEventListener("vcad:save", onSave);
     window.addEventListener("vcad:open", onOpen);
     window.addEventListener("vcad:documents", onDocuments);
+    window.addEventListener("vcad:about", onAbout);
     return () => {
       window.removeEventListener("vcad:save", onSave);
       window.removeEventListener("vcad:open", onOpen);
       window.removeEventListener("vcad:documents", onDocuments);
+      window.removeEventListener("vcad:about", onAbout);
     };
   }, [handleSave, handleOpen, handleOpenDocuments]);
 
@@ -481,8 +499,7 @@ export function App() {
             onSave={handleSave}
             onOpen={handleOpen}
           />
-          {!sketchActive && <FeatureTree />}
-          {!sketchActive && <PropertyPanel />}
+          <FeatureTreeWithPropertyPanel sketchActive={sketchActive} />
           {!sketchActive && <BottomToolbar />}
 
           {/* Onboarding overlays */}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Cube,
   Cylinder,
@@ -31,7 +31,25 @@ import {
   Stop,
   FastForward,
   Printer,
+  CaretDown,
+  MagnifyingGlass,
+  FloppyDisk,
+  FolderOpen,
+  Export,
+  GridFour,
+  SidebarSimple,
+  Sun,
+  Info,
+  ArrowCounterClockwise,
+  ArrowClockwise,
+  Trash,
+  Copy,
+  Anchor,
+  Sparkle,
+  SpinnerGap,
+  ChatCircle,
 } from "@phosphor-icons/react";
+import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   useDocumentStore,
@@ -39,11 +57,19 @@ import {
   useSketchStore,
   useEngineStore,
   useSimulationStore,
+  createCommandRegistry,
+  exportStlBlob,
+  exportGltfBlob,
   type ToolbarTab,
+  type Command as CommandType,
 } from "@vcad/core";
 import type { PrimitiveKind, BooleanType } from "@vcad/core";
+import { downloadBlob } from "@/lib/download";
 import { downloadDxf } from "@/lib/save-load";
 import { useNotificationStore } from "@/stores/notification-store";
+import { generateCAD, isModelLoaded } from "@/lib/browser-inference";
+import { fromCompact, type Document } from "@vcad/ir";
+import type { VcadFile } from "@vcad/core";
 import { cn } from "@/lib/utils";
 import {
   InsertInstanceDialog,
@@ -95,7 +121,8 @@ const TAB_COLORS: Record<ToolbarTab, string> = {
   print: "text-orange-400",
 };
 
-const TABS: { id: ToolbarTab; label: string; icon: typeof Cube }[] = [
+// All tabs in priority order (higher priority = shown first when space is limited)
+const ALL_TABS: { id: ToolbarTab; label: string; icon: typeof Cube }[] = [
   { id: "create", label: "Create", icon: Cube },
   { id: "transform", label: "Transform", icon: ArrowsOutCardinal },
   { id: "combine", label: "Combine", icon: Unite },
@@ -105,6 +132,561 @@ const TABS: { id: ToolbarTab; label: string; icon: typeof Cube }[] = [
   { id: "view", label: "View", icon: Cube3D },
   { id: "print", label: "Print", icon: Printer },
 ];
+
+// Responsive breakpoints and widths
+const MOBILE_BREAKPOINT = 640; // sm breakpoint
+const TAB_WIDTH_DESKTOP = 95; // ~95px per tab on desktop
+const TAB_WIDTH_MOBILE = 44; // Just icon on mobile
+const CHAT_WIDTH = 70;
+const MORE_WIDTH = 44;
+const MIN_VISIBLE_TABS = 0; // Can collapse all to More on very small screens
+
+// Icon mapping for command palette
+const COMMAND_ICONS: Record<string, typeof Cube> = {
+  Cube,
+  Cylinder,
+  Globe,
+  ArrowsOutCardinal,
+  ArrowClockwise,
+  ArrowsOut,
+  ArrowCounterClockwise,
+  Unite,
+  Subtract,
+  Intersect,
+  FloppyDisk,
+  FolderOpen,
+  Export,
+  GridFour,
+  CubeTransparent,
+  SidebarSimple,
+  Sun,
+  Info,
+  Trash,
+  Copy,
+  X,
+  Package,
+  PlusSquare,
+  Anchor,
+  ArrowsClockwise: ArrowClockwise,
+  ArrowsHorizontal,
+  Sparkle,
+  Circle,
+  Octagon,
+  DotsThree,
+};
+
+function CommandDropdown() {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiStatus, setAiStatus] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Store actions
+  const addPrimitive = useDocumentStore((s) => s.addPrimitive);
+  const applyBoolean = useDocumentStore((s) => s.applyBoolean);
+  const undo = useDocumentStore((s) => s.undo);
+  const redo = useDocumentStore((s) => s.redo);
+  const removePart = useDocumentStore((s) => s.removePart);
+  const duplicateParts = useDocumentStore((s) => s.duplicateParts);
+  const undoStack = useDocumentStore((s) => s.undoStack);
+  const redoStack = useDocumentStore((s) => s.redoStack);
+  const parts = useDocumentStore((s) => s.parts);
+  const document = useDocumentStore((s) => s.document);
+  const createPartDef = useDocumentStore((s) => s.createPartDef);
+  const addJoint = useDocumentStore((s) => s.addJoint);
+  const setGroundInstance = useDocumentStore((s) => s.setGroundInstance);
+  const loadDocument = useDocumentStore((s) => s.loadDocument);
+
+  const selectedPartIds = useUiStore((s) => s.selectedPartIds);
+  const select = useUiStore((s) => s.select);
+  const selectMultiple = useUiStore((s) => s.selectMultiple);
+  const clearSelection = useUiStore((s) => s.clearSelection);
+  const setTransformMode = useUiStore((s) => s.setTransformMode);
+  const toggleWireframe = useUiStore((s) => s.toggleWireframe);
+  const toggleGridSnap = useUiStore((s) => s.toggleGridSnap);
+  const toggleFeatureTree = useUiStore((s) => s.toggleFeatureTree);
+
+  const scene = useEngineStore((s) => s.scene);
+
+  // AI generation handler
+  const handleAIGenerate = useCallback(async (prompt: string) => {
+    setAiGenerating(true);
+    setOpen(false);
+
+    const store = useNotificationStore.getState();
+    const progressId = store.startAIOperation(prompt, [
+      "Loading AI model",
+      "Parsing intent",
+      "Generating geometry",
+      "Validating mesh",
+    ]);
+
+    try {
+      store.updateAIProgress(progressId, 0, 10);
+
+      const result = await generateCAD(
+        prompt,
+        undefined,
+        (_loaded, _total, status) => {
+          if (status.includes("Loading") || status.includes("Initializing")) {
+            store.updateAIProgress(progressId, 0, 20);
+          } else if (status.includes("Generating") || status.includes("Processing")) {
+            store.updateAIProgress(progressId, 2, 60);
+          }
+          setAiStatus(status);
+        }
+      );
+
+      store.updateAIProgress(progressId, 2, 80);
+      setAiStatus("Building geometry...");
+
+      const generatedDoc: Document = fromCompact(result.ir);
+
+      store.updateAIProgress(progressId, 3, 95);
+
+      const vcadFile: VcadFile = {
+        document: generatedDoc,
+        parts: [],
+        nextNodeId: Object.keys(generatedDoc.nodes).length,
+        nextPartNum: 1,
+      };
+
+      loadDocument(vcadFile);
+
+      store.completeAIOperation(progressId, {
+        type: "success",
+        title: "Generation complete",
+        description: `Created in ${(result.durationMs / 1000).toFixed(1)}s`,
+        actions: [
+          {
+            label: "Undo",
+            onClick: () => useDocumentStore.getState().undo(),
+            variant: "secondary",
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("AI generation failed:", err);
+      store.failAIOperation(
+        progressId,
+        err instanceof Error ? err.message : "Generation failed"
+      );
+    } finally {
+      setAiGenerating(false);
+      setAiStatus("");
+    }
+  }, [loadDocument]);
+
+  const commands = useMemo(() => {
+    return createCommandRegistry({
+      addPrimitive: (kind) => {
+        const partId = addPrimitive(kind);
+        select(partId);
+        setTransformMode("translate");
+        setOpen(false);
+      },
+      applyBoolean: (type) => {
+        const ids = Array.from(selectedPartIds);
+        if (ids.length === 2) {
+          const newId = applyBoolean(type, ids[0]!, ids[1]!);
+          if (newId) select(newId);
+        }
+        setOpen(false);
+      },
+      setTransformMode: (mode) => {
+        setTransformMode(mode);
+        setOpen(false);
+      },
+      undo: () => {
+        undo();
+        setOpen(false);
+      },
+      redo: () => {
+        redo();
+        setOpen(false);
+      },
+      toggleWireframe: () => {
+        toggleWireframe();
+        setOpen(false);
+      },
+      toggleGridSnap: () => {
+        toggleGridSnap();
+        setOpen(false);
+      },
+      toggleFeatureTree: () => {
+        toggleFeatureTree();
+        setOpen(false);
+      },
+      save: () => {
+        window.dispatchEvent(new CustomEvent("vcad:save"));
+        setOpen(false);
+      },
+      open: () => {
+        window.dispatchEvent(new CustomEvent("vcad:open"));
+        setOpen(false);
+      },
+      exportStl: () => {
+        if (scene) {
+          const blob = exportStlBlob(scene);
+          downloadBlob(blob, "model.stl");
+        }
+        setOpen(false);
+      },
+      exportGlb: () => {
+        if (scene) {
+          const blob = exportGltfBlob(scene);
+          downloadBlob(blob, "model.glb");
+        }
+        setOpen(false);
+      },
+      openAbout: () => {
+        window.dispatchEvent(new CustomEvent("vcad:about"));
+        setOpen(false);
+      },
+      deleteSelected: () => {
+        for (const id of selectedPartIds) {
+          removePart(id);
+        }
+        clearSelection();
+        setOpen(false);
+      },
+      duplicateSelected: () => {
+        if (selectedPartIds.size > 0) {
+          const ids = Array.from(selectedPartIds);
+          const newIds = duplicateParts(ids);
+          selectMultiple(newIds);
+        }
+        setOpen(false);
+      },
+      deselectAll: () => {
+        clearSelection();
+        setOpen(false);
+      },
+      hasTwoSelected: () => selectedPartIds.size === 2,
+      hasSelection: () => selectedPartIds.size > 0,
+      hasParts: () => parts.length > 0,
+      canUndo: () => undoStack.length > 0,
+      canRedo: () => redoStack.length > 0,
+      createPartDef: () => {
+        const partId = Array.from(selectedPartIds)[0];
+        if (partId && parts.some((p) => p.id === partId)) {
+          const defId = createPartDef(partId);
+          if (defId) {
+            const instance = document.instances?.find((i) => i.partDefId === defId);
+            if (instance) select(instance.id);
+          }
+        }
+        setOpen(false);
+      },
+      insertInstance: () => {
+        window.dispatchEvent(new CustomEvent("vcad:insert-instance"));
+        setOpen(false);
+      },
+      addJoint: (kind) => {
+        const instanceIds = Array.from(selectedPartIds).filter((id) =>
+          document.instances?.some((i) => i.id === id)
+        );
+        if (instanceIds.length === 2) {
+          const jointId = addJoint({
+            parentInstanceId: instanceIds[0]!,
+            childInstanceId: instanceIds[1]!,
+            parentAnchor: { x: 0, y: 0, z: 0 },
+            childAnchor: { x: 0, y: 0, z: 0 },
+            kind,
+          });
+          select(`joint:${jointId}`);
+        }
+        setOpen(false);
+      },
+      setGroundInstance: () => {
+        const instanceId = Array.from(selectedPartIds)[0];
+        if (instanceId && document.instances?.some((i) => i.id === instanceId)) {
+          setGroundInstance(instanceId);
+        }
+        setOpen(false);
+      },
+      hasOnePartSelected: () =>
+        selectedPartIds.size === 1 && parts.some((p) => selectedPartIds.has(p.id)),
+      hasPartDefs: () =>
+        document.partDefs !== undefined && Object.keys(document.partDefs).length > 0,
+      hasTwoInstancesSelected: () => {
+        const instanceIds = Array.from(selectedPartIds).filter((id) =>
+          document.instances?.some((i) => i.id === id)
+        );
+        return instanceIds.length === 2;
+      },
+      hasOneInstanceSelected: () => {
+        const instanceIds = Array.from(selectedPartIds).filter((id) =>
+          document.instances?.some((i) => i.id === id)
+        );
+        return instanceIds.length === 1;
+      },
+      applyFillet: () => {
+        window.dispatchEvent(new CustomEvent("vcad:apply-fillet"));
+        setOpen(false);
+      },
+      applyChamfer: () => {
+        window.dispatchEvent(new CustomEvent("vcad:apply-chamfer"));
+        setOpen(false);
+      },
+      applyShell: () => {
+        window.dispatchEvent(new CustomEvent("vcad:apply-shell"));
+        setOpen(false);
+      },
+      applyLinearPattern: () => {
+        window.dispatchEvent(new CustomEvent("vcad:apply-pattern"));
+        setOpen(false);
+      },
+      applyCircularPattern: () => {
+        window.dispatchEvent(new CustomEvent("vcad:apply-pattern"));
+        setOpen(false);
+      },
+      applyMirror: () => {
+        window.dispatchEvent(new CustomEvent("vcad:apply-mirror"));
+        setOpen(false);
+      },
+    });
+  }, [
+    addJoint,
+    addPrimitive,
+    applyBoolean,
+    clearSelection,
+    createPartDef,
+    document,
+    duplicateParts,
+    parts,
+    redo,
+    redoStack.length,
+    removePart,
+    scene,
+    select,
+    selectMultiple,
+    selectedPartIds,
+    setGroundInstance,
+    setTransformMode,
+    toggleFeatureTree,
+    toggleGridSnap,
+    toggleWireframe,
+    undo,
+    undoStack.length,
+  ]);
+
+  const filteredCommands = useMemo(() => {
+    if (!query.trim()) return commands;
+    const q = query.toLowerCase();
+    return commands.filter((cmd) => {
+      if (cmd.label.toLowerCase().includes(q)) return true;
+      return cmd.keywords.some((kw) => kw.includes(q));
+    });
+  }, [commands, query]);
+
+  // Reset when opening/closing
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      setSelectedIndex(0);
+      // Focus input after popover opens
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
+  // Reset selection when query changes
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const selected = list.querySelector("[data-selected=true]");
+    if (selected) {
+      selected.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedIndex]);
+
+  const executeCommand = useCallback((cmd: CommandType) => {
+    if (cmd.enabled && !cmd.enabled()) return;
+    cmd.action();
+  }, []);
+
+  const aiPrompt = query.trim();
+  const showAIOption = aiPrompt.length > 2;
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (aiGenerating) {
+      if (e.key === "Escape") {
+        // TODO: Cancel generation
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setSelectedIndex((i) => Math.min(i + 1, filteredCommands.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setSelectedIndex((i) => Math.max(i - 1, 0));
+        break;
+      case "Enter":
+        e.preventDefault();
+        // If we have a matching command, execute it
+        if (filteredCommands.length > 0 && selectedIndex < filteredCommands.length) {
+          const cmd = filteredCommands[selectedIndex];
+          if (cmd) executeCommand(cmd);
+        }
+        // Otherwise, if we have a query, generate with AI
+        else if (aiPrompt) {
+          handleAIGenerate(aiPrompt);
+        }
+        break;
+      case "Escape":
+        setOpen(false);
+        break;
+    }
+  }
+
+  function highlightMatch(text: string, q: string): React.ReactNode {
+    if (!q) return text;
+    const lower = text.toLowerCase();
+    const idx = lower.indexOf(q.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <span className="text-accent font-medium">{text.slice(idx, idx + q.length)}</span>
+        {text.slice(idx + q.length)}
+      </>
+    );
+  }
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Tooltip content="Chat (⌘K)">
+        <Popover.Trigger asChild>
+          <button
+            className={cn(
+              "flex items-center justify-center gap-1 text-xs",
+              "w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-2",
+              "hover:bg-hover/50 transition-all",
+              aiGenerating && "bg-accent/20",
+            )}
+          >
+            {aiGenerating ? (
+              <SpinnerGap size={18} className="text-accent animate-spin" />
+            ) : (
+              <ChatCircle size={18} weight="fill" className="text-accent" />
+            )}
+            <span className="hidden sm:inline font-medium text-text-muted">Chat</span>
+          </button>
+        </Popover.Trigger>
+      </Tooltip>
+      <Popover.Portal>
+        <Popover.Content
+          className="z-50 w-80 border border-border bg-surface shadow-xl"
+          sideOffset={12}
+          side="top"
+          align="start"
+          onKeyDown={handleKeyDown}
+        >
+          {/* Search input */}
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+            <MagnifyingGlass size={14} className="text-text-muted" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search or describe what to create..."
+              className="flex-1 bg-transparent text-xs text-text outline-none placeholder:text-text-muted"
+              disabled={aiGenerating}
+            />
+            <kbd className="bg-border/50 px-1 py-0.5 text-[9px] text-text-muted">esc</kbd>
+          </div>
+
+          {/* Content */}
+          <div ref={listRef} className="max-h-[300px] overflow-y-auto p-1">
+            {/* AI generating state */}
+            {aiGenerating && (
+              <div className="flex items-center gap-2 px-2 py-3 border-b border-border mb-1">
+                <SpinnerGap size={14} className="text-accent animate-spin" />
+                <span className="text-xs text-text-muted">{aiStatus || "Generating..."}</span>
+              </div>
+            )}
+
+            {/* Commands */}
+            {!aiGenerating && filteredCommands.length > 0 && (
+              filteredCommands.map((cmd, idx) => {
+                const Icon = COMMAND_ICONS[cmd.icon] ?? Cube;
+                const isDisabled = cmd.enabled && !cmd.enabled();
+                const isSelected = idx === selectedIndex;
+
+                return (
+                  <button
+                    key={cmd.id}
+                    data-selected={isSelected}
+                    disabled={isDisabled}
+                    onClick={() => executeCommand(cmd)}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors",
+                      isSelected && !isDisabled && "bg-accent/20",
+                      isDisabled && "opacity-40 cursor-not-allowed",
+                      !isSelected && !isDisabled && "hover:bg-border/30",
+                    )}
+                  >
+                    <Icon size={14} className="shrink-0 text-text-muted" />
+                    <span className="flex-1">{highlightMatch(cmd.label, query)}</span>
+                    {cmd.shortcut && (
+                      <kbd className="bg-border/50 px-1 py-0.5 text-[9px] text-text-muted">
+                        {cmd.shortcut}
+                      </kbd>
+                    )}
+                  </button>
+                );
+              })
+            )}
+
+            {/* AI generation option */}
+            {!aiGenerating && showAIOption && (
+              <>
+                {filteredCommands.length > 0 && (
+                  <div className="border-t border-border my-1" />
+                )}
+                <button
+                  onClick={() => handleAIGenerate(aiPrompt)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors",
+                    filteredCommands.length === 0 ? "bg-accent/20" : "hover:bg-border/30",
+                  )}
+                >
+                  <Sparkle size={14} className="shrink-0 text-accent" />
+                  <span className="flex-1">
+                    Generate: <span className="text-accent">{aiPrompt}</span>
+                  </span>
+                  <kbd className="bg-border/50 px-1 py-0.5 text-[9px] text-text-muted">
+                    {isModelLoaded() ? "ready" : "↓350MB"}
+                  </kbd>
+                </button>
+              </>
+            )}
+
+            {/* Empty state */}
+            {!aiGenerating && filteredCommands.length === 0 && !showAIOption && (
+              <div className="px-2 py-4 text-center text-xs text-text-muted">
+                Type to search commands or describe what to create
+              </div>
+            )}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
 
 function ToolbarButton({
   children,
@@ -166,61 +748,181 @@ function ToolbarButton({
   );
 }
 
-function TabButton({
+function TabDropdown({
   id,
   label,
   icon: Icon,
   active,
-  previewing,
-  onClick,
-  onMouseEnter,
-  expanded,
+  index,
+  children,
+  onSelect,
 }: {
   id: ToolbarTab;
   label: string;
   icon: typeof Cube;
   active: boolean;
-  previewing: boolean;
-  onClick: () => void;
-  onMouseEnter: () => void;
-  expanded: boolean;
+  index: number;
+  children: React.ReactNode;
+  onSelect: () => void;
 }) {
-  const button = (
-    <button
-      className={cn(
-        "flex items-center justify-center gap-1.5 px-3 py-2 text-xs",
-        active && "drop-shadow-lg",
-      )}
-      onClick={onClick}
-      onMouseEnter={onMouseEnter}
-    >
-      <Icon
-        size={16}
-        weight={active || previewing ? "fill" : "regular"}
-        className={cn(
-          TAB_COLORS[id],
-          active && "drop-shadow-sm scale-110",
-          previewing && "scale-105",
-          "transition-transform"
-        )}
-      />
-      {expanded && (
-        <span className={cn(
-          "hidden sm:inline font-medium transition-colors",
-          active ? "text-text" : "text-text-muted"
-        )}>
-          {label}
-        </span>
-      )}
-    </button>
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Tooltip content={`${index + 1}. ${label}`}>
+        <Popover.Trigger asChild>
+          <button
+            className={cn(
+              "relative flex items-center justify-center gap-1 text-xs",
+              "w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-2",
+              "hover:bg-hover/50 transition-all",
+              active && "bg-hover/50",
+            )}
+            onClick={() => {
+              onSelect();
+            }}
+          >
+            <Icon
+              size={18}
+              weight={active ? "fill" : "regular"}
+              className={cn(
+                TAB_COLORS[id],
+                active && "drop-shadow-sm",
+                "transition-transform"
+              )}
+            />
+            <span className={cn(
+              "hidden sm:inline font-medium transition-colors",
+              active ? "text-text" : "text-text-muted"
+            )}>
+              {label}
+            </span>
+            <CaretDown
+              size={10}
+              className={cn(
+                "hidden sm:inline text-text-muted transition-transform",
+                open && "rotate-180"
+              )}
+            />
+          </button>
+        </Popover.Trigger>
+      </Tooltip>
+      <Popover.Portal>
+        <Popover.Content
+          className="z-50 border border-border bg-surface p-2 shadow-xl"
+          sideOffset={12}
+          side="top"
+          align="center"
+        >
+          <div className="flex items-center gap-1">
+            {children}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
+}
 
-  // Show tooltip in compact mode
-  if (!expanded) {
-    return <Tooltip content={label}>{button}</Tooltip>;
-  }
+function MoreDropdown({
+  tabs,
+  activeTab,
+  onSelect,
+  children,
+}: {
+  tabs: typeof ALL_TABS;
+  activeTab: ToolbarTab;
+  onSelect: (tab: ToolbarTab) => void;
+  children: (tab: ToolbarTab) => React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selectedSubTab, setSelectedSubTab] = useState<ToolbarTab | null>(null);
 
-  return button;
+  // Check if the active tab is in the "More" section
+  const isMoreTabActive = tabs.some(t => t.id === activeTab);
+  const activeMoreTab = tabs.find(t => t.id === activeTab);
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Tooltip content="More">
+        <Popover.Trigger asChild>
+          <button
+            className={cn(
+              "relative flex items-center justify-center gap-1 text-xs",
+              "w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-2",
+              "hover:bg-hover/50 transition-all",
+              isMoreTabActive && "bg-hover/50",
+            )}
+          >
+            {isMoreTabActive && activeMoreTab ? (
+              <activeMoreTab.icon
+                size={18}
+                weight="fill"
+                className={cn(TAB_COLORS[activeMoreTab.id], "drop-shadow-sm")}
+              />
+            ) : (
+              <DotsThree size={18} weight="bold" className="text-text-muted" />
+            )}
+            <span className={cn(
+              "hidden sm:inline font-medium transition-colors",
+              isMoreTabActive ? "text-text" : "text-text-muted"
+            )}>
+              {isMoreTabActive && activeMoreTab ? activeMoreTab.label : "More"}
+            </span>
+            <CaretDown
+              size={10}
+              className={cn(
+                "hidden sm:inline text-text-muted transition-transform",
+                open && "rotate-180"
+              )}
+            />
+          </button>
+        </Popover.Trigger>
+      </Tooltip>
+      <Popover.Portal>
+        <Popover.Content
+          className="z-50 border border-border bg-surface p-2 shadow-xl"
+          sideOffset={12}
+          side="top"
+          align="center"
+        >
+          {/* Tab selector row */}
+          <div className="flex items-center gap-1 border-b border-border pb-2 mb-2">
+            {tabs.map((tab) => (
+              <Tooltip key={tab.id} content={tab.label}>
+                <button
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1.5 text-xs",
+                    "hover:bg-hover transition-colors",
+                    (selectedSubTab === tab.id || (!selectedSubTab && activeTab === tab.id)) && "bg-hover/50",
+                  )}
+                  onClick={() => {
+                    setSelectedSubTab(tab.id);
+                    onSelect(tab.id);
+                  }}
+                >
+                  <tab.icon
+                    size={14}
+                    weight={(selectedSubTab === tab.id || (!selectedSubTab && activeTab === tab.id)) ? "fill" : "regular"}
+                    className={TAB_COLORS[tab.id]}
+                  />
+                  <span className={cn(
+                    "hidden sm:inline",
+                    (selectedSubTab === tab.id || (!selectedSubTab && activeTab === tab.id)) ? "text-text" : "text-text-muted"
+                  )}>
+                    {tab.label}
+                  </span>
+                </button>
+              </Tooltip>
+            ))}
+          </div>
+          {/* Tools for selected tab */}
+          <div className="flex items-center gap-1">
+            {children(selectedSubTab || (isMoreTabActive ? activeTab : tabs[0]!.id))}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
 }
 
 function Divider() {
@@ -240,6 +942,7 @@ export function BottomToolbar() {
   const toolbarExpanded = useUiStore((s) => s.toolbarExpanded);
   const toolbarTab = useUiStore((s) => s.toolbarTab);
   const setToolbarTab = useUiStore((s) => s.setToolbarTab);
+  const isOrbiting = useUiStore((s) => s.isOrbiting);
 
   const enterSketchMode = useSketchStore((s) => s.enterSketchMode);
   const enterFaceSelectionMode = useSketchStore((s) => s.enterFaceSelectionMode);
@@ -255,11 +958,41 @@ export function BottomToolbar() {
   const [patternDialogOpen, setPatternDialogOpen] = useState(false);
   const [mirrorDialogOpen, setMirrorDialogOpen] = useState(false);
 
-  // Hover preview state - shows tools without committing
-  const [hoveredTab, setHoveredTab] = useState<ToolbarTab | null>(null);
+  // Responsive toolbar - track how many tabs fit
+  const [visibleTabCount, setVisibleTabCount] = useState(ALL_TABS.length);
+  const toolbarRef = useRef<HTMLDivElement>(null);
 
-  // The tab to display (hovered preview or actual selection)
-  const displayedTab = hoveredTab ?? toolbarTab;
+  // Calculate visible tabs based on viewport width
+  useEffect(() => {
+    function calculateVisibleTabs() {
+      const viewportWidth = window.innerWidth;
+      const isMobile = viewportWidth < MOBILE_BREAKPOINT;
+      const tabWidth = isMobile ? TAB_WIDTH_MOBILE : TAB_WIDTH_DESKTOP;
+
+      // On mobile, be more aggressive - less padding, smaller tabs
+      const padding = isMobile ? 24 : 40;
+      const availableWidth = viewportWidth - padding;
+
+      // Width needed for Chat + More buttons
+      const fixedWidth = CHAT_WIDTH + MORE_WIDTH;
+      // Remaining width for tabs
+      const tabsWidth = availableWidth - fixedWidth;
+      // How many tabs can fit
+      const maxTabs = Math.max(MIN_VISIBLE_TABS, Math.floor(tabsWidth / tabWidth));
+      setVisibleTabCount(Math.min(maxTabs, ALL_TABS.length));
+    }
+
+    calculateVisibleTabs();
+    window.addEventListener("resize", calculateVisibleTabs);
+    return () => window.removeEventListener("resize", calculateVisibleTabs);
+  }, []);
+
+  // Split tabs into visible and overflow
+  const visibleTabs = ALL_TABS.slice(0, visibleTabCount);
+  const overflowTabs = ALL_TABS.slice(visibleTabCount);
+
+  // displayedTab is just toolbarTab (no more hover preview)
+  const displayedTab = toolbarTab;
 
   // Drawing view state
   const viewMode = useDrawingStore((s) => s.viewMode);
@@ -386,6 +1119,24 @@ export function BottomToolbar() {
     setToolbarTab(tab);
   }, [setToolbarTab]);
 
+  // Keyboard shortcuts: 1-8 to switch tabs
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Don't trigger if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // Don't trigger with modifier keys
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const tabIndex = parseInt(e.key) - 1;
+      if (tabIndex >= 0 && tabIndex < ALL_TABS.length) {
+        handleTabClick(ALL_TABS[tabIndex]!.id);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleTabClick]);
+
   // Auto-switch tabs based on context
   const autoSwitchTab = useCallback(() => {
     // Don't auto-switch during guided flow or if user manually changed tabs recently
@@ -475,11 +1226,12 @@ export function BottomToolbar() {
     }
   }
 
-  // Render tab content based on displayed tab (hovered or active)
-  const renderTabContent = () => {
-    const color = TAB_COLORS[displayedTab];
+  // Render tab content based on specified tab (or displayed tab if not specified)
+  const renderTabContent = (tab?: ToolbarTab) => {
+    const targetTab = tab ?? displayedTab;
+    const color = TAB_COLORS[targetTab];
 
-    switch (displayedTab) {
+    switch (targetTab) {
       case "create":
         return (
           <>
@@ -914,32 +1666,46 @@ export function BottomToolbar() {
           />
         </>
       )}
-      {/* Centered at top, floating with no background */}
+      {/* Bottom toolbar */}
       <div
-        className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-auto"
-        onMouseLeave={() => setHoveredTab(null)}
+        ref={toolbarRef}
+        className={cn(
+          "fixed bottom-4 left-1/2 -translate-x-1/2 z-50",
+          "flex items-center gap-0.5 pointer-events-auto",
+          "bg-surface/95 backdrop-blur-sm shadow-lg",
+          "px-1 py-1",
+          "transition-all duration-200",
+          isOrbiting && "opacity-0 pointer-events-none"
+        )}
       >
-        {/* Tabs - floating pills, hover to preview */}
-        <div className="flex items-center gap-1">
-          {TABS.map(({ id, label, icon }) => (
-            <TabButton
-              key={id}
-              id={id}
-              label={label}
-              icon={icon}
-              active={toolbarTab === id}
-              previewing={hoveredTab === id && toolbarTab !== id}
-              onClick={() => handleTabClick(id)}
-              onMouseEnter={() => setHoveredTab(id)}
-              expanded={toolbarExpanded}
-            />
-          ))}
-        </div>
+        {/* Command palette dropdown */}
+        <CommandDropdown />
 
-        {/* Tools - appear below active tab */}
-        <div className="flex items-center gap-1 px-2 py-1.5">
-          {renderTabContent()}
-        </div>
+        {/* Visible tabs as dropdowns */}
+        {visibleTabs.map(({ id, label, icon }, index) => (
+          <TabDropdown
+            key={id}
+            id={id}
+            label={label}
+            icon={icon}
+            active={toolbarTab === id}
+            index={index}
+            onSelect={() => handleTabClick(id)}
+          >
+            {renderTabContent(id)}
+          </TabDropdown>
+        ))}
+
+        {/* "More" dropdown for overflow tabs */}
+        {overflowTabs.length > 0 && (
+          <MoreDropdown
+            tabs={overflowTabs}
+            activeTab={toolbarTab}
+            onSelect={handleTabClick}
+          >
+            {(tab) => renderTabContent(tab)}
+          </MoreDropdown>
+        )}
       </div>
     </>
   );
