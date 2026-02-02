@@ -1,13 +1,15 @@
 {
   "name": "wasmosis",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "wasmosis": "dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

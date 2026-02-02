@@ -1,13 +1,15 @@
 {
   "name": "@vcad/mcp",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "description": "MCP server for vcad CAD operations",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "vcad-mcp": "dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"

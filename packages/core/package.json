@@ -1,12 +1,15 @@
 {
   "name": "@vcad/core",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc && cp ../../CHANGELOG.json dist/"
+    "build": "tsc && cp ../../CHANGELOG.json dist/",
+    "test": "vitest run"
   },
   "dependencies": {
     "@vcad/engine": "^0.1.0",

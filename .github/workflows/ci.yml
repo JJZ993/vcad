@@ -38,5 +38,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run version:check
       - run: npm run build --workspaces
       - run: npm test --workspaces --if-present

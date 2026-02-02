@@ -5,7 +5,9 @@
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",
-    "dev": "turbo dev"
+    "dev": "turbo dev",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check"
   },
   "devDependencies": {
     "turbo": "^2"
