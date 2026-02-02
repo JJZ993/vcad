@@ -129,7 +129,22 @@ fn apply_splits_to_solid(
                 if solid.topology.faces.contains_key(fid) {
                     // Check if this is a cylindrical face - use specialized split
                     if split::is_cylindrical_face(solid, fid) {
+                        debug_bool!(
+                            "  Split {} cylindrical face {:?} by {:?}",
+                            solid_name,
+                            fid,
+                            match &curve {
+                                ssi::IntersectionCurve::Line(l) => format!("Line at ({:.2},{:.2},{:.2})", l.origin.x, l.origin.y, l.origin.z),
+                                ssi::IntersectionCurve::Circle(c) => format!("Circle at ({:.2},{:.2},{:.2}) r={:.2}", c.center.x, c.center.y, c.center.z, c.radius),
+                                _ => format!("{:?}", curve),
+                            }
+                        );
                         let result = split::split_cylindrical_face(solid, fid, &curve);
+                        debug_bool!(
+                            "    -> Cylindrical split result: {} sub-faces {:?}",
+                            result.sub_faces.len(),
+                            result.sub_faces
+                        );
                         if result.sub_faces.len() >= 2 {
                             new_faces.extend(result.sub_faces);
                         } else {
@@ -140,9 +155,20 @@ fn apply_splits_to_solid(
 
                     // Check if this is a circular disk face (cylinder cap) with a line curve
                     if split::is_circular_disk_face(solid, fid) {
-                        if let ssi::IntersectionCurve::Line(_) = &curve {
+                        if let ssi::IntersectionCurve::Line(line) = &curve {
+                            debug_bool!(
+                                "  Split {} circular disk face {:?} by Line at ({:.2},{:.2},{:.2})",
+                                solid_name,
+                                fid,
+                                line.origin.x, line.origin.y, line.origin.z
+                            );
                             let result =
                                 split::split_circular_disk_face(solid, fid, &curve, segments);
+                            debug_bool!(
+                                "    -> Disk split result: {} sub-faces {:?}",
+                                result.sub_faces.len(),
+                                result.sub_faces
+                            );
                             if result.sub_faces.len() >= 2 {
                                 new_faces.extend(result.sub_faces);
                             } else {

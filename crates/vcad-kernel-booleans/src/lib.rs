@@ -409,5 +409,85 @@ mod tests {
             mesh.num_triangles() > 0,
             "Result mesh should have triangles"
         );
+
+        // Validate that all indices are in bounds
+        validate_mesh_indices(&mesh);
+    }
+
+    /// Test case matching the app scenario: cylinder centered at (0, 10, 0)
+    /// This means the cylinder extends from x=-10 to x=10, but the cube
+    /// only goes from x=0 to x=20. The result should clip at x=0.
+    #[test]
+    fn test_cube_minus_centered_cylinder() {
+        use vcad_kernel_primitives::make_cylinder;
+
+        // Cube from [0,0,0] to [20,20,20]
+        let cube = make_cube(20.0, 20.0, 20.0);
+
+        // Cylinder: radius=10, height=20, centered at origin
+        // Translate by (0, 10, 0) to move center to (0, 10, 0)
+        // This means cylinder bbox becomes [-10,0,0]->[10,20,20]
+        let mut cylinder = make_cylinder(10.0, 20.0, 32);
+        translate_brep(&mut cylinder, 0.0, 10.0, 0.0);
+
+        let result = boolean_op(&cube, &cylinder, BooleanOp::Difference, 32);
+        let mesh = result.to_mesh(32);
+
+        // Validate mesh indices first
+        validate_mesh_indices(&mesh);
+
+        // Check bounding box - x should not extend below 0
+        let (min, max) = compute_mesh_bbox(&mesh);
+
+        eprintln!(
+            "Centered Cylinder Difference bbox: min={:?}, max={:?}",
+            min, max
+        );
+        eprintln!("Mesh has {} triangles, {} vertices", mesh.num_triangles(), mesh.num_vertices());
+
+        // The key assertion: no geometry should extend to negative x
+        assert!(
+            min[0] >= -0.1,
+            "Result should not extend to negative x! min[0] = {:.4}",
+            min[0]
+        );
+
+        // Also verify the cube bounds are roughly preserved
+        assert!(
+            max[0] <= 20.1 && max[1] <= 20.1 && max[2] <= 20.1,
+            "Max should be ~[20,20,20], got {:?}",
+            max
+        );
+
+        assert!(
+            mesh.num_triangles() > 0,
+            "Result mesh should have triangles"
+        );
+    }
+
+    /// Validate that all mesh indices are within bounds.
+    fn validate_mesh_indices(mesh: &TriangleMesh) {
+        let num_verts = mesh.num_vertices();
+        let mut max_idx = 0u32;
+        let mut invalid_count = 0usize;
+
+        for (i, &idx) in mesh.indices.iter().enumerate() {
+            if idx as usize >= num_verts {
+                invalid_count += 1;
+                eprintln!(
+                    "Invalid index at {}: {} >= {} vertices",
+                    i, idx, num_verts
+                );
+            }
+            if idx > max_idx {
+                max_idx = idx;
+            }
+        }
+
+        assert_eq!(
+            invalid_count, 0,
+            "Mesh has {} invalid indices (max index {} but only {} vertices)",
+            invalid_count, max_idx, num_verts
+        );
     }
 }

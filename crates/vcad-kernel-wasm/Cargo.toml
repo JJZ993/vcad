@@ -29,6 +29,7 @@ console_error_panic_hook = ["dep:console_error_panic_hook"]
 gpu = ["dep:vcad-kernel-gpu"]
 raytrace = ["dep:vcad-kernel-raytrace", "dep:vcad-kernel-topo", "dep:vcad-kernel-geom", "dep:vcad-kernel-math", "dep:wgpu", "gpu", "vcad-kernel-raytrace/gpu"]
 physics = ["dep:vcad-kernel-physics"]
+slicer = ["dep:vcad-slicer", "dep:vcad-slicer-gcode"]
 
 [dependencies.console_error_panic_hook]
 version = "0.1"
@@ -60,4 +61,12 @@ optional = true
 
 [dependencies.vcad-kernel-physics]
 path = "../vcad-kernel-physics"
+optional = true
+
+[dependencies.vcad-slicer]
+path = "../vcad-slicer"
+optional = true
+
+[dependencies.vcad-slicer-gcode]
+path = "../vcad-slicer-gcode"
 optional = true

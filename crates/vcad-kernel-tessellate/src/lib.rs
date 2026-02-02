@@ -48,6 +48,20 @@ impl TriangleMesh {
     /// Merge another mesh into this one.
     pub fn merge(&mut self, other: &TriangleMesh) {
         let offset = self.num_vertices() as u32;
+        let other_num_verts = other.num_vertices();
+
+        // Validate other mesh indices before merge
+        #[cfg(debug_assertions)]
+        for (i, &idx) in other.indices.iter().enumerate() {
+            debug_assert!(
+                (idx as usize) < other_num_verts,
+                "Other mesh has invalid index {} at position {} (only {} vertices)",
+                idx,
+                i,
+                other_num_verts
+            );
+        }
+
         self.vertices.extend_from_slice(&other.vertices);
         self.normals.extend_from_slice(&other.normals);
         self.indices
@@ -101,7 +115,39 @@ pub fn tessellate_solid(brep: &BRepSolid, params: &TessellationParams) -> Triang
 
     for &face_id in &shell.faces {
         let face_mesh = tessellate_face(&brep.topology, &brep.geometry, face_id, params);
+
+        // Validate face mesh before merge
+        #[cfg(debug_assertions)]
+        {
+            let num_verts = face_mesh.num_vertices();
+            for (i, &idx) in face_mesh.indices.iter().enumerate() {
+                debug_assert!(
+                    (idx as usize) < num_verts,
+                    "Face {:?} has invalid index {} at position {} (only {} vertices)",
+                    face_id,
+                    idx,
+                    i,
+                    num_verts
+                );
+            }
+        }
+
         mesh.merge(&face_mesh);
+    }
+
+    // Validate final mesh
+    #[cfg(debug_assertions)]
+    {
+        let num_verts = mesh.num_vertices();
+        for (i, &idx) in mesh.indices.iter().enumerate() {
+            debug_assert!(
+                (idx as usize) < num_verts,
+                "Final mesh has invalid index {} at position {} (only {} vertices)",
+                idx,
+                i,
+                num_verts
+            );
+        }
     }
 
     mesh
@@ -1012,25 +1058,59 @@ fn tessellate_cylindrical_face(
             // Full cylinder (all vertices at same seam angle)
             u_min = 0.0;
             u_max = 2.0 * PI;
-        } else if unique_angles.len() == 2 {
-            // Partial cylinder with two distinct angles
+        } else {
+            // Determine angular direction from loop vertex order
+            // Find the first significant angle change to detect winding direction
+            let mut first_dir = 0.0;
+            for i in 0..angles.len() {
+                let a1 = angles[i];
+                let a2 = angles[(i + 1) % angles.len()];
+                let mut diff = a2 - a1;
+                // Normalize to [-π, π]
+                if diff > PI {
+                    diff -= 2.0 * PI;
+                } else if diff < -PI {
+                    diff += 2.0 * PI;
+                }
+                // Use first significant change (> ~6 degrees)
+                if diff.abs() > 0.1 {
+                    first_dir = diff;
+                    break;
+                }
+            }
+
+            // Sort to find min/max
             unique_angles.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let a0 = unique_angles[0];
-            let a1 = unique_angles[1];
+            let a_min = unique_angles[0];
+            let a_max = unique_angles[unique_angles.len() - 1];
 
-            // Determine which arc to use (the smaller one, or check winding)
-            // For now, assume the face goes from a0 to a1 in CCW direction
-            let arc1 = a1 - a0; // Direct arc
-            let arc2 = (2.0 * PI) - arc1; // Wrap-around arc
+            // Determine which arc the face covers based on the direct span vs wrap-around
+            // Direct span: [a_min, a_max]
+            // Wrap-around: [a_max, a_min + 2π] (goes through the seam at 0/2π)
+            let direct_span = a_max - a_min;
+            let wrap_span = 2.0 * PI - direct_span;
 
-            if arc1 <= arc2 {
-                // Use direct arc from a0 to a1
-                u_min = a0;
-                u_max = a1;
+            // Use the smaller span, unless it's very close to half the circle
+            // (in which case use the winding direction to disambiguate)
+            if wrap_span < direct_span - 0.1 {
+                // Wrap-around is smaller - face goes through the seam
+                u_min = a_max;
+                u_max = a_min + 2.0 * PI;
+            } else if direct_span < wrap_span - 0.1 {
+                // Direct span is smaller
+                u_min = a_min;
+                u_max = a_max;
             } else {
-                // Use wrap-around arc: from a1 to a0 (going past 2π)
-                u_min = a1;
-                u_max = a0 + 2.0 * PI;
+                // Spans are similar (nearly half-circle) - use winding direction
+                if first_dir >= 0.0 {
+                    // Counterclockwise in UV space means going from lower to higher U
+                    u_min = a_min;
+                    u_max = a_max;
+                } else {
+                    // Clockwise means wrap-around
+                    u_min = a_max;
+                    u_max = a_min + 2.0 * PI;
+                }
             }
         }
 

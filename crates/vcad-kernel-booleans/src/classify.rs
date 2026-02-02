@@ -104,11 +104,65 @@ pub fn face_sample_point(brep: &BRepSolid, face_id: FaceId) -> Point3 {
     let surface = &brep.geometry.surfaces[face.surface_index];
     match surface.surface_type() {
         SurfaceKind::Plane => centroid,
+        SurfaceKind::Cylinder => {
+            // For cylindrical faces, compute a point ON the surface at the middle
+            // of the face's U (angular) range. The boundary vertex centroid may
+            // be inside the cylinder, not on its surface, leading to wrong classification.
+            if let Some(cyl) = surface
+                .as_any()
+                .downcast_ref::<vcad_kernel_geom::CylinderSurface>()
+            {
+                use std::f64::consts::PI;
+
+                let ref_dir = cyl.ref_dir.as_ref();
+                let y_dir = cyl.axis.as_ref().cross(ref_dir);
+
+                // Compute U angles for each boundary vertex
+                let mut u_angles: Vec<f64> = vertices
+                    .iter()
+                    .map(|v| {
+                        let d = *v - cyl.center;
+                        let u = d.dot(&y_dir).atan2(d.dot(ref_dir));
+                        if u < 0.0 { u + 2.0 * PI } else { u }
+                    })
+                    .collect();
+                u_angles.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                u_angles.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+
+                if u_angles.len() >= 2 {
+                    let u_min = u_angles[0];
+                    let u_max = u_angles[u_angles.len() - 1];
+
+                    // Check if face wraps around 2π (gap between max and min is small)
+                    let direct_span = u_max - u_min;
+                    let wrap_span = 2.0 * PI - direct_span;
+
+                    let u_mid = if wrap_span < direct_span {
+                        // Face wraps around: use midpoint of the wrap region
+                        let mid = (u_max + u_min + 2.0 * PI) / 2.0;
+                        if mid >= 2.0 * PI { mid - 2.0 * PI } else { mid }
+                    } else {
+                        // Normal face: use midpoint of direct span
+                        (u_min + u_max) / 2.0
+                    };
+
+                    // Compute V (height) at centroid
+                    let v_mid = (centroid - cyl.center).dot(cyl.axis.as_ref());
+
+                    // Evaluate point on cylinder surface
+                    let sin_u = u_mid.sin();
+                    let cos_u = u_mid.cos();
+                    let radial = cyl.radius * (cos_u * ref_dir + sin_u * y_dir);
+                    let sample = cyl.center + radial + v_mid * cyl.axis.as_ref();
+                    return sample;
+                }
+            }
+            centroid
+        }
         _ => {
-            // For curved surfaces, the centroid of boundary vertices may not
+            // For other curved surfaces, the centroid of boundary vertices may not
             // lie on the surface. We use it as-is for classification since
             // we only need it to be "near" the face for ray-casting.
-            // A more precise approach would project onto the surface via UV.
             centroid
         }
     }
