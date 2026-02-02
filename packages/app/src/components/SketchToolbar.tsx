@@ -595,6 +595,7 @@ export function SketchToolbar() {
   const pointSnap = useUiStore((s) => s.pointSnap);
   const toggleGridSnap = useUiStore((s) => s.toggleGridSnap);
   const togglePointSnap = useUiStore((s) => s.togglePointSnap);
+  const isOrbiting = useUiStore((s) => s.isOrbiting);
   const addToast = useNotificationStore((s) => s.addToast);
 
   // Listen for quick extrude keyboard shortcut
@@ -800,10 +801,16 @@ export function SketchToolbar() {
 
   return (
     <>
-      {/* Top-left status indicator */}
-      <div className="fixed left-4 top-4 z-30 bg-surface border border-border px-3 py-2 text-xs text-text shadow-lg flex items-center gap-2">
-        <span className="font-medium">Sketch Mode</span>
-        <span className="text-text-muted">Plane: {getSketchPlaneName(plane)}</span>
+      {/* Top-left status indicator - hidden on mobile when orbiting */}
+      <div className={cn(
+        "fixed left-2 sm:left-4 top-2 sm:top-4 z-30 bg-surface border border-border px-2 sm:px-3 py-1.5 sm:py-2 text-xs text-text shadow-lg flex items-center gap-1.5 sm:gap-2",
+        "transition-opacity duration-200",
+        isOrbiting && "opacity-0 pointer-events-none"
+      )}>
+        <span className="font-medium hidden sm:inline">Sketch Mode</span>
+        <span className="font-medium sm:hidden">Sketch</span>
+        <span className="text-text-muted hidden sm:inline">Plane: {getSketchPlaneName(plane)}</span>
+        <span className="text-text-muted sm:hidden">{getSketchPlaneName(plane)}</span>
         <Tooltip content="Change sketch plane">
           <Button
             variant="ghost"
@@ -820,52 +827,64 @@ export function SketchToolbar() {
           </span>
         )}
         {!solved && (
-          <span className="text-red-400">Unsolved</span>
+          <span className="text-red-400 text-[10px] sm:text-xs">Unsolved</span>
         )}
       </div>
 
       {/* Bottom toolbar */}
-      <div className="fixed left-1/2 bottom-6 z-30 -translate-x-1/2">
-        <div className="relative flex items-center gap-1  border border-border bg-card px-2 py-1.5 shadow-2xl">
+      <div className={cn(
+        "fixed left-1/2 bottom-4 sm:bottom-6 z-30 -translate-x-1/2",
+        "max-w-[calc(100vw-16px)] sm:max-w-none",
+        "transition-opacity duration-200",
+        isOrbiting && "opacity-0 pointer-events-none"
+      )}>
+        <div className={cn(
+          "relative flex items-center gap-0.5 sm:gap-1",
+          "border border-border bg-card px-1.5 sm:px-2 py-1 sm:py-1.5 shadow-2xl",
+          "overflow-x-auto scrollbar-none"
+        )}>
         {/* Drawing tools */}
         {TOOLS.map(({ tool: t, icon: Icon, label }) => (
           <Tooltip key={t} content={label}>
             <Button
               variant={tool === t && !isConstraintMode ? "default" : "ghost"}
               size="icon-sm"
+              className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
               onClick={() => {
                 clearSelection();
                 setTool(t);
               }}
             >
-              <Icon size={16} />
+              <Icon size={18} className="sm:w-4 sm:h-4" />
             </Button>
           </Tooltip>
         ))}
 
-        <Separator orientation="vertical" className="mx-1 h-5" />
+        <Separator orientation="vertical" className="mx-0.5 sm:mx-1 h-5" />
 
         {/* Snap controls */}
         <Tooltip content="Toggle point snap (P)">
           <Button
             variant={pointSnap ? "default" : "ghost"}
             size="icon-sm"
+            className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
             onClick={togglePointSnap}
           >
-            <Crosshair size={16} />
+            <Crosshair size={18} className="sm:w-4 sm:h-4" />
           </Button>
         </Tooltip>
         <Tooltip content="Toggle grid snap (G)">
           <Button
             variant={gridSnap ? "default" : "ghost"}
             size="icon-sm"
+            className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
             onClick={toggleGridSnap}
           >
-            <GridFour size={16} />
+            <GridFour size={18} className="sm:w-4 sm:h-4" />
           </Button>
         </Tooltip>
 
-        <Separator orientation="vertical" className="mx-1 h-5" />
+        <Separator orientation="vertical" className="mx-0.5 sm:mx-1 h-5" />
 
         {/* Constraint tools */}
         {CONSTRAINT_TOOLS.map(({ tool: ct, icon: Icon, label, requires }) => (
@@ -873,10 +892,11 @@ export function SketchToolbar() {
             <Button
               variant={constraintTool === ct ? "default" : "ghost"}
               size="icon-sm"
+              className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
               onClick={() => handleConstraintToolClick(ct)}
               disabled={!hasSegments}
             >
-              <Icon size={16} />
+              <Icon size={18} className="sm:w-4 sm:h-4" />
             </Button>
           </Tooltip>
         ))}
@@ -888,14 +908,14 @@ export function SketchToolbar() {
               variant="default"
               size="icon-sm"
               onClick={handleApplyConstraint}
-              className="bg-green-600 hover:bg-green-700"
+              className="h-10 w-10 sm:h-8 sm:w-8 shrink-0 bg-green-600 hover:bg-green-700"
             >
-              <Play size={16} weight="fill" />
+              <Play size={18} className="sm:w-4 sm:h-4" weight="fill" />
             </Button>
           </Tooltip>
         )}
 
-        <Separator orientation="vertical" className="mx-1 h-5" />
+        <Separator orientation="vertical" className="mx-0.5 sm:mx-1 h-5" />
 
         {/* Constraint status indicator */}
         {hasSegments && (
@@ -910,7 +930,7 @@ export function SketchToolbar() {
                     : "Constraints conflict"
             }
           >
-            <div className="flex items-center gap-1.5 px-1">
+            <div className="flex items-center gap-1 sm:gap-1.5 px-0.5 sm:px-1 shrink-0">
               <div
                 className={cn(
                   "w-2 h-2 rounded-full",
@@ -943,10 +963,11 @@ export function SketchToolbar() {
             onClick={solveSketch}
             disabled={!hasConstraints}
             className={cn(
+              "h-10 w-10 sm:h-8 sm:w-8 shrink-0",
               constraintStatus === "error" && "bg-amber-600 hover:bg-amber-700"
             )}
           >
-            <Play size={16} />
+            <Play size={18} className="sm:w-4 sm:h-4" />
           </Button>
         </Tooltip>
 
@@ -955,20 +976,21 @@ export function SketchToolbar() {
           <Button
             variant="ghost"
             size="icon-sm"
+            className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
             onClick={clearSketch}
             disabled={!hasSegments}
           >
-            <Trash size={16} />
+            <Trash size={18} className="sm:w-4 sm:h-4" />
           </Button>
         </Tooltip>
 
-        <Separator orientation="vertical" className="mx-1 h-5" />
+        <Separator orientation="vertical" className="mx-0.5 sm:mx-1 h-5" />
 
         {/* Loft mode indicator and controls */}
         {loftMode && (
           <>
-            <div className="px-2 text-xs text-accent font-medium">
-              Profile {profiles.length + (hasSegments ? 1 : 0)}
+            <div className="px-1 sm:px-2 text-xs text-accent font-medium shrink-0">
+              <span className="hidden sm:inline">Profile </span>{profiles.length + (hasSegments ? 1 : 0)}
             </div>
 
             {/* Add Profile button */}
@@ -976,10 +998,11 @@ export function SketchToolbar() {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
                 onClick={() => setShowLoftHeightDialog(true)}
                 disabled={!hasSegments}
               >
-                <Plus size={16} />
+                <Plus size={18} className="sm:w-4 sm:h-4" />
               </Button>
             </Tooltip>
 
@@ -990,13 +1013,16 @@ export function SketchToolbar() {
                 size="icon-sm"
                 onClick={handleCreateLoft}
                 disabled={profiles.length < 1 || !hasSegments}
-                className={profiles.length >= 1 && hasSegments ? "bg-green-600 hover:bg-green-700" : ""}
+                className={cn(
+                  "h-10 w-10 sm:h-8 sm:w-8 shrink-0",
+                  profiles.length >= 1 && hasSegments && "bg-green-600 hover:bg-green-700"
+                )}
               >
-                <Stack size={16} />
+                <Stack size={18} className="sm:w-4 sm:h-4" />
               </Button>
             </Tooltip>
 
-            <Separator orientation="vertical" className="mx-1 h-5" />
+            <Separator orientation="vertical" className="mx-0.5 sm:mx-1 h-5" />
           </>
         )}
 
@@ -1008,10 +1034,11 @@ export function SketchToolbar() {
               <Button
                 variant={hasSegments ? "default" : "ghost"}
                 size="icon-sm"
+                className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
                 onClick={() => setShowExtrudeDialog(true)}
                 disabled={!hasSegments}
               >
-                <ArrowUp size={16} />
+                <ArrowUp size={18} className="sm:w-4 sm:h-4" />
               </Button>
             </Tooltip>
 
@@ -1020,10 +1047,11 @@ export function SketchToolbar() {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
                 onClick={() => setShowRevolveDialog(true)}
                 disabled={!hasSegments}
               >
-                <ArrowsClockwise size={16} />
+                <ArrowsClockwise size={18} className="sm:w-4 sm:h-4" />
               </Button>
             </Tooltip>
 
@@ -1032,10 +1060,11 @@ export function SketchToolbar() {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                className="h-10 w-10 sm:h-8 sm:w-8 shrink-0"
                 onClick={() => setShowSweepDialog(true)}
                 disabled={!hasSegments}
               >
-                <Spiral size={16} />
+                <Spiral size={18} className="sm:w-4 sm:h-4" />
               </Button>
             </Tooltip>
           </>
@@ -1043,8 +1072,8 @@ export function SketchToolbar() {
 
         {/* Cancel */}
         <Tooltip content="Cancel sketch (Esc)">
-          <Button variant="ghost" size="icon-sm" onClick={handleCancel}>
-            <X size={16} />
+          <Button variant="ghost" size="icon-sm" className="h-10 w-10 sm:h-8 sm:w-8 shrink-0" onClick={handleCancel}>
+            <X size={18} className="sm:w-4 sm:h-4" />
           </Button>
         </Tooltip>
 
