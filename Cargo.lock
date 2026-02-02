@@ -2734,6 +2734,8 @@ dependencies = [
  "vcad-kernel-raytrace",
  "vcad-kernel-tessellate",
  "vcad-kernel-topo",
+ "vcad-slicer",
+ "vcad-slicer-gcode",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasmosis",
