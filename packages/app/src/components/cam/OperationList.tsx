@@ -331,6 +331,8 @@ export function OperationList() {
   const operations = useCamStore((s) => s.operations);
   const selectedOperationId = useCamStore((s) => s.selectedOperationId);
   const selectedToolId = useCamStore((s) => s.selectedToolId);
+  const tools = useCamStore((s) => s.tools);
+  const selectTool = useCamStore((s) => s.selectTool);
   const selectOperation = useCamStore((s) => s.selectOperation);
   const addOperation = useCamStore((s) => s.addOperation);
   const updateOperation = useCamStore((s) => s.updateOperation);
@@ -343,10 +345,17 @@ export function OperationList() {
     const baseName = OPERATION_LABELS[type];
     const count = operations.filter((op) => op.type === type).length + 1;
 
+    // Use selected tool, or auto-select first tool if none selected
+    let toolId = selectedToolId;
+    if (!toolId && tools.length > 0) {
+      toolId = tools[0]!.id;
+      selectTool(toolId);
+    }
+
     const baseOp = {
       name: `${baseName} ${count}`,
       type,
-      toolId: selectedToolId ?? "",
+      toolId: toolId ?? "",
       depth: 5.0,
       enabled: true,
     };
