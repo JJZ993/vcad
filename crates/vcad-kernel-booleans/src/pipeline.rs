@@ -155,12 +155,12 @@ fn apply_splits_to_solid(
 
                     // Check if this is a circular disk face (cylinder cap) with a line curve
                     if split::is_circular_disk_face(solid, fid) {
-                        if let ssi::IntersectionCurve::Line(line) = &curve {
+                        if let ssi::IntersectionCurve::Line(_line) = &curve {
                             debug_bool!(
                                 "  Split {} circular disk face {:?} by Line at ({:.2},{:.2},{:.2})",
                                 solid_name,
                                 fid,
-                                line.origin.x, line.origin.y, line.origin.z
+                                _line.origin.x, _line.origin.y, _line.origin.z
                             );
                             let result =
                                 split::split_circular_disk_face(solid, fid, &curve, segments);

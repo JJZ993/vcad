@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 mod contour;
 mod face;
 mod pocket;
+mod roughing3d;
 
 pub use contour::{Contour2D, Tab};
 pub use face::Face;
 pub use pocket::Pocket2D;
+pub use roughing3d::Roughing3D;
 
 /// A CAM operation that can generate a toolpath.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,15 +23,33 @@ pub enum CamOperation {
     Pocket2D(Pocket2D),
     /// 2D contour/profile operation.
     Contour2D(Contour2D),
+    /// 3D roughing operation.
+    Roughing3D(Roughing3D),
 }
 
 impl CamOperation {
     /// Generate a toolpath for this operation.
+    ///
+    /// Note: For Roughing3D, use `generate_with_height_field` instead.
     pub fn generate(&self, tool: &Tool, settings: &CamSettings) -> Result<Toolpath, CamError> {
         match self {
             CamOperation::Face(op) => op.generate(tool, settings),
             CamOperation::Pocket2D(op) => op.generate(tool, settings),
             CamOperation::Contour2D(op) => op.generate(tool, settings),
+            CamOperation::Roughing3D(_) => Err(CamError::EmptyContour), // Need height field
+        }
+    }
+
+    /// Generate a toolpath for Roughing3D operation with a height field.
+    pub fn generate_with_height_field(
+        &self,
+        height_field: &crate::dropcutter::HeightField,
+        tool: &Tool,
+        settings: &CamSettings,
+    ) -> Result<Toolpath, CamError> {
+        match self {
+            CamOperation::Roughing3D(op) => op.generate(height_field, tool, settings),
+            _ => self.generate(tool, settings),
         }
     }
 
@@ -39,7 +59,13 @@ impl CamOperation {
             CamOperation::Face(_) => "Face",
             CamOperation::Pocket2D(_) => "Pocket 2D",
             CamOperation::Contour2D(_) => "Contour 2D",
+            CamOperation::Roughing3D(_) => "Roughing 3D",
         }
+    }
+
+    /// Check if this operation requires a height field.
+    pub fn requires_height_field(&self) -> bool {
+        matches!(self, CamOperation::Roughing3D(_))
     }
 }
 

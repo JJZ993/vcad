@@ -1,8 +1,10 @@
 //! Post-processors for converting toolpaths to machine-specific G-code.
 
 mod grbl;
+mod linuxcnc;
 
 pub use grbl::GrblPost;
+pub use linuxcnc::LinuxCncPost;
 
 use crate::{CamSettings, Tool, ToolEntry, Toolpath, ToolpathSegment};
 

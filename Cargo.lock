@@ -2769,6 +2769,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vcad-kernel-stocksim"
+version = "0.8.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "vcad-kernel-cam",
+ "vcad-kernel-math",
+]
+
+[[package]]
 name = "vcad-kernel-sweep"
 version = "0.8.0"
 dependencies = [

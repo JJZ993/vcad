@@ -24,6 +24,17 @@ pub enum Tool {
         /// Number of flutes.
         flutes: u8,
     },
+    /// Bull end mill (corner radius) for 3D machining.
+    BullEndMill {
+        /// Tool diameter in mm.
+        diameter: f64,
+        /// Corner radius in mm.
+        corner_radius: f64,
+        /// Flute length in mm.
+        flute_length: f64,
+        /// Number of flutes.
+        flutes: u8,
+    },
     /// V-bit for engraving and chamfering.
     VBit {
         /// Tool diameter at widest point in mm.
@@ -47,12 +58,24 @@ pub enum Tool {
     },
 }
 
+/// Tool holder definition for collision detection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolHolder {
+    /// Holder diameter in mm.
+    pub diameter: f64,
+    /// Holder length (from spindle face to tool tip) in mm.
+    pub length: f64,
+    /// Taper angle in degrees (0 for cylindrical).
+    pub taper_angle: f64,
+}
+
 impl Tool {
     /// Get the cutting diameter of the tool.
     pub fn diameter(&self) -> f64 {
         match self {
             Tool::FlatEndMill { diameter, .. } => *diameter,
             Tool::BallEndMill { diameter, .. } => *diameter,
+            Tool::BullEndMill { diameter, .. } => *diameter,
             Tool::VBit { diameter, .. } => *diameter,
             Tool::Drill { diameter, .. } => *diameter,
             Tool::FaceMill { diameter, .. } => *diameter,
@@ -64,11 +87,21 @@ impl Tool {
         self.diameter() / 2.0
     }
 
+    /// Get the corner radius (for bull endmills).
+    pub fn corner_radius(&self) -> f64 {
+        match self {
+            Tool::BullEndMill { corner_radius, .. } => *corner_radius,
+            Tool::BallEndMill { diameter, .. } => diameter / 2.0,
+            _ => 0.0,
+        }
+    }
+
     /// Get the number of flutes/cutting edges.
     pub fn flutes(&self) -> u8 {
         match self {
             Tool::FlatEndMill { flutes, .. } => *flutes,
             Tool::BallEndMill { flutes, .. } => *flutes,
+            Tool::BullEndMill { flutes, .. } => *flutes,
             Tool::VBit { .. } => 2,
             Tool::Drill { .. } => 2,
             Tool::FaceMill { inserts, .. } => *inserts,
@@ -80,10 +113,19 @@ impl Tool {
         match self {
             Tool::FlatEndMill { flute_length, .. } => Some(*flute_length),
             Tool::BallEndMill { flute_length, .. } => Some(*flute_length),
+            Tool::BullEndMill { flute_length, .. } => Some(*flute_length),
             Tool::VBit { .. } => None,
             Tool::Drill { .. } => None,
             Tool::FaceMill { .. } => None,
         }
+    }
+
+    /// Check if the tool supports 3D drop-cutter operations.
+    pub fn supports_drop_cutter(&self) -> bool {
+        matches!(
+            self,
+            Tool::FlatEndMill { .. } | Tool::BallEndMill { .. } | Tool::BullEndMill { .. }
+        )
     }
 
     /// Create a default flat end mill (6mm, 2 flute).
@@ -109,6 +151,46 @@ impl Tool {
         Tool::Drill {
             diameter: 3.0,
             point_angle: 118.0,
+        }
+    }
+
+    /// Create a default bull end mill (6mm, 1mm corner radius, 2 flute).
+    pub fn default_bull() -> Self {
+        Tool::BullEndMill {
+            diameter: 6.0,
+            corner_radius: 1.0,
+            flute_length: 20.0,
+            flutes: 2,
+        }
+    }
+}
+
+impl ToolHolder {
+    /// Create a new tool holder.
+    pub fn new(diameter: f64, length: f64) -> Self {
+        Self {
+            diameter,
+            length,
+            taper_angle: 0.0,
+        }
+    }
+
+    /// Create a tool holder with taper.
+    pub fn with_taper(diameter: f64, length: f64, taper_angle: f64) -> Self {
+        Self {
+            diameter,
+            length,
+            taper_angle,
+        }
+    }
+
+    /// Get the radius at a given height from the tool tip.
+    pub fn radius_at_height(&self, height: f64) -> f64 {
+        if height > self.length || self.taper_angle == 0.0 {
+            self.diameter / 2.0
+        } else {
+            let tan_half_angle = (self.taper_angle.to_radians() / 2.0).tan();
+            self.diameter / 2.0 - (self.length - height) * tan_half_angle
         }
     }
 }
@@ -177,9 +259,10 @@ impl ToolLibrary {
         let mut lib = Self::new();
         lib.add(ToolEntry::new(1, "6mm Flat Endmill", Tool::default_endmill()));
         lib.add(ToolEntry::new(2, "6mm Ball Endmill", Tool::default_ball()));
-        lib.add(ToolEntry::new(3, "3mm Drill", Tool::default_drill()));
+        lib.add(ToolEntry::new(3, "6mm Bull Endmill R1", Tool::default_bull()));
+        lib.add(ToolEntry::new(4, "3mm Drill", Tool::default_drill()));
         lib.add(ToolEntry::new(
-            4,
+            5,
             "90° V-Bit",
             Tool::VBit {
                 diameter: 6.0,
@@ -206,6 +289,19 @@ mod tests {
     }
 
     #[test]
+    fn test_bull_endmill() {
+        let tool = Tool::BullEndMill {
+            diameter: 10.0,
+            corner_radius: 2.0,
+            flute_length: 25.0,
+            flutes: 4,
+        };
+        assert!((tool.diameter() - 10.0).abs() < 1e-6);
+        assert!((tool.corner_radius() - 2.0).abs() < 1e-6);
+        assert!(tool.supports_drop_cutter());
+    }
+
+    #[test]
     fn test_tool_serialization() {
         let tool = Tool::FlatEndMill {
             diameter: 6.0,
@@ -219,6 +315,30 @@ mod tests {
     }
 
     #[test]
+    fn test_bull_endmill_serialization() {
+        let tool = Tool::BullEndMill {
+            diameter: 10.0,
+            corner_radius: 2.0,
+            flute_length: 25.0,
+            flutes: 4,
+        };
+        let json = serde_json::to_string(&tool).unwrap();
+        assert!(json.contains("BullEndMill"));
+        let parsed: Tool = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, tool);
+    }
+
+    #[test]
+    fn test_tool_holder() {
+        let holder = ToolHolder::new(20.0, 50.0);
+        assert!((holder.diameter - 20.0).abs() < 1e-6);
+        assert!((holder.radius_at_height(30.0) - 10.0).abs() < 1e-6);
+
+        let tapered = ToolHolder::with_taper(20.0, 50.0, 10.0);
+        assert!(tapered.radius_at_height(0.0) < tapered.radius_at_height(50.0));
+    }
+
+    #[test]
     fn test_tool_entry() {
         let entry = ToolEntry::new(1, "Test Endmill", Tool::default_endmill());
         assert_eq!(entry.number, 1);
@@ -228,7 +348,7 @@ mod tests {
     #[test]
     fn test_tool_library() {
         let lib = ToolLibrary::default_library();
-        assert_eq!(lib.tools.len(), 4);
+        assert_eq!(lib.tools.len(), 5);
         assert!(lib.get_by_number(1).is_some());
         assert!(lib.get_by_number(99).is_none());
     }

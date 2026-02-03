@@ -1,0 +1,14 @@
+[package]
+name = "vcad-kernel-stocksim"
+description = "Stock simulation and material removal for vcad CAM"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vcad-kernel-math = { path = "../vcad-kernel-math" }
+vcad-kernel-cam = { path = "../vcad-kernel-cam" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

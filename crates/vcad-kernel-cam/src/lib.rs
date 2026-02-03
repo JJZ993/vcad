@@ -50,6 +50,8 @@
 //! let gcode = post.generate("facing_op", &tool, &toolpath, &settings);
 //! ```
 
+pub mod adaptive;
+pub mod dropcutter;
 mod error;
 mod operation;
 pub mod post;
@@ -58,8 +60,8 @@ mod toolpath;
 
 // Re-exports
 pub use error::CamError;
-pub use operation::{CamOperation, Contour, ContourSegment, Contour2D, Face, Pocket2D, Point2D, Tab};
-pub use tool::{Tool, ToolEntry, ToolLibrary};
+pub use operation::{CamOperation, Contour, ContourSegment, Contour2D, Face, Pocket2D, Point2D, Roughing3D, Tab};
+pub use tool::{Tool, ToolEntry, ToolHolder, ToolLibrary};
 pub use toolpath::{ArcDir, ArcPlane, CoolantMode, SpindleDir, Toolpath, ToolpathSegment};
 
 use serde::{Deserialize, Serialize};
