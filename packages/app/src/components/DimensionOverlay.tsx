@@ -200,7 +200,7 @@ function DimensionLine({
         opacity={0.7}
       />
       {/* Label */}
-      <Html position={mid} center style={{ pointerEvents: showEditable ? "auto" : "none" }}>
+      <Html position={mid} center style={{ pointerEvents: showEditable ? "auto" : "none", zIndex: 10 }}>
         {showEditable ? (
           <EditableDimensionLabel
             value={value}
