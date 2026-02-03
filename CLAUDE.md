@@ -24,7 +24,31 @@ npm test --workspaces --if-present # run tests
 
 # App
 npm run dev -w @vcad/app           # run web app locally
+
+# Supabase (database)
+supabase db push --dry-run         # preview migration changes
+supabase db push                   # apply migrations to production
+supabase db diff -f name           # generate migration from local changes
 ```
+
+## Supabase
+
+Cloud sync uses Supabase (Postgres + Auth). Config and migrations live in `supabase/`.
+
+**Project:** `yteuhwciuxcbjwmabawj` (linked via `supabase link`)
+
+**Tables:**
+- `documents` — synced .vcad files (RLS: users own their docs)
+- `document_versions` — automatic version history on content changes
+
+**Adding a migration:**
+1. Create `supabase/migrations/NNN_description.sql`
+2. Test locally: `supabase db reset` (if running local Supabase)
+3. Deploy: `supabase db push`
+
+**Auth:** Google and GitHub OAuth configured in Supabase dashboard (not in config.toml to avoid secret leakage).
+
+**Client:** `@vcad/auth` package wraps Supabase client. Sync logic in `packages/auth/src/sync.ts`.
 
 ## Architecture
 
@@ -64,6 +88,8 @@ vcad/
 │   ├── training/                  # ML training pipeline
 │   ├── cli/                       # JS CLI (TUI)
 │   └── docs/                      # Documentation site
+├── supabase/                      # Database migrations and config
+│   └── migrations/                # SQL migrations (pushed via `supabase db push`)
 └── web/                           # Landing page (vcad.io)
 ```
 

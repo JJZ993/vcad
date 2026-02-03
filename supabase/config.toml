@@ -2,8 +2,7 @@
 # See: https://supabase.com/docs/guides/cli/config
 
 [project]
-# Project ID (set by Supabase dashboard)
-# id = "your-project-ref"
+id = "yteuhwciuxcbjwmabawj"
 
 [db]
 # Port to use for local database
@@ -13,12 +12,16 @@ port = 5432
 # Enable/disable email auth
 enabled = true
 
-# Enable OAuth providers
-[auth.external.google]
-enabled = true
+# OAuth providers (configured in Supabase dashboard)
+# [auth.external.google]
+# enabled = true
+# client_id = "env(GOOGLE_CLIENT_ID)"
+# secret = "env(GOOGLE_CLIENT_SECRET)"
 
-[auth.external.github]
-enabled = true
+# [auth.external.github]
+# enabled = true
+# client_id = "env(GITHUB_CLIENT_ID)"
+# secret = "env(GITHUB_CLIENT_SECRET)"
 
 [auth.email]
 # Enable magic link sign in
