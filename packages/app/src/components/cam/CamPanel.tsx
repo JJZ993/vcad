@@ -170,6 +170,13 @@ export function CamPanel() {
               wasmSettings
             );
             break;
+
+          case "roughing3d":
+            // 3D roughing requires a height field from drop-cutter analysis
+            // For now, skip operations without a mesh
+            throw new Error(
+              `3D roughing operation "${op.name}" requires a part mesh. Select a part first.`
+            );
         }
 
         // Get stats for this operation

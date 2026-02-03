@@ -24,6 +24,7 @@ const OPERATION_LABELS: Record<CamOperationType, string> = {
   pocket: "Pocket",
   pocket_circle: "Circular Pocket",
   contour: "Contour",
+  roughing3d: "3D Roughing",
 };
 
 const OPERATION_ICONS: Record<CamOperationType, typeof Square> = {
@@ -31,6 +32,7 @@ const OPERATION_ICONS: Record<CamOperationType, typeof Square> = {
   pocket: Square,
   pocket_circle: CircleIcon,
   contour: Path,
+  roughing3d: SelectionBackground,
 };
 
 interface AddOperationFormProps {
@@ -297,6 +299,57 @@ function OperationEditor({ operation, onUpdate }: OperationEditorProps) {
             </div>
           </>
         );
+
+      case "roughing3d":
+        return (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-text-muted">Top Z</label>
+                <input
+                  type="number"
+                  className="w-full bg-surface border border-border rounded px-2 py-1 text-sm"
+                  value={operation.topZ}
+                  onChange={(e) => onUpdate({ topZ: parseFloat(e.target.value) })}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-text-muted">Target Z</label>
+                <input
+                  type="number"
+                  className="w-full bg-surface border border-border rounded px-2 py-1 text-sm"
+                  value={operation.targetZ}
+                  onChange={(e) => onUpdate({ targetZ: parseFloat(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-text-muted">Stock Margin</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  className="w-full bg-surface border border-border rounded px-2 py-1 text-sm"
+                  value={operation.stockMargin}
+                  onChange={(e) => onUpdate({ stockMargin: parseFloat(e.target.value) })}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-text-muted">Direction (°)</label>
+                <input
+                  type="number"
+                  step="45"
+                  className="w-full bg-surface border border-border rounded px-2 py-1 text-sm"
+                  value={operation.direction}
+                  onChange={(e) => onUpdate({ direction: parseFloat(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div className="text-xs text-text-muted mt-2">
+              Note: 3D roughing requires a part with tessellated mesh.
+            </div>
+          </>
+        );
     }
   };
 
@@ -403,6 +456,16 @@ export function OperationList() {
           tabCount: 4,
           tabWidth: 5,
           tabHeight: 2,
+        });
+        break;
+      case "roughing3d":
+        addOperation({
+          ...baseOp,
+          type: "roughing3d",
+          targetZ: -10,
+          topZ: 0,
+          stockMargin: 0.5,
+          direction: 0,
         });
         break;
     }

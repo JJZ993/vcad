@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const TOOL_TYPE_LABELS: Record<CamToolType, string> = {
   flat_endmill: "Flat Endmill",
   ball_endmill: "Ball Endmill",
+  bull_endmill: "Bull Endmill",
   vbit: "V-Bit",
   drill: "Drill",
   face_mill: "Face Mill",
@@ -18,6 +19,7 @@ const TOOL_TYPE_LABELS: Record<CamToolType, string> = {
 const TOOL_TYPE_ICONS: Record<CamToolType, typeof Wrench> = {
   flat_endmill: Wrench,
   ball_endmill: Circle,
+  bull_endmill: Wrench,
   vbit: ArrowDown,
   drill: ArrowDown,
   face_mill: Wrench,

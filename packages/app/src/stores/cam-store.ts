@@ -4,6 +4,7 @@ import { create } from "zustand";
 export type CamToolType =
   | "flat_endmill"
   | "ball_endmill"
+  | "bull_endmill"
   | "vbit"
   | "drill"
   | "face_mill";
@@ -18,13 +19,14 @@ export interface CamTool {
   flutes?: number;
   angle?: number;
   pointAngle?: number;
+  cornerRadius?: number;
   defaultRpm: number;
   defaultFeed: number;
   defaultPlunge: number;
 }
 
 /** CAM operation types */
-export type CamOperationType = "face" | "pocket" | "pocket_circle" | "contour";
+export type CamOperationType = "face" | "pocket" | "pocket_circle" | "contour" | "roughing3d";
 
 /** Base operation interface */
 interface CamOperationBase {
@@ -76,18 +78,31 @@ export interface ContourOperation extends CamOperationBase {
   tabHeight: number;
 }
 
+/** 3D Roughing operation */
+export interface Roughing3DOperation extends CamOperationBase {
+  type: "roughing3d";
+  targetZ: number;
+  topZ: number;
+  stockMargin: number;
+  direction: number;
+  /** Part ID to rough (uses tessellated mesh) */
+  partId?: string;
+}
+
 export type CamOperation =
   | FaceOperation
   | PocketOperation
   | CircularPocketOperation
-  | ContourOperation;
+  | ContourOperation
+  | Roughing3DOperation;
 
 /** Helper type to distribute Omit over union */
 export type CamOperationInput =
   | Omit<FaceOperation, "id">
   | Omit<PocketOperation, "id">
   | Omit<CircularPocketOperation, "id">
-  | Omit<ContourOperation, "id">;
+  | Omit<ContourOperation, "id">
+  | Omit<Roughing3DOperation, "id">;
 
 /** CAM settings */
 export interface CamSettings {
@@ -185,6 +200,18 @@ const DEFAULT_TOOLS: CamTool[] = [
     defaultRpm: 12000,
     defaultFeed: 800,
     defaultPlunge: 250,
+  },
+  {
+    id: "default-bull-6mm",
+    name: "6mm Bull Endmill R1",
+    type: "bull_endmill",
+    diameter: 6.0,
+    cornerRadius: 1.0,
+    fluteLength: 20.0,
+    flutes: 2,
+    defaultRpm: 12000,
+    defaultFeed: 900,
+    defaultPlunge: 280,
   },
   {
     id: "default-endmill-3mm",
@@ -353,6 +380,7 @@ export function toolToJson(tool: CamTool): string {
     flutes: tool.flutes,
     angle: tool.angle,
     point_angle: tool.pointAngle,
+    corner_radius: tool.cornerRadius,
   });
 }
 
