@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "./tooltip";
 
 function round(n: number, decimals = 3): number {
   const factor = Math.pow(10, decimals);
@@ -17,6 +18,8 @@ interface ScrubInputProps {
   className?: string;
   /** Compact mode for inline tree display (smaller, no unit text) */
   compact?: boolean;
+  /** Tooltip text shown on hover over the label */
+  tooltip?: string;
 }
 
 export function ScrubInput({
@@ -29,6 +32,7 @@ export function ScrubInput({
   unit,
   className,
   compact = false,
+  tooltip,
 }: ScrubInputProps) {
   const [text, setText] = useState(String(round(value)));
   const [isEditing, setIsEditing] = useState(false);
@@ -112,12 +116,16 @@ export function ScrubInput({
     setTimeout(() => inputRef.current?.select(), 0);
   }
 
+  const labelSpan = (
+    <span className={cn(
+      "shrink-0 text-text-muted font-medium",
+      compact ? "text-[9px] w-3" : "text-[10px] w-4"
+    )}>{label}</span>
+  );
+
   return (
     <label className={cn("flex items-center gap-1.5 text-xs", className)}>
-      <span className={cn(
-        "shrink-0 text-text-muted font-medium",
-        compact ? "text-[9px] w-3" : "text-[10px] w-4"
-      )}>{label}</span>
+      {tooltip ? <Tooltip content={tooltip} side="top">{labelSpan}</Tooltip> : labelSpan}
       <input
         ref={inputRef}
         type="text"

@@ -19,6 +19,7 @@ export function InlineCubeDimensions({ part }: InlineCubeDimensionsProps) {
     <div className="grid grid-cols-3 gap-1 px-2 pb-1">
       <ScrubInput
         label="W"
+        tooltip="Width"
         value={size.x}
         min={0.1}
         onChange={(v) =>
@@ -29,6 +30,7 @@ export function InlineCubeDimensions({ part }: InlineCubeDimensionsProps) {
       />
       <ScrubInput
         label="H"
+        tooltip="Height"
         value={size.y}
         min={0.1}
         onChange={(v) =>
@@ -39,6 +41,7 @@ export function InlineCubeDimensions({ part }: InlineCubeDimensionsProps) {
       />
       <ScrubInput
         label="D"
+        tooltip="Depth"
         value={size.z}
         min={0.1}
         onChange={(v) =>
@@ -68,6 +71,7 @@ export function InlineCylinderDimensions({ part }: InlineCylinderDimensionsProps
     <div className="grid grid-cols-2 gap-1 px-2 pb-1">
       <ScrubInput
         label="R"
+        tooltip="Radius"
         value={op.radius}
         min={0.1}
         onChange={(v) => updatePrimitiveOp(part.id, { ...op, radius: v })}
@@ -76,6 +80,7 @@ export function InlineCylinderDimensions({ part }: InlineCylinderDimensionsProps
       />
       <ScrubInput
         label="H"
+        tooltip="Height"
         value={op.height}
         min={0.1}
         onChange={(v) => updatePrimitiveOp(part.id, { ...op, height: v })}
@@ -103,6 +108,7 @@ export function InlineSphereDimensions({ part }: InlineSphereDimensionsProps) {
     <div className="grid grid-cols-1 gap-1 px-2 pb-1 max-w-[100px]">
       <ScrubInput
         label="R"
+        tooltip="Radius"
         value={op.radius}
         min={0.1}
         onChange={(v) => updatePrimitiveOp(part.id, { ...op, radius: v })}
@@ -137,7 +143,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
           </div>
           <div className="grid grid-cols-2 gap-1">
             <ScrubInput
-              label="Radius"
+              label="R"
+              tooltip="Radius"
               value={helixPath.radius}
               min={0.1}
               step={0.5}
@@ -148,7 +155,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
               compact
             />
             <ScrubInput
-              label="Pitch"
+              label="P"
+              tooltip="Pitch"
               value={helixPath.pitch}
               min={0.1}
               step={0.5}
@@ -159,7 +167,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
               compact
             />
             <ScrubInput
-              label="Height"
+              label="H"
+              tooltip="Height"
               value={helixPath.height}
               min={0.1}
               step={1}
@@ -170,7 +179,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
               compact
             />
             <ScrubInput
-              label="Turns"
+              label="N"
+              tooltip="Number of turns"
               value={helixPath.turns}
               min={0.25}
               step={0.25}
@@ -190,7 +200,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
         </div>
         <div className="grid grid-cols-2 gap-1">
           <ScrubInput
-            label="Orient"
+            label="O"
+            tooltip="Orientation"
             value={(op.orientation ?? 0) * (180 / Math.PI)}
             step={5}
             onChange={(v) =>
@@ -200,7 +211,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
             compact
           />
           <ScrubInput
-            label="Twist"
+            label="T"
+            tooltip="Twist"
             value={(op.twist_angle ?? 0) * (180 / Math.PI)}
             step={5}
             onChange={(v) =>
@@ -210,7 +222,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
             compact
           />
           <ScrubInput
-            label="Start"
+            label="S"
+            tooltip="Scale start"
             value={op.scale_start ?? 1}
             min={0.1}
             step={0.1}
@@ -218,7 +231,8 @@ export function InlineSweepProperties({ part }: InlineSweepPropertiesProps) {
             compact
           />
           <ScrubInput
-            label="End"
+            label="E"
+            tooltip="Scale end"
             value={op.scale_end ?? 1}
             min={0.1}
             step={0.1}
