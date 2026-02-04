@@ -2,6 +2,91 @@
   "$schema": "./changelog.schema.json",
   "entries": [
     {
+      "id": "2026-02-03-twist-taper-extrude",
+      "version": "0.8.0",
+      "date": "2026-02-03",
+      "category": "feat",
+      "title": "Twist & Taper Extrude",
+      "summary": "Add twist angle and taper draft to extrusions for more expressive geometry.",
+      "details": "## What's New\n\n- **Twist angle** - Rotate the profile as it extrudes for helical shapes\n- **Taper draft** - Add draft angle for molding and casting\n- **Combined effects** - Use both twist and taper together\n- **Live preview** - See changes in real-time as you adjust parameters",
+      "features": ["extrude", "modeling", "parametric"],
+      "tryIt": { "type": "open-panel", "panel": "create" }
+    },
+    {
+      "id": "2026-02-02-ai-text-to-cad",
+      "version": "0.8.0",
+      "date": "2026-02-02",
+      "category": "feat",
+      "title": "AI Text-to-CAD",
+      "summary": "Describe what you want to build in plain English. Generate 3D models with cad0.",
+      "details": "## What's New\n\n- **Chat interface** - Describe parts in natural language\n- **Browser inference** - Run cad0-mini locally for privacy\n- **Server fallback** - Use cloud inference for complex requests\n- **Iterative refinement** - Add to existing models with follow-up prompts\n- **Rating feedback** - Help improve the model with thumbs up/down",
+      "features": ["ai", "chat", "generation"],
+      "tryIt": { "type": "highlight-ui", "selector": "[data-chat-button]", "tooltip": "Click to open AI chat" }
+    },
+    {
+      "id": "2026-02-02-cam-toolpaths",
+      "version": "0.8.0",
+      "date": "2026-02-02",
+      "category": "feat",
+      "title": "CAM Toolpath Generation",
+      "summary": "Generate CNC toolpaths for milling. Supports 2D contouring, 3D roughing, and stock simulation.",
+      "details": "## What's New\n\n- **2D contouring** - Profile and pocket operations\n- **3D roughing** - Adaptive clearing with waterline passes\n- **Stock simulation** - Visualize material removal in real-time\n- **Tool library** - Flat, ball, and bull endmills with custom parameters\n- **G-code export** - Ready for your CNC machine",
+      "features": ["cam", "cnc", "manufacturing"],
+      "tryIt": { "type": "open-panel", "panel": "cam" }
+    },
+    {
+      "id": "2026-02-02-whats-new-panel",
+      "version": "0.8.0",
+      "date": "2026-02-02",
+      "category": "feat",
+      "title": "What's New Panel",
+      "summary": "Stay up to date with new features. Interactive changelog with \"Try it\" buttons.",
+      "details": "## What's New\n\n- **Auto-notification** - Badge appears when new features ship\n- **Filterable list** - Browse by category (features, fixes, breaking)\n- **Try it buttons** - Jump straight to new features\n- **Detailed descriptions** - Learn what changed and why",
+      "features": ["changelog", "onboarding", "ux"]
+    },
+    {
+      "id": "2026-02-01-url-sharing",
+      "version": "0.8.0",
+      "date": "2026-02-01",
+      "category": "feat",
+      "title": "URL Sharing",
+      "summary": "Share models instantly via URL. Compact IR encoding fits entire designs in a link.",
+      "details": "## What's New\n\n- **?ir= parameter** - Entire model encoded in URL\n- **Gzip compression** - Keeps URLs reasonably short\n- **One-click sharing** - Copy link from share menu\n- **No account required** - Recipients can view without signing in",
+      "features": ["sharing", "collaboration", "export"]
+    },
+    {
+      "id": "2026-02-01-print-slicing",
+      "version": "0.8.0",
+      "date": "2026-02-01",
+      "category": "feat",
+      "title": "3D Print Slicing",
+      "summary": "Slice models for 3D printing directly in the browser with integrated WASM slicer.",
+      "details": "## What's New\n\n- **Browser-based slicing** - No external software needed\n- **Layer preview** - Visualize toolpaths before printing\n- **Print settings** - Layer height, infill, supports\n- **G-code export** - Download ready-to-print files",
+      "features": ["printing", "slicer", "manufacturing"],
+      "tryIt": { "type": "open-panel", "panel": "print" }
+    },
+    {
+      "id": "2026-02-01-ui-redesign",
+      "version": "0.8.0",
+      "date": "2026-02-01",
+      "category": "feat",
+      "title": "Redesigned Interface",
+      "summary": "New floating toolbar and inline feature tree. Drag to reorder operations.",
+      "details": "## What's New\n\n- **Floating toolbar** - Tab-based UI with hover-to-open dropdowns\n- **Inline feature tree** - See your model history at a glance\n- **Drag to reorder** - Reorganize operations by dragging\n- **Mobile improvements** - Better touch targets and responsive layout\n- **Adaptive colors** - UI adjusts to background for readability",
+      "features": ["ui", "ux", "toolbar"]
+    },
+    {
+      "id": "2026-02-01-mcp-enhancements",
+      "version": "0.8.0",
+      "date": "2026-02-01",
+      "category": "feat",
+      "title": "MCP Tool Enhancements",
+      "summary": "New MCP tools for sketches, assemblies, STEP import, and browser sharing.",
+      "details": "## What's New\n\n- **Sketch operations** - Create sketch-based features via MCP\n- **Assembly support** - Build multi-part assemblies programmatically\n- **STEP import** - Import existing CAD files via MCP\n- **open_in_browser** - Share models directly to vcad.io\n- **Compact IR** - Efficient serialization format option",
+      "features": ["mcp", "api", "automation"],
+      "mcpTools": ["create_cad_document", "open_in_browser", "import_step"]
+    },
+    {
       "id": "2026-02-01-physics-simulation",
       "version": "0.8.0",
       "date": "2026-02-01",
