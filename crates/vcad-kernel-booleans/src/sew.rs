@@ -42,14 +42,58 @@
 //! orientation = !orientation    // flips once → correct direction
 //! ```
 
-use vcad_kernel_geom::GeometryStore;
-use vcad_kernel_math::Point3;
+use vcad_kernel_geom::{GeometryStore, SurfaceKind};
+use vcad_kernel_math::{Point3, Vec3};
 use vcad_kernel_primitives::BRepSolid;
 use vcad_kernel_topo::{FaceId, Orientation, ShellType, Topology};
 
 use std::collections::HashMap;
 
 use crate::repair;
+
+/// Represents a plane equation: normal · point = d
+#[derive(Debug, Clone)]
+struct PlaneEq {
+    normal: Vec3,
+    d: f64,
+}
+
+impl PlaneEq {
+    /// Create a plane equation from a point and normal.
+    fn from_point_normal(point: &Point3, normal: &Vec3) -> Self {
+        let d = normal.x * point.x + normal.y * point.y + normal.z * point.z;
+        Self {
+            normal: *normal,
+            d,
+        }
+    }
+
+    /// Check if another plane is coplanar with this one (same plane, possibly opposite normal).
+    /// Returns Some(true) if same normal direction, Some(false) if opposite, None if not coplanar.
+    fn coplanar_with(&self, other: &PlaneEq, tol: f64) -> Option<bool> {
+        // Check if normals are parallel (same or opposite direction)
+        let dot = self.normal.dot(&other.normal);
+        let same_dir = dot > 1.0 - tol;
+        let opp_dir = dot < -1.0 + tol;
+
+        if !same_dir && !opp_dir {
+            return None; // Not parallel
+        }
+
+        // Check if planes coincide (same distance from origin, accounting for sign)
+        let d_diff = if same_dir {
+            (self.d - other.d).abs()
+        } else {
+            (self.d + other.d).abs()
+        };
+
+        if d_diff > tol {
+            return None; // Parallel but not coplanar
+        }
+
+        Some(same_dir)
+    }
+}
 
 /// Sew selected faces from two solids into a new result solid.
 ///
@@ -71,8 +115,90 @@ pub fn sew_faces(
     // Copy faces from A
     let _a_face_map = copy_faces(a, faces_a, false, &mut topo, &mut geom);
 
-    // Copy faces from B
-    let _b_face_map = copy_faces(b, faces_b, reverse_b, &mut topo, &mut geom);
+    // For difference operations, B faces that are coplanar with A faces should NOT
+    // be reversed. These are typically end caps (like cylinder caps) that lie on
+    // A's boundary and should face the same direction as the A faces they're adjacent to.
+    //
+    // Split B faces into two groups: coplanar faces (not reversed) and regular faces (reversed).
+    if reverse_b {
+        // Collect plane equations for all planar A faces
+        let a_planes: Vec<PlaneEq> = faces_a
+            .iter()
+            .filter_map(|&face_id| {
+                let face = &a.topology.faces[face_id];
+                let surface = &a.geometry.surfaces[face.surface_index];
+                if surface.surface_type() != SurfaceKind::Plane {
+                    return None;
+                }
+
+                // Get a point on the face and its normal
+                let plane = surface
+                    .as_any()
+                    .downcast_ref::<vcad_kernel_geom::Plane>()?;
+                let normal = plane.normal_dir.as_ref();
+                // Account for face orientation
+                let effective_normal = match face.orientation {
+                    Orientation::Forward => *normal,
+                    Orientation::Reversed => -*normal,
+                };
+                let plane_eq = PlaneEq::from_point_normal(&plane.origin, &effective_normal);
+                Some(plane_eq)
+            })
+            .collect();
+
+        // Separate B faces into coplanar-same-direction (don't reverse) and others (reverse)
+        let mut b_faces_no_reverse: Vec<FaceId> = Vec::new();
+        let mut b_faces_reverse: Vec<FaceId> = Vec::new();
+
+        for &face_id in faces_b {
+            let face = &b.topology.faces[face_id];
+            let surface = &b.geometry.surfaces[face.surface_index];
+
+            if surface.surface_type() == SurfaceKind::Plane {
+                if let Some(plane) = surface
+                    .as_any()
+                    .downcast_ref::<vcad_kernel_geom::Plane>()
+                {
+                    let b_normal = plane.normal_dir.as_ref();
+                    let effective_normal = match face.orientation {
+                        Orientation::Forward => *b_normal,
+                        Orientation::Reversed => -*b_normal,
+                    };
+                    let b_plane = PlaneEq::from_point_normal(&plane.origin, &effective_normal);
+
+                    // Check if this B face is coplanar with any A face
+                    let mut is_coplanar_same = false;
+                    for a_plane in &a_planes {
+                        if let Some(same_dir) = a_plane.coplanar_with(&b_plane, 1e-6) {
+                            if same_dir {
+                                // Coplanar with same normal direction - don't reverse
+                                is_coplanar_same = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if is_coplanar_same {
+                        b_faces_no_reverse.push(face_id);
+                    } else {
+                        b_faces_reverse.push(face_id);
+                    }
+                } else {
+                    b_faces_reverse.push(face_id);
+                }
+            } else {
+                // Non-planar faces (like cylinder walls) always get reversed
+                b_faces_reverse.push(face_id);
+            }
+        }
+
+        // Copy B faces: coplanar ones without reversal, others with reversal
+        let _b_face_map_no_rev = copy_faces(b, &b_faces_no_reverse, false, &mut topo, &mut geom);
+        let _b_face_map_rev = copy_faces(b, &b_faces_reverse, true, &mut topo, &mut geom);
+    } else {
+        // No reversal needed - copy all B faces normally
+        let _b_face_map = copy_faces(b, faces_b, false, &mut topo, &mut geom);
+    }
 
     // Merge vertices within tolerance
     merge_nearby_vertices(&mut topo, tolerance);

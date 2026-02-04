@@ -11,6 +11,7 @@ use vcad_kernel_tessellate::{tessellate_brep, TriangleMesh};
 use vcad_kernel_topo::FaceId;
 
 use crate::point_in_mesh;
+use crate::split::point_to_segment_dist_2d;
 use crate::BooleanOp;
 
 /// Classification of a face relative to another solid.
@@ -61,6 +62,98 @@ pub fn face_sample_point(brep: &BRepSolid, face_id: FaceId) -> Point3 {
     // If face has inner loops (holes), we need a smarter sample point
     // that's outside the holes but inside the outer boundary.
     if !face.inner_loops.is_empty() {
+        // Get surface for projection
+        let surface = &brep.geometry.surfaces[face.surface_index];
+        let is_planar = surface.surface_type() == SurfaceKind::Plane;
+
+        if is_planar && vertices.len() >= 3 {
+            // Build 2D coordinate system from the plane
+            let v0 = vertices[0];
+            let v1 = vertices[1];
+            let v2 = vertices[2];
+            let e1 = v1 - v0;
+            let e2 = v2 - v0;
+            let normal = e1.cross(&e2);
+            let normal_len = normal.norm();
+
+            if normal_len > 1e-12 {
+                let u_axis = e1.normalize();
+                let v_axis = normal.cross(&e1).normalize();
+
+                // Project outer loop to 2D
+                let project_2d = |p: &Point3| -> (f64, f64) {
+                    let d = *p - v0;
+                    (d.dot(&u_axis), d.dot(&v_axis))
+                };
+
+                let outer_2d: Vec<(f64, f64)> = vertices.iter().map(&project_2d).collect();
+
+                // Collect all inner loop vertices in 2D
+                let mut inner_loops_2d: Vec<Vec<(f64, f64)>> = Vec::new();
+                for &inner_loop in &face.inner_loops {
+                    let inner_verts: Vec<(f64, f64)> = topo
+                        .loop_half_edges(inner_loop)
+                        .map(|he_id| {
+                            let pt = topo.vertices[topo.half_edges[he_id].origin].point;
+                            project_2d(&pt)
+                        })
+                        .collect();
+                    if !inner_verts.is_empty() {
+                        inner_loops_2d.push(inner_verts);
+                    }
+                }
+
+                // Try multiple candidate points along each edge of the outer boundary
+                // Pick the one that's farthest from any hole
+                let mut best_point: Option<Point3> = None;
+                let mut best_dist = 0.0f64;
+
+                for i in 0..vertices.len() {
+                    let j = (i + 1) % vertices.len();
+                    let p0 = vertices[i];
+                    let p1 = vertices[j];
+                    let p0_2d = outer_2d[i];
+                    let p1_2d = outer_2d[j];
+
+                    // Try points at 10%, 25%, 50%, 75%, 90% along this edge
+                    for &t in &[0.1, 0.25, 0.5, 0.75, 0.9] {
+                        let candidate_3d = p0 + t * (p1 - p0);
+                        let candidate_2d = (
+                            p0_2d.0 + t * (p1_2d.0 - p0_2d.0),
+                            p0_2d.1 + t * (p1_2d.1 - p0_2d.1),
+                        );
+
+                        // Check distance to nearest hole
+                        let mut min_hole_dist = f64::INFINITY;
+                        for inner_loop_2d in &inner_loops_2d {
+                            for k in 0..inner_loop_2d.len() {
+                                let l = (k + 1) % inner_loop_2d.len();
+                                let dist = point_to_segment_dist_2d(
+                                    candidate_2d.0,
+                                    candidate_2d.1,
+                                    inner_loop_2d[k].0,
+                                    inner_loop_2d[k].1,
+                                    inner_loop_2d[l].0,
+                                    inner_loop_2d[l].1,
+                                );
+                                min_hole_dist = min_hole_dist.min(dist);
+                            }
+                        }
+
+                        if min_hole_dist > best_dist {
+                            best_dist = min_hole_dist;
+                            best_point = Some(candidate_3d);
+                        }
+                    }
+                }
+
+                if let Some(pt) = best_point {
+                    return pt;
+                }
+            }
+        }
+
+        // Fallback for non-planar faces or if 2D approach fails:
         // Strategy: pick a point on the outer boundary's edge midpoint
         // and move slightly inward. This avoids the hole in the center.
         if vertices.len() >= 2 {
@@ -87,7 +180,95 @@ pub fn face_sample_point(brep: &BRepSolid, face_id: FaceId) -> Point3 {
         }
     }
 
-    // Standard case: no holes, use centroid
+    // Standard case: no holes
+    // For planar faces, try multiple sample points and use the one farthest from edges.
+    // This helps with faces created by arc splits where the centroid might be
+    // inside the cutting cylinder even though the face should be kept.
+    let surface = &brep.geometry.surfaces[face.surface_index];
+    let is_planar = surface.surface_type() == SurfaceKind::Plane;
+
+    if is_planar && vertices.len() >= 3 {
+        // Build 2D coordinate system from the plane
+        let v0 = vertices[0];
+        let v1 = vertices[1];
+        let v2 = vertices[2];
+        let e1 = v1 - v0;
+        let e2 = v2 - v0;
+        let normal = e1.cross(&e2);
+        let normal_len = normal.norm();
+
+        if normal_len > 1e-12 {
+            let u_axis = e1.normalize();
+            let v_axis = normal.cross(&e1).normalize();
+
+            // Project vertices to 2D
+            let project_2d = |p: &Point3| -> (f64, f64) {
+                let d = *p - v0;
+                (d.dot(&u_axis), d.dot(&v_axis))
+            };
+
+            let verts_2d: Vec<(f64, f64)> = vertices.iter().map(&project_2d).collect();
+
+            // Compute face centroid in 2D
+            let n_verts = vertices.len() as f64;
+            let centroid_2d = (
+                verts_2d.iter().map(|v| v.0).sum::<f64>() / n_verts,
+                verts_2d.iter().map(|v| v.1).sum::<f64>() / n_verts,
+            );
+
+            // Try candidate points: edge midpoints moved slightly toward centroid
+            // This ensures the sample is inside the face, not on its boundary
+            // Pick the one farthest from all polygon edges
+            let mut best_point: Option<Point3> = None;
+            let mut best_dist = 0.0f64;
+
+            for i in 0..vertices.len() {
+                let j = (i + 1) % vertices.len();
+
+                // Midpoint of this edge
+                let mid_2d = (
+                    verts_2d[i].0 + 0.5 * (verts_2d[j].0 - verts_2d[i].0),
+                    verts_2d[i].1 + 0.5 * (verts_2d[j].1 - verts_2d[i].1),
+                );
+
+                // Move 20% toward centroid to get inside the face
+                let candidate_2d = (
+                    mid_2d.0 + 0.2 * (centroid_2d.0 - mid_2d.0),
+                    mid_2d.1 + 0.2 * (centroid_2d.1 - mid_2d.1),
+                );
+
+                // Compute distance to nearest edge (all edges now)
+                let mut min_dist = f64::INFINITY;
+                for k in 0..vertices.len() {
+                    let l = (k + 1) % vertices.len();
+                    let dist = point_to_segment_dist_2d(
+                        candidate_2d.0,
+                        candidate_2d.1,
+                        verts_2d[k].0,
+                        verts_2d[k].1,
+                        verts_2d[l].0,
+                        verts_2d[l].1,
+                    );
+                    min_dist = min_dist.min(dist);
+                }
+
+                if min_dist > best_dist {
+                    best_dist = min_dist;
+                    // Convert back to 3D
+                    let candidate_3d = v0 + candidate_2d.0 * u_axis + candidate_2d.1 * v_axis;
+                    best_point = Some(candidate_3d);
+                }
+            }
+
+            if let Some(pt) = best_point {
+                // Snap small values
+                let snap = |v: f64| if v.abs() < 1e-9 { 0.0 } else { v };
+                return Point3::new(snap(pt.x), snap(pt.y), snap(pt.z));
+            }
+        }
+    }
+
+    // Fallback: use centroid
     let n = vertices.len() as f64;
     let cx = vertices.iter().map(|v| v.x).sum::<f64>() / n;
     let cy = vertices.iter().map(|v| v.y).sum::<f64>() / n;

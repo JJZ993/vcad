@@ -837,7 +837,7 @@ fn point_in_polygon_2d(px: f64, py: f64, polygon: &[(f64, f64)]) -> bool {
 }
 
 /// Distance from point to line segment (2D).
-fn point_to_segment_dist_2d(px: f64, py: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
+pub(crate) fn point_to_segment_dist_2d(px: f64, py: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
     let dx = x2 - x1;
     let dy = y2 - y1;
     let len2 = dx * dx + dy * dy;
@@ -1177,9 +1177,10 @@ pub fn split_planar_face_by_arc(
     // Add inside_start intersection
     face1_points.push(inside_start.point);
 
-    // Add arc points (from inside_start back to inside_end, reversed)
-    // arc_points_3d goes from inside_start to inside_end, so reverse and skip both ends
-    for pt in arc_points_3d.iter().skip(1).rev().skip(1) {
+    // Add arc points (from inside_start to inside_end, forward direction)
+    // arc_points_3d goes from inside_start to inside_end, so iterate forward
+    // This completes the loop: ... → inside_start → arc → (closes to inside_end)
+    for pt in arc_points_3d.iter().skip(1).take(arc_points_3d.len().saturating_sub(2)) {
         face1_points.push(*pt);
     }
 

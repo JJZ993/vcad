@@ -37,6 +37,23 @@ impl BooleanResult {
             BooleanResult::BRep(brep) => tessellate_brep(brep.as_ref(), _segments),
         }
     }
+
+    /// Get a reference to the BRep solid, if available.
+    pub fn as_brep(&self) -> Option<&BRepSolid> {
+        match self {
+            BooleanResult::BRep(brep) => Some(brep.as_ref()),
+            BooleanResult::Mesh(_) => None,
+        }
+    }
+
+    /// Convert to BRepSolid, consuming self.
+    /// Returns None if the result is mesh-only.
+    pub fn into_brep(self) -> Option<BRepSolid> {
+        match self {
+            BooleanResult::BRep(brep) => Some(*brep),
+            BooleanResult::Mesh(_) => None,
+        }
+    }
 }
 
 /// Perform a CSG boolean operation on two B-rep solids.
