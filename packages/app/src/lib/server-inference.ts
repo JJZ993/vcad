@@ -1,10 +1,11 @@
 /**
  * Server-based inference for text-to-CAD generation.
  *
- * Routes requests through /api/generate with JWT authentication.
+ * Proxies through /api/generate which validates Supabase auth
+ * and calls HuggingFace Inference Endpoint.
  */
 
-/** API base URL from environment. */
+/** API base URL - defaults to same origin */
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 /** Inference result. */
@@ -18,13 +19,13 @@ export interface ServerInferResult {
  * Generate Compact IR from a text prompt using server inference.
  *
  * @param prompt - Text description of the desired CAD part
- * @param options - Generation options (authToken required)
+ * @param options - Generation options (authToken required for Supabase auth)
  * @returns The generated Compact IR
  */
 export async function generateCADServer(
   prompt: string,
   options: {
-    /** Auth token for API authentication (required) */
+    /** Supabase auth token (required) */
     authToken: string;
   }
 ): Promise<ServerInferResult> {

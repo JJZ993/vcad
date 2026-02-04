@@ -9,3 +9,6 @@ out/
 __pycache__/
 packages/app/dev-dist/
 .turbo
+.env.local
+.vercel
+.env*.local

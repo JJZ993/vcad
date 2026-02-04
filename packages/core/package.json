@@ -12,8 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@vcad/engine": "^0.1.0",
-    "@vcad/ir": "^0.1.0",
+    "@vcad/engine": "*",
+    "@vcad/ir": "*",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

@@ -23,10 +23,10 @@
     "@react-three/drei": "^10.0.0",
     "@react-three/fiber": "^9.0.0",
     "@react-three/postprocessing": "^3.0.4",
-    "@vcad/auth": "^0.1.0",
-    "@vcad/core": "^0.1.0",
-    "@vcad/engine": "^0.1.0",
-    "@vcad/ir": "^0.1.0",
+    "@vcad/auth": "*",
+    "@vcad/core": "*",
+    "@vcad/engine": "*",
+    "@vcad/ir": "*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "idb": "^8.0.3",
@@ -39,6 +39,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.45.0",
     "@eslint/js": "^9.18.0",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^25.0.10",

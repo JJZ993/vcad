@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@vcad/ir": "^0.1.0",
+    "@vcad/ir": "*",
     "@vcad/kernel-wasm": "file:../kernel-wasm"
   },
   "devDependencies": {

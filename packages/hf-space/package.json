@@ -1,0 +1,12 @@
+{
+  "name": "cad0-demo",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@vcad/kernel-wasm": "file:../kernel-wasm",
+    "canvas": "^2.11.2"
+  }
+}

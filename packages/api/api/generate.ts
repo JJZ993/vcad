@@ -1,15 +1,63 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
+// Auth client (anon key) for verifying user tokens
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
 
-// Modal endpoint for cad0 model
-const MODAL_ENDPOINT =
-  process.env.MODAL_INFERENCE_URL ||
-  "https://ecto--cad0-training-inference-infer.modal.run";
+// Service role client for inserting logs (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+// HuggingFace Inference Endpoint for cad0 model
+const HF_ENDPOINT = process.env.HF_INFERENCE_ENDPOINT!;
+const HF_TOKEN = process.env.HF_TOKEN!;
+
+/**
+ * Log an inference attempt to the database.
+ */
+async function logInference(params: {
+  userId: string;
+  prompt: string;
+  result?: string;
+  tokens?: number;
+  durationMs?: number;
+  error?: string;
+}): Promise<void> {
+  try {
+    await supabaseAdmin.from("inference_logs").insert({
+      user_id: params.userId,
+      prompt: params.prompt,
+      result: params.result ?? null,
+      tokens: params.tokens ?? null,
+      duration_ms: params.durationMs ?? null,
+      error: params.error ?? null,
+    });
+  } catch (e) {
+    // Don't fail the request if logging fails
+    console.error("Failed to log inference:", e);
+  }
+}
+
+// System prompt for cad0 model
+const SYSTEM_PROMPT =
+  "You are a CAD assistant. Output only Compact IR code (C for box, Y for cylinder, T for translate, U for union, D for difference). No explanations, just the IR code.";
+
+/**
+ * Format prompt using Qwen chat template.
+ */
+function formatChatPrompt(userPrompt: string): string {
+  return `<|im_start|>system
+${SYSTEM_PROMPT}<|im_end|>
+<|im_start|>user
+${userPrompt}<|im_end|>
+<|im_start|>assistant
+`;
+}
 
 /**
  * Clean up generated IR text by removing markdown and extra content.
@@ -22,8 +70,17 @@ function cleanGeneratedIR(text: string): string {
     ir = ir.replace(/^```(?:ir|text|plaintext)?\n?/, "").replace(/\n?```$/, "");
   }
 
-  // Stop at common hallucination patterns
-  const stopPatterns = ["\n\n", "User", "Now:", "Assistant", "Design:"];
+  // Stop at common hallucination patterns and chat markers
+  const stopPatterns = [
+    "\n\n",
+    "User",
+    "user",
+    "Now:",
+    "Assistant",
+    "Design:",
+    "<|im_end|>",
+    "<|im_start|>",
+  ];
   for (const pattern of stopPatterns) {
     const idx = ir.indexOf(pattern);
     if (idx > 0) {
@@ -165,46 +222,81 @@ export default async function handler(
     return;
   }
 
+  // Check HF config
+  if (!HF_ENDPOINT || !HF_TOKEN) {
+    res.status(500).json({ error: "HF inference not configured" });
+    return;
+  }
+
   const startTime = Date.now();
 
   try {
-    const response = await fetch(MODAL_ENDPOINT, {
+    const response = await fetch(HF_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${HF_TOKEN}`,
+      },
       body: JSON.stringify({
-        prompt,
-        temperature: 0.1,
-        max_tokens: 512,
+        inputs: formatChatPrompt(prompt),
+        parameters: {
+          max_new_tokens: 512,
+          temperature: 0.1,
+          do_sample: true,
+          return_full_text: false,
+        },
       }),
     });
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Modal inference failed: ${error}`);
+      throw new Error(`HF inference failed: ${error}`);
     }
 
-    const result = (await response.json()) as {
-      ir?: string;
-      tokens?: number;
-      error?: string;
-    };
-    if (result.error) {
-      throw new Error(result.error);
+    const result = (await response.json()) as
+      | Array<{ generated_text?: string }>
+      | { generated_text?: string; text?: string };
+
+    // HF Inference Endpoint returns array for text-generation
+    // or object with generated_text for TGI
+    let generatedText: string;
+    if (Array.isArray(result)) {
+      generatedText = result[0]?.generated_text ?? "";
+    } else {
+      generatedText = result.generated_text ?? result.text ?? "";
     }
 
     // Clean up the generated IR
-    const ir = cleanGeneratedIR(result.ir ?? "");
+    const ir = cleanGeneratedIR(generatedText);
     const durationMs = Date.now() - startTime;
+
+    // Log successful inference
+    await logInference({
+      userId: user.id,
+      prompt,
+      result: ir,
+      tokens: generatedText.length,
+      durationMs,
+    });
 
     res.status(200).json({
       ir,
-      tokens: result.tokens ?? 0,
+      tokens: generatedText.length, // Approximate
       durationMs,
     });
   } catch (error) {
-    console.error("AI inference failed:", error);
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "AI inference failed",
+    const durationMs = Date.now() - startTime;
+    const errorMsg = error instanceof Error ? error.message : "AI inference failed";
+
+    // Log failed inference
+    await logInference({
+      userId: user.id,
+      prompt,
+      durationMs,
+      error: errorMsg,
     });
+
+    console.error("AI inference failed:", error);
+    res.status(500).json({ error: errorMsg });
   }
 }

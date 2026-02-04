@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import wasm from "vite-plugin-wasm";
@@ -6,93 +6,190 @@ import topLevelAwait from "vite-plugin-top-level-await";
 import { VitePWA } from "vite-plugin-pwa";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
+import { createClient } from "@supabase/supabase-js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export default defineConfig({
-  envDir: "../../",
-  define: {
-    __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "0.0.0"),
-    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-  },
-  plugins: [
-    react(),
-    tailwindcss(),
-    wasm(),
-    topLevelAwait(),
-    VitePWA({
-      registerType: "prompt",
-      devOptions: {
-        enabled: true,
-      },
-      includeAssets: ["fonts/**/*", "assets/**/*"],
-      manifest: false, // Use public/manifest.json
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,woff,woff2,otf}"],
-        // Exclude large ONNX runtime WASM from precaching (will be runtime cached)
-        globIgnores: ["**/ort-*.wasm"],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB for WASM
-        runtimeCaching: [
-          {
-            // WASM modules - cache first (immutable)
-            // Includes large ONNX runtime WASM files for AI inference
-            urlPattern: /\.wasm$/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "wasm-cache",
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-              },
+/** Dev-only plugin that handles /api/generate requests */
+function devApiPlugin(env: Record<string, string>): Plugin {
+  const SYSTEM_PROMPT =
+    "You are a CAD assistant. Output only Compact IR code (C for box, Y for cylinder, T for translate, U for union, D for difference). No explanations, just the IR code.";
+
+  function formatChatPrompt(userPrompt: string): string {
+    return `<|im_start|>system\n${SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n${userPrompt}<|im_end|>\n<|im_start|>assistant\n`;
+  }
+
+  function cleanGeneratedIR(text: string): string {
+    let ir = text.trim();
+    if (ir.startsWith("```")) {
+      ir = ir.replace(/^```(?:ir|text|plaintext)?\n?/, "").replace(/\n?```$/, "");
+    }
+    const stopPatterns = ["\n\n", "User", "user", "Now:", "Assistant", "Design:", "<|im_end|>", "<|im_start|>"];
+    for (const pattern of stopPatterns) {
+      const idx = ir.indexOf(pattern);
+      if (idx > 0) ir = ir.substring(0, idx);
+    }
+    const lines = ir.split("\n");
+    const validOpcodes = ["C", "Y", "S", "K", "T", "R", "X", "U", "D", "I", "LP", "CP", "SH", "FI", "CH", "SK", "L", "A", "E", "V", "M", "ROOT", "PDEF", "INST", "END"];
+    const minArgs: Record<string, number> = { C: 3, Y: 2, S: 1, K: 3, T: 4, R: 4, X: 4, U: 2, D: 2, I: 2, SH: 2, FI: 2, CH: 2, LP: 4, CP: 4, SK: 1, L: 4, A: 7, E: 2, V: 2, M: 4, ROOT: 1, PDEF: 1, INST: 2, END: 0 };
+    const validLines: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const parts = trimmed.split(/\s+/);
+      const opcode = parts[0] ?? "";
+      if (!validOpcodes.includes(opcode)) break;
+      const required = minArgs[opcode] ?? 0;
+      if (parts.length < required + 1) break;
+      validLines.push(line);
+    }
+    return validLines.join("\n").trim();
+  }
+
+  return {
+    name: "dev-api",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (req.url !== "/api/generate" || req.method !== "POST") {
+          return next();
+        }
+
+        // CORS
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+
+        // Parse body
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        const { prompt } = JSON.parse(body);
+
+        if (!prompt) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: "Prompt required" }));
+          return;
+        }
+
+        // Verify auth
+        const authHeader = req.headers.authorization;
+        if (!authHeader?.startsWith("Bearer ")) {
+          res.statusCode = 401;
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
+        const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
+        if (authError || !user) {
+          res.statusCode = 401;
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        // Call HF
+        const startTime = Date.now();
+        try {
+          const hfResponse = await fetch(env.HF_INFERENCE_ENDPOINT, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${env.HF_TOKEN}`,
             },
-          },
-          {
-            // JS bundles - stale while revalidate
-            urlPattern: /\.js$/,
-            handler: "StaleWhileRevalidate",
-            options: {
-              cacheName: "js-cache",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-              },
-            },
-          },
-          {
-            // Fonts - cache first
-            urlPattern: /\.(woff|woff2|otf|ttf)$/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "font-cache",
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-              },
-            },
-          },
-          {
-            // Images/icons - cache first
-            urlPattern: /\.(png|jpg|jpeg|svg|gif|webp)$/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "image-cache",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-              },
-            },
-          },
-        ],
-      },
-    }),
-  ],
-  resolve: {
-    alias: {
-      "@": resolve(__dirname, "./src"),
+            body: JSON.stringify({
+              inputs: formatChatPrompt(prompt),
+              parameters: { max_new_tokens: 512, temperature: 0.1, do_sample: true, return_full_text: false },
+            }),
+          });
+
+          if (!hfResponse.ok) {
+            throw new Error(`HF inference failed: ${await hfResponse.text()}`);
+          }
+
+          const result = await hfResponse.json() as { generated_text?: string }[] | { generated_text?: string; text?: string };
+          const generatedText = Array.isArray(result) ? result[0]?.generated_text ?? "" : result.generated_text ?? result.text ?? "";
+          const ir = cleanGeneratedIR(generatedText);
+
+          // Log to DB (fire and forget)
+          const supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+          supabaseAdmin.from("inference_logs").insert({
+            user_id: user.id,
+            prompt,
+            result: ir,
+            tokens: generatedText.length,
+            duration_ms: Date.now() - startTime,
+          }).then(() => {});
+
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ir, tokens: generatedText.length, durationMs: Date.now() - startTime }));
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : "AI inference failed";
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: errorMsg }));
+        }
+      });
     },
-  },
-  optimizeDeps: {
-    exclude: ["@vcad/kernel-wasm"],
-  },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, resolve(__dirname, "../.."), "");
+
+  return {
+    envDir: "../../",
+    define: {
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "0.0.0"),
+      __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    },
+    plugins: [
+      devApiPlugin(env),
+      react(),
+      tailwindcss(),
+      wasm(),
+      topLevelAwait(),
+      VitePWA({
+        registerType: "prompt",
+        devOptions: {
+          enabled: true,
+        },
+        includeAssets: ["fonts/**/*", "assets/**/*"],
+        manifest: false,
+        workbox: {
+          globPatterns: ["**/*.{js,css,html,woff,woff2,otf}"],
+          globIgnores: ["**/ort-*.wasm"],
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          runtimeCaching: [
+            {
+              urlPattern: /\.wasm$/,
+              handler: "CacheFirst",
+              options: { cacheName: "wasm-cache", expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+            },
+            {
+              urlPattern: /\.js$/,
+              handler: "StaleWhileRevalidate",
+              options: { cacheName: "js-cache", expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 30 } },
+            },
+            {
+              urlPattern: /\.(woff|woff2|otf|ttf)$/,
+              handler: "CacheFirst",
+              options: { cacheName: "font-cache", expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+            },
+            {
+              urlPattern: /\.(png|jpg|jpeg|svg|gif|webp)$/,
+              handler: "CacheFirst",
+              options: { cacheName: "image-cache", expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 30 } },
+            },
+          ],
+        },
+      }),
+    ],
+    resolve: {
+      alias: {
+        "@": resolve(__dirname, "./src"),
+      },
+    },
+    optimizeDeps: {
+      exclude: ["@vcad/kernel-wasm"],
+    },
+  };
 });
