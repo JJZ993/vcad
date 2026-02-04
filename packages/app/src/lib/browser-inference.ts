@@ -159,7 +159,7 @@ export async function loadModel(
       // Create the text generation pipeline
       modelState.pipeline = await pipeline("text-generation", modelId, {
         device,
-        dtype: "q4", // 4-bit quantization for smaller size
+        // Use default ONNX model (our int8 quantized version)
         progress_callback: (progress: { status: string; progress?: number; loaded?: number; total?: number }) => {
           if (progress.status === "progress" && progress.progress != null) {
             const pct = Math.round(10 + progress.progress * 0.85);
