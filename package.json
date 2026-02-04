@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "turbo": "^2"
+  },
+  "overrides": {
+    "onnxruntime-node": "npm:onnxruntime-web@1.21.0"
   }
 }
