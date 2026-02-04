@@ -4,6 +4,9 @@ import { useNotificationStore } from "../stores/notification-store";
 import { useLogStore } from "../stores/log-store";
 import { useChangelogStore } from "../stores/changelog-store";
 
+// Track last Escape time for double-tap emergency exit
+let lastEscapeTime = 0;
+
 export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -168,6 +171,23 @@ export function useKeyboardShortcuts() {
         }
       }
 
+      // Enter sketch mode: S (takes priority when not in sketch)
+      if (e.key === "s" || e.key === "S") {
+        const { active, faceSelectionMode } = useSketchStore.getState();
+        if (!active && !faceSelectionMode) {
+          const hasParts = useDocumentStore.getState().parts.length > 0;
+          if (hasParts) {
+            // Has parts - enter face selection mode first
+            useSketchStore.getState().enterFaceSelectionMode();
+          } else {
+            // No parts - go directly to XY plane sketch
+            useSketchStore.getState().enterSketchMode("XY");
+          }
+          return;
+        }
+        // Fall through to scale mode if already in sketch
+      }
+
       // Transform modes
       if (e.key === "m" || e.key === "M") {
         setTransformMode("translate");
@@ -204,22 +224,6 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Enter sketch mode: S
-      if (e.key === "s" || e.key === "S") {
-        const { active, faceSelectionMode } = useSketchStore.getState();
-        if (!active && !faceSelectionMode) {
-          const hasParts = useDocumentStore.getState().parts.length > 0;
-          if (hasParts) {
-            // Has parts - enter face selection mode first
-            useSketchStore.getState().enterFaceSelectionMode();
-          } else {
-            // No parts - go directly to XY plane sketch
-            useSketchStore.getState().enterSketchMode("XY");
-          }
-        }
-        return;
-      }
-
       // Quick extrude: E (when in sketch mode with segments)
       if ((e.key === "e" || e.key === "E") && !mod) {
         const { active, segments } = useSketchStore.getState();
@@ -252,16 +256,37 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Escape: exit sketch mode, cancel face selection, or deselect
+      // Escape: cancel in-progress tool, exit sketch mode, cancel face selection, or deselect
       if (e.key === "Escape") {
+        const now = Date.now();
+        const isDoubleTap = now - lastEscapeTime < 400; // 400ms window
+        lastEscapeTime = now;
+
         const {
           active,
           faceSelectionMode,
           pendingExit,
+          points,
           requestExit,
           cancelExit,
           cancelFaceSelection,
+          exitSketchMode,
+          validateState,
+          setTool,
         } = useSketchStore.getState();
+
+        // Run state validation to fix any inconsistent states
+        validateState();
+
+        // Double-tap: force exit from any sketch state
+        if (isDoubleTap) {
+          if (active || faceSelectionMode || pendingExit) {
+            exitSketchMode();
+            cancelFaceSelection();
+            useNotificationStore.getState().addToast("Sketch cancelled", "info");
+            return;
+          }
+        }
 
         // Cancel face selection mode
         if (faceSelectionMode) {
@@ -271,6 +296,13 @@ export function useKeyboardShortcuts() {
         }
 
         if (active) {
+          // If mid-draw (have in-progress points), cancel the current tool operation
+          if (points.length > 0) {
+            // setTool resets points to []
+            setTool(useSketchStore.getState().tool);
+            return;
+          }
+
           // If confirmation dialog is showing, cancel it
           if (pendingExit) {
             cancelExit();

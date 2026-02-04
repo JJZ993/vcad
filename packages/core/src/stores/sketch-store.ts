@@ -28,6 +28,7 @@ export interface SketchStore extends SketchState {
   snapTarget: Vec2 | null;
 
   // Actions
+  validateState: () => boolean; // Returns true if state was fixed
   enterFaceSelectionMode: () => void;
   setHoveredFace: (face: FaceInfo | null) => void;
   selectFace: (face: FaceInfo) => void;
@@ -147,6 +148,31 @@ export const useSketchStore = create<SketchStore>((set, get) => ({
   cursorWorldPos: null,
   cursorSketchPos: null,
   snapTarget: null,
+
+  validateState: () => {
+    const state = get();
+    let fixed = false;
+
+    // Fix: both active and faceSelectionMode true simultaneously
+    if (state.active && state.faceSelectionMode) {
+      set({ faceSelectionMode: false, hoveredFace: null });
+      fixed = true;
+    }
+
+    // Fix: pendingExit true but active false
+    if (state.pendingExit && !state.active) {
+      set({ pendingExit: false });
+      fixed = true;
+    }
+
+    // Fix: loftMode true but active false
+    if (state.loftMode && !state.active) {
+      set({ loftMode: false, profiles: [] });
+      fixed = true;
+    }
+
+    return fixed;
+  },
 
   enterFaceSelectionMode: () => {
     set({

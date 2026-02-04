@@ -138,6 +138,13 @@ function NumberInputDialog({
 
   return (
     <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2  border border-border bg-card p-4 shadow-2xl">
+      <button
+        onClick={onClose}
+        className="absolute top-2 right-2 text-text-muted hover:text-text p-1"
+        aria-label="Close"
+      >
+        <X size={14} />
+      </button>
       <div className="flex flex-col gap-3">
         <div className="text-xs font-medium text-text">{label}</div>
         <div className="flex items-center gap-2">
@@ -283,6 +290,13 @@ function ExtrudeDialog({
 
   return (
     <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 border border-border bg-card p-4 shadow-2xl">
+      <button
+        onClick={onClose}
+        className="absolute top-2 right-2 text-text-muted hover:text-text p-1"
+        aria-label="Close"
+      >
+        <X size={14} />
+      </button>
       <div className="flex flex-col gap-3">
         <div className="text-xs font-medium text-text">Extrude Depth</div>
         <div className="flex items-center gap-2 text-xs text-text-muted">
@@ -463,6 +477,13 @@ function RevolveDialog({
 
   return (
     <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 border border-border bg-card p-4 shadow-2xl">
+      <button
+        onClick={onClose}
+        className="absolute top-2 right-2 text-text-muted hover:text-text p-1"
+        aria-label="Close"
+      >
+        <X size={14} />
+      </button>
       <div className="flex flex-col gap-3">
         <div className="text-xs font-medium text-text">Revolve Angle</div>
         <div className="flex items-center gap-2">
@@ -520,6 +541,13 @@ function SweepDialog({
 
   return (
     <div className="fixed left-1/2 bottom-20 -translate-x-1/2 z-50 border border-border bg-card p-4 shadow-2xl">
+      <button
+        onClick={onClose}
+        className="absolute top-2 right-2 text-text-muted hover:text-text p-1"
+        aria-label="Close"
+      >
+        <X size={14} />
+      </button>
       <div className="flex flex-col gap-3">
         <div className="text-xs font-medium text-text">Sweep Path</div>
         <div className="flex gap-2">
