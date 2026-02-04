@@ -11,11 +11,6 @@ import changelogData from "../CHANGELOG.json";
 
 export type ChangelogCategory = "feat" | "fix" | "breaking" | "perf" | "docs";
 
-export type TryItAction =
-  | { type: "load-example"; exampleId: string }
-  | { type: "open-panel"; panel: string }
-  | { type: "highlight-ui"; selector: string; tooltip?: string };
-
 export interface ChangelogEntry {
   id: string;
   version: string;
@@ -26,7 +21,6 @@ export interface ChangelogEntry {
   details?: string;
   features?: string[];
   mcpTools?: string[];
-  tryIt?: TryItAction;
   breaking?: { description: string; migration?: string };
 }
 

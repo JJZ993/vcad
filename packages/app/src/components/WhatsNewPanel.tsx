@@ -3,11 +3,10 @@
  */
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Rocket, Bug, Warning, Lightning, Book, Play } from "@phosphor-icons/react";
+import { X, Rocket, Bug, Warning, Lightning, Book } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useChangelogStore, CURRENT_VERSION } from "@/stores/changelog-store";
 import { changelog, type ChangelogEntry, type ChangelogCategory } from "@vcad/core";
-import { executeChangelogAction } from "@/lib/changelog-actions";
 
 const CATEGORY_ICONS: Record<ChangelogCategory, typeof Rocket> = {
   feat: Rocket,
@@ -31,7 +30,7 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function EntryCard({ entry, onTryIt }: { entry: ChangelogEntry; onTryIt: () => void }) {
+function EntryCard({ entry }: { entry: ChangelogEntry }) {
   const Icon = CATEGORY_ICONS[entry.category];
   const color = CATEGORY_COLORS[entry.category];
 
@@ -44,15 +43,6 @@ function EntryCard({ entry, onTryIt }: { entry: ChangelogEntry; onTryIt: () => v
           <span className="text-[10px] text-text-muted">{formatDate(entry.date)}</span>
         </div>
         <p className="text-xs text-text-muted mt-0.5">{entry.summary}</p>
-        {entry.tryIt && (
-          <button
-            onClick={onTryIt}
-            className="flex items-center gap-1 mt-2 text-xs text-accent hover:text-accent-hover transition-colors"
-          >
-            <Play size={12} weight="fill" />
-            <span>Try it</span>
-          </button>
-        )}
       </div>
     </div>
   );
@@ -64,13 +54,6 @@ export function WhatsNewPanel() {
   const markAllViewed = useChangelogStore((s) => s.markAllViewed);
 
   const entries = changelog.entries;
-
-  function handleTryIt(entry: ChangelogEntry) {
-    if (entry.tryIt) {
-      executeChangelogAction(entry.tryIt);
-      closePanel();
-    }
-  }
 
   // Mark all as viewed when panel opens
   if (panelOpen) {
@@ -103,7 +86,7 @@ export function WhatsNewPanel() {
           {/* List */}
           <div className="flex-1 overflow-y-auto px-4 scrollbar-thin">
             {entries.map((entry) => (
-              <EntryCard key={entry.id} entry={entry} onTryIt={() => handleTryIt(entry)} />
+              <EntryCard key={entry.id} entry={entry} />
             ))}
           </div>
 

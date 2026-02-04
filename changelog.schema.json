@@ -18,35 +18,6 @@
           "details": { "type": "string" },
           "features": { "type": "array", "items": { "type": "string" } },
           "mcpTools": { "type": "array", "items": { "type": "string" } },
-          "tryIt": {
-            "oneOf": [
-              {
-                "type": "object",
-                "required": ["type", "exampleId"],
-                "properties": {
-                  "type": { "const": "load-example" },
-                  "exampleId": { "type": "string" }
-                }
-              },
-              {
-                "type": "object",
-                "required": ["type", "panel"],
-                "properties": {
-                  "type": { "const": "open-panel" },
-                  "panel": { "type": "string" }
-                }
-              },
-              {
-                "type": "object",
-                "required": ["type", "selector"],
-                "properties": {
-                  "type": { "const": "highlight-ui" },
-                  "selector": { "type": "string" },
-                  "tooltip": { "type": "string" }
-                }
-              }
-            ]
-          },
           "breaking": {
             "type": "object",
             "properties": {

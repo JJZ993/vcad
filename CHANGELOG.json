@@ -9,8 +9,11 @@
       "title": "Twist & Taper Extrude",
       "summary": "Add twist angle and taper draft to extrusions for more expressive geometry.",
       "details": "## What's New\n\n- **Twist angle** - Rotate the profile as it extrudes for helical shapes\n- **Taper draft** - Add draft angle for molding and casting\n- **Combined effects** - Use both twist and taper together\n- **Live preview** - See changes in real-time as you adjust parameters",
-      "features": ["extrude", "modeling", "parametric"],
-      "tryIt": { "type": "open-panel", "panel": "create" }
+      "features": [
+        "extrude",
+        "modeling",
+        "parametric"
+      ]
     },
     {
       "id": "2026-02-02-ai-text-to-cad",
@@ -20,8 +23,11 @@
       "title": "AI Text-to-CAD",
       "summary": "Describe what you want to build in plain English. Generate 3D models with cad0.",
       "details": "## What's New\n\n- **Chat interface** - Describe parts in natural language\n- **Browser inference** - Run cad0-mini locally for privacy\n- **Server fallback** - Use cloud inference for complex requests\n- **Iterative refinement** - Add to existing models with follow-up prompts\n- **Rating feedback** - Help improve the model with thumbs up/down",
-      "features": ["ai", "chat", "generation"],
-      "tryIt": { "type": "open-panel", "panel": "chat" }
+      "features": [
+        "ai",
+        "chat",
+        "generation"
+      ]
     },
     {
       "id": "2026-02-02-cam-toolpaths",
@@ -31,8 +37,11 @@
       "title": "CAM Toolpath Generation",
       "summary": "Generate CNC toolpaths for milling. Supports 2D contouring, 3D roughing, and stock simulation.",
       "details": "## What's New\n\n- **2D contouring** - Profile and pocket operations\n- **3D roughing** - Adaptive clearing with waterline passes\n- **Stock simulation** - Visualize material removal in real-time\n- **Tool library** - Flat, ball, and bull endmills with custom parameters\n- **G-code export** - Ready for your CNC machine",
-      "features": ["cam", "cnc", "manufacturing"],
-      "tryIt": { "type": "open-panel", "panel": "cam" }
+      "features": [
+        "cam",
+        "cnc",
+        "manufacturing"
+      ]
     },
     {
       "id": "2026-02-02-whats-new-panel",
@@ -40,9 +49,13 @@
       "date": "2026-02-02",
       "category": "feat",
       "title": "What's New Panel",
-      "summary": "Stay up to date with new features. Interactive changelog with \"Try it\" buttons.",
-      "details": "## What's New\n\n- **Auto-notification** - Badge appears when new features ship\n- **Filterable list** - Browse by category (features, fixes, breaking)\n- **Try it buttons** - Jump straight to new features\n- **Detailed descriptions** - Learn what changed and why",
-      "features": ["changelog", "onboarding", "ux"]
+      "summary": "Stay up to date with new features via the changelog panel.",
+      "details": "## What's New\n\n- **Auto-notification** - Badge appears when new features ship\n- **Simple list** - See all updates at a glance\n- **Detailed descriptions** - Learn what changed and why",
+      "features": [
+        "changelog",
+        "onboarding",
+        "ux"
+      ]
     },
     {
       "id": "2026-02-01-url-sharing",
@@ -52,7 +65,11 @@
       "title": "URL Sharing",
       "summary": "Share models instantly via URL. Compact IR encoding fits entire designs in a link.",
       "details": "## What's New\n\n- **?ir= parameter** - Entire model encoded in URL\n- **Gzip compression** - Keeps URLs reasonably short\n- **One-click sharing** - Copy link from share menu\n- **No account required** - Recipients can view without signing in",
-      "features": ["sharing", "collaboration", "export"]
+      "features": [
+        "sharing",
+        "collaboration",
+        "export"
+      ]
     },
     {
       "id": "2026-02-01-print-slicing",
@@ -62,8 +79,11 @@
       "title": "3D Print Slicing",
       "summary": "Slice models for 3D printing directly in the browser with integrated WASM slicer.",
       "details": "## What's New\n\n- **Browser-based slicing** - No external software needed\n- **Layer preview** - Visualize toolpaths before printing\n- **Print settings** - Layer height, infill, supports\n- **G-code export** - Download ready-to-print files",
-      "features": ["printing", "slicer", "manufacturing"],
-      "tryIt": { "type": "open-panel", "panel": "print" }
+      "features": [
+        "printing",
+        "slicer",
+        "manufacturing"
+      ]
     },
     {
       "id": "2026-02-01-ui-redesign",
@@ -73,7 +93,11 @@
       "title": "Redesigned Interface",
       "summary": "New floating toolbar and inline feature tree. Drag to reorder operations.",
       "details": "## What's New\n\n- **Floating toolbar** - Tab-based UI with hover-to-open dropdowns\n- **Inline feature tree** - See your model history at a glance\n- **Drag to reorder** - Reorganize operations by dragging\n- **Mobile improvements** - Better touch targets and responsive layout\n- **Adaptive colors** - UI adjusts to background for readability",
-      "features": ["ui", "ux", "toolbar"]
+      "features": [
+        "ui",
+        "ux",
+        "toolbar"
+      ]
     },
     {
       "id": "2026-02-01-mcp-enhancements",
@@ -83,8 +107,16 @@
       "title": "MCP Tool Enhancements",
       "summary": "New MCP tools for sketches, assemblies, STEP import, and browser sharing.",
       "details": "## What's New\n\n- **Sketch operations** - Create sketch-based features via MCP\n- **Assembly support** - Build multi-part assemblies programmatically\n- **STEP import** - Import existing CAD files via MCP\n- **open_in_browser** - Share models directly to vcad.io\n- **Compact IR** - Efficient serialization format option",
-      "features": ["mcp", "api", "automation"],
-      "mcpTools": ["create_cad_document", "open_in_browser", "import_step"]
+      "features": [
+        "mcp",
+        "api",
+        "automation"
+      ],
+      "mcpTools": [
+        "create_cad_document",
+        "open_in_browser",
+        "import_step"
+      ]
     },
     {
       "id": "2026-02-01-physics-simulation",
@@ -94,9 +126,19 @@
       "title": "Physics Simulation",
       "summary": "Simulate assemblies with Rapier3D physics. Train RL agents via gym-style MCP interface.",
       "details": "## What's New\n\n- **Rigid body dynamics** - Parts become physical objects with mass and inertia\n- **Joint support** - Revolute, prismatic, cylindrical, ball, and fixed joints\n- **Gym-style RL interface** - `reset()`, `step(action)`, `observe()` for training\n- **Three action types** - Torque, position targets, velocity targets\n- **MCP integration** - Full programmatic control via MCP tools",
-      "features": ["physics", "assembly", "mcp", "simulation"],
-      "mcpTools": ["create_robot_env", "gym_step", "gym_reset", "gym_observe", "gym_close"],
-      "tryIt": { "type": "load-example", "exampleId": "robot-arm" }
+      "features": [
+        "physics",
+        "assembly",
+        "mcp",
+        "simulation"
+      ],
+      "mcpTools": [
+        "create_robot_env",
+        "gym_step",
+        "gym_reset",
+        "gym_observe",
+        "gym_close"
+      ]
     },
     {
       "id": "2026-01-28-ray-tracing",
@@ -106,7 +148,11 @@
       "title": "Direct BRep Ray Tracing",
       "summary": "Pixel-perfect rendering without tessellation. Toggle between standard and ray-traced modes.",
       "details": "## What's New\n\n- **Analytic ray-surface intersection** for all surface types\n- **WebGPU compute shader pipeline** for real-time performance\n- **BVH acceleration** with SAH construction\n- **Trimmed surface handling** for complex geometry\n- **Debug modes** - View normals, face IDs, lighting",
-      "features": ["rendering", "raytrace", "gpu"]
+      "features": [
+        "rendering",
+        "raytrace",
+        "gpu"
+      ]
     },
     {
       "id": "2026-01-25-step-import",
@@ -116,8 +162,14 @@
       "title": "STEP File Import",
       "summary": "Import AP203/AP214 STEP files from Fusion 360, SolidWorks, Onshape, and more.",
       "details": "## What's New\n\n- **Drag-and-drop import** - Drop .step or .stp files onto the canvas\n- **File picker support** - Use Open dialog or Cmd+O\n- **Multi-solid support** - Import assemblies with multiple parts\n- **GPU mesh processing** - Fast normal computation with creased edges",
-      "features": ["import", "step", "interop"],
-      "mcpTools": ["import_step"]
+      "features": [
+        "import",
+        "step",
+        "interop"
+      ],
+      "mcpTools": [
+        "import_step"
+      ]
     },
     {
       "id": "2026-01-20-sketch-constraints",
@@ -127,7 +179,11 @@
       "title": "Sketch Constraints",
       "summary": "Full parametric sketching with geometric constraints and automatic solving.",
       "details": "## What's New\n\n- **12 constraint types** - Coincident, horizontal, vertical, parallel, perpendicular, tangent, distance, length, radius, angle, equal length, fixed\n- **Levenberg-Marquardt solver** with adaptive damping\n- **Visual feedback** - Green when fully constrained, yellow when under-constrained\n- **Dimension editing** - Click constraints to modify values",
-      "features": ["sketch", "constraints", "parametric"]
+      "features": [
+        "sketch",
+        "constraints",
+        "parametric"
+      ]
     },
     {
       "id": "2026-01-15-assembly-joints",
@@ -137,7 +193,11 @@
       "title": "Assembly Mode with Joints",
       "summary": "Create assemblies with instances and kinematic joints for motion simulation.",
       "details": "## What's New\n\n- **Part instances** - Reference parts multiple times with different transforms\n- **Joint types** - Revolute, prismatic, cylindrical, ball, fixed\n- **Forward kinematics** - Scrub joint values to preview motion\n- **Feature tree integration** - Hierarchical view of parts, instances, joints",
-      "features": ["assembly", "joints", "kinematics"]
+      "features": [
+        "assembly",
+        "joints",
+        "kinematics"
+      ]
     },
     {
       "id": "2026-01-10-sweeps-lofts",
@@ -147,7 +207,11 @@
       "title": "Sweep and Loft Operations",
       "summary": "Create complex geometry by sweeping sketches along paths or interpolating between profiles.",
       "details": "## What's New\n\n- **Sweep** - Extrude sketches along line or helix paths\n- **Loft** - Interpolate between multiple sketch profiles\n- **Path control** - Define custom sweep trajectories\n- **Profile alignment** - Automatic orientation along paths",
-      "features": ["sweep", "loft", "modeling"]
+      "features": [
+        "sweep",
+        "loft",
+        "modeling"
+      ]
     }
   ]
 }

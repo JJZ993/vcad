@@ -19,6 +19,7 @@ export type {
   LinearPatternPartInfo,
   CircularPatternPartInfo,
   MirrorPartInfo,
+  TextPartInfo,
   PartInfo,
   ToolMode,
   TransformMode,
@@ -42,6 +43,7 @@ export {
   isLinearPatternPart,
   isCircularPatternPart,
   isMirrorPart,
+  isTextPart,
   getSketchPlaneDirections,
   isAxisAlignedPlane,
   computePlaneFromFace,
@@ -124,5 +126,4 @@ export type {
   Changelog,
   ChangelogEntry,
   ChangelogCategory,
-  TryItAction,
 } from "./changelog/index.js";

@@ -373,21 +373,6 @@ export function App() {
     };
   }, []);
 
-  // Listen for changelog "try it" panel events
-  useEffect(() => {
-    const handlers: Record<string, () => void> = {
-      "vcad:open-cam": () => useCamStore.getState().openCamPanel(),
-      "vcad:open-print": () => useSlicerStore.getState().openPrintPanel(),
-      "vcad:open-create": () => useUiStore.getState().setToolbarTab("create"),
-      "vcad:open-build": () => useUiStore.getState().setToolbarTab("build"),
-    };
-    const listeners = Object.entries(handlers).map(([event, handler]) => {
-      window.addEventListener(event, handler);
-      return () => window.removeEventListener(event, handler);
-    });
-    return () => listeners.forEach((cleanup) => cleanup());
-  }, []);
-
   // Warn before closing with unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
