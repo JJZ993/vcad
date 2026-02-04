@@ -255,20 +255,20 @@ export function App() {
         const mesh = parseStl(buffer);
         const triangleCount = mesh.indices.length / 3;
 
-        // Create an evaluated scene with the imported mesh
-        const scene = {
-          parts: [{ mesh, material: "default" }],
-          clashes: [],
-        };
-
-        // Clear document and set imported scene
+        // Add as a proper document part (not just a scene mesh)
+        // This makes it selectable, deletable, and exportable
         useDocumentStore.getState().loadDocument({
           document: { version: "1", nodes: {}, roots: [], materials: {}, part_materials: {} },
           parts: [],
           nextNodeId: 1,
           nextPartNum: 1,
         });
-        useEngineStore.getState().setScene(scene);
+        useDocumentStore.getState().addImportedMesh(
+          mesh.positions,
+          mesh.indices,
+          undefined, // STL doesn't have normals (computed from geometry)
+          file.name,
+        );
         useUiStore.getState().clearSelection();
 
         useNotificationStore.getState().addToast(
