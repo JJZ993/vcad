@@ -11,16 +11,6 @@ export class PhysicsSim {
      * Returns an error when physics feature is not enabled.
      */
     constructor(_doc_json: string, _end_effector_ids: string[], _dt?: number | null, _substeps?: number | null);
-    numJoints(): number;
-    actionDim(): number;
-    observationDim(): number;
-    setMaxSteps(_max_steps: number): void;
-    setSeed(_seed: bigint): void;
-    reset(): Float64Array;
-    stepTorque(_actions: Float64Array): any;
-    stepPosition(_actions: Float64Array): any;
-    stepVelocity(_actions: Float64Array): any;
-    observe(): Float64Array;
 }
 
 /**
@@ -388,6 +378,13 @@ export function evaluateCompactIR(compact_ir: string): Solid;
 export function exportProjectedViewToDxf(view_json: string): Uint8Array;
 
 /**
+ * Get the kernel version string.
+ * Use this in browser console to verify the correct WASM build is loaded:
+ * `kernelWasm.get_kernel_version()` should return "2025-02-03-geom-debug"
+ */
+export function get_kernel_version(): string;
+
+/**
  * Import solids from STEP file bytes.
  *
  * Returns a JS array of mesh data for each imported body.
@@ -565,7 +562,9 @@ export interface InitOutput {
     readonly decimateMeshGpu: (a: number, b: number, c: number, d: number, e: number) => any;
     readonly evaluateCompactIR: (a: number, b: number) => [number, number, number];
     readonly exportProjectedViewToDxf: (a: number, b: number) => [number, number, number, number];
+    readonly get_kernel_version: () => [number, number];
     readonly importStepBuffer: (a: number, b: number) => [number, number, number];
+    readonly init: () => void;
     readonly initGpu: () => any;
     readonly isGpuAvailable: () => number;
     readonly op_chamfer: (a: number, b: number) => number;
@@ -623,7 +622,6 @@ export interface InitOutput {
     readonly wasmannotationlayer_new: () => number;
     readonly wasmannotationlayer_renderAll: (a: number, b: number, c: number) => any;
     readonly solid_linearPattern: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly init: () => void;
     readonly solid_revolve: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly isPhysicsAvailable: () => number;
     readonly solid_chamfer: (a: number, b: number) => number;

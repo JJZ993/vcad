@@ -10,7 +10,7 @@
 
 use std::f64::consts::PI;
 use vcad_kernel_geom::{BilinearSurface, GeometryStore, Surface, SurfaceKind};
-use vcad_kernel_math::{Point2, Point3};
+use vcad_kernel_math::{Point2, Point3, Vec3};
 use vcad_kernel_primitives::BRepSolid;
 use vcad_kernel_topo::{FaceId, Orientation, Topology};
 
@@ -165,7 +165,7 @@ fn tessellate_face(
     let reversed = face.orientation == Orientation::Reversed;
 
     match surface.surface_type() {
-        SurfaceKind::Plane => tessellate_planar_face(topo, face_id, reversed),
+        SurfaceKind::Plane => tessellate_planar_face_with_geom(topo, geom, face_id, reversed),
         SurfaceKind::Cylinder => tessellate_cylindrical_face(topo, geom, face_id, params, reversed),
         SurfaceKind::Sphere => tessellate_spherical_face(topo, geom, face_id, params, reversed),
         SurfaceKind::Cone => tessellate_conical_face(topo, geom, face_id, params, reversed),
@@ -175,10 +175,31 @@ fn tessellate_face(
     }
 }
 
-/// Tessellate a planar face by triangulating its boundary polygon.
-/// Handles faces with inner loops (holes) using constrained triangulation.
-fn tessellate_planar_face(topo: &Topology, face_id: FaceId, reversed: bool) -> TriangleMesh {
+/// Tessellate a planar face with geometry-aware winding detection.
+///
+/// This function detects when the loop vertex winding doesn't match the expected
+/// face normal (surface normal * orientation), which can happen after boolean
+/// operations that split faces. When mismatch is detected, the reversed flag
+/// is flipped to ensure correct triangle orientation.
+fn tessellate_planar_face_with_geom(
+    topo: &Topology,
+    geom: &GeometryStore,
+    face_id: FaceId,
+    reversed: bool,
+) -> TriangleMesh {
     let face = &topo.faces[face_id];
+    let surface = &geom.surfaces[face.surface_index];
+
+    // Get the surface normal direction (at parameter origin)
+    let surface_normal = surface.normal(Point2::new(0.0, 0.0));
+
+    // Effective face normal accounts for orientation
+    let expected_normal = if reversed {
+        -surface_normal
+    } else {
+        surface_normal
+    };
+
     let outer_verts: Vec<_> = topo
         .loop_half_edges(face.outer_loop)
         .map(|he| topo.vertices[topo.half_edges[he].origin].point)
@@ -188,60 +209,184 @@ fn tessellate_planar_face(topo: &Topology, face_id: FaceId, reversed: bool) -> T
         return TriangleMesh::new();
     }
 
-    // Check if face has inner loops (holes)
-    if !face.inner_loops.is_empty() {
-        return tessellate_planar_face_with_holes(topo, face_id, reversed);
+    // Compute geometric winding normal from loop vertices using Newell's method.
+    // This is robust for non-convex polygons and any orientation.
+    let mut geom_normal = Vec3::zeros();
+    for i in 0..outer_verts.len() {
+        let curr = outer_verts[i];
+        let next = outer_verts[(i + 1) % outer_verts.len()];
+        geom_normal.x += (curr.y - next.y) * (curr.z + next.z);
+        geom_normal.y += (curr.z - next.z) * (curr.x + next.x);
+        geom_normal.z += (curr.x - next.x) * (curr.y + next.y);
     }
 
+    // Check if geometric winding matches expected face normal
+    let dot = geom_normal.dot(&expected_normal);
+    let winding_matches = dot > 0.0;
+
+    // Debug: print when winding mismatch is detected
+    if !winding_matches {
+        eprintln!(
+            "[TESSELLATE] Face {:?}: winding mismatch detected (dot={:.4}), flipping reversed={} to {}",
+            face_id, dot, reversed, !reversed
+        );
+    }
+
+    // If winding doesn't match, flip the reversed flag
+    let effective_reversed = if winding_matches { reversed } else { !reversed };
+
+    // Check if face has inner loops (holes)
+    if !face.inner_loops.is_empty() {
+        return tessellate_planar_face_with_holes(topo, face_id, effective_reversed);
+    }
+
+    tessellate_planar_face_core(&outer_verts, effective_reversed)
+}
+
+/// Core tessellation logic for a planar polygon without holes.
+fn tessellate_planar_face_core(outer_verts: &[Point3], reversed: bool) -> TriangleMesh {
     // Find the best fan center vertex index.
     // For faces with curved boundaries (like quarter disks), we need to pick a vertex
     // that's at the junction of straight edges, not on the curved portion.
     // Heuristic: find a vertex where consecutive edges form a significant angle (corner vertex).
-    let fan_center = find_best_fan_center(&outer_verts);
+    // Returns None if the polygon is too concave for fan triangulation.
+    match find_best_fan_center(outer_verts) {
+        Some(fan_center) => {
+            // Fan triangulation is valid for this polygon
+            let mut mesh = TriangleMesh::new();
+            let n = outer_verts.len();
 
+            // Add all vertices (rotated so fan_center is at index 0)
+            for i in 0..n {
+                let v = &outer_verts[(fan_center + i) % n];
+                mesh.vertices.push(v.x as f32);
+                mesh.vertices.push(v.y as f32);
+                mesh.vertices.push(v.z as f32);
+            }
+
+            // Fan triangulation from vertex 0 (which is now the best fan center)
+            for i in 1..(n - 1) {
+                if reversed {
+                    mesh.indices.push(0);
+                    mesh.indices.push((i + 1) as u32);
+                    mesh.indices.push(i as u32);
+                } else {
+                    mesh.indices.push(0);
+                    mesh.indices.push(i as u32);
+                    mesh.indices.push((i + 1) as u32);
+                }
+            }
+
+            mesh
+        }
+        None => {
+            // Polygon is too concave for fan triangulation - use ear clipping
+            tessellate_concave_polygon(outer_verts, reversed)
+        }
+    }
+}
+
+/// Tessellate a concave polygon using ear clipping algorithm.
+/// This is the fallback when fan triangulation cannot produce valid triangles.
+fn tessellate_concave_polygon(verts: &[Point3], reversed: bool) -> TriangleMesh {
+    let n = verts.len();
+    if n < 3 {
+        return TriangleMesh::new();
+    }
+
+    // Build 2D projection for ear clipping.
+    // Compute the face plane from first 3 non-collinear vertices.
+    let e1 = verts[1] - verts[0];
+    let e2 = verts[2] - verts[0];
+    let mut face_normal = e1.cross(&e2);
+    for i in 3..n {
+        if face_normal.norm() > 1e-12 {
+            break;
+        }
+        let ei = verts[i] - verts[0];
+        face_normal = e1.cross(&ei);
+    }
+
+    if face_normal.norm() < 1e-12 {
+        // Degenerate polygon - all points collinear
+        return TriangleMesh::new();
+    }
+
+    let u_axis = e1.normalize();
+    let v_axis = face_normal.cross(&e1).normalize();
+    let origin = verts[0];
+
+    // Project 3D points to 2D
+    let verts_2d: Vec<(f64, f64)> = verts
+        .iter()
+        .map(|p| {
+            let d = *p - origin;
+            (d.dot(&u_axis), d.dot(&v_axis))
+        })
+        .collect();
+
+    // Build mesh with all 3D vertices
     let mut mesh = TriangleMesh::new();
-
-    // Add all vertices (rotated so fan_center is at index 0)
-    let n = outer_verts.len();
-    for i in 0..n {
-        let v = &outer_verts[(fan_center + i) % n];
+    for v in verts {
         mesh.vertices.push(v.x as f32);
         mesh.vertices.push(v.y as f32);
         mesh.vertices.push(v.z as f32);
     }
 
-    // Fan triangulation from vertex 0 (which is now the best fan center)
-    for i in 1..(n - 1) {
-        if reversed {
-            mesh.indices.push(0);
-            mesh.indices.push((i + 1) as u32);
-            mesh.indices.push(i as u32);
-        } else {
-            mesh.indices.push(0);
-            mesh.indices.push(i as u32);
-            mesh.indices.push((i + 1) as u32);
-        }
-    }
+    // Run ear clipping on the 2D projection
+    let indices: Vec<usize> = (0..n).collect();
+    ear_clip_triangulate(&verts_2d, &indices, &mut mesh.indices, reversed);
 
     mesh
 }
 
 /// Find the best vertex to use as a fan triangulation center.
-/// Returns the index of the best vertex.
+/// Returns Some(index) if a valid fan center is found, None if the polygon is too concave.
 ///
 /// For simple convex polygons, any vertex works. But for polygons with curved
 /// sections (like quarter disks), we should pick a "corner" vertex where two
 /// straight edges meet, not a vertex on the curved portion.
-fn find_best_fan_center(verts: &[Point3]) -> usize {
+///
+/// CRITICAL: For concave polygons, we must verify that fan triangulation from
+/// the chosen vertex produces correctly-wound triangles. If a vertex is in a
+/// concave region, its fan triangles may flip.
+fn find_best_fan_center(verts: &[Point3]) -> Option<usize> {
     let n = verts.len();
     if n <= 4 {
-        return 0; // Simple polygons are fine with vertex 0
+        return Some(0); // Simple polygons are fine with vertex 0
     }
 
-    // Compute the interior angle at each vertex.
-    // Prefer vertices with smaller angles (sharper corners).
-    let mut best_idx = 0;
-    let mut best_score = f64::MAX;
+    // Compute polygon winding (signed area) to know expected triangle orientation
+    let polygon_signed_area: f64 = (0..n)
+        .map(|i| {
+            let j = (i + 1) % n;
+            verts[i].x * verts[j].y - verts[j].x * verts[i].y
+        })
+        .sum();
+
+    // Helper: check if a fan center produces valid triangles
+    // A valid fan center is one where ALL fan triangles have the same winding as the polygon
+    let is_valid_fan_center = |center_idx: usize| -> bool {
+        let center = &verts[center_idx];
+        for i in 1..(n - 1) {
+            let v1_idx = (center_idx + i) % n;
+            let v2_idx = (center_idx + i + 1) % n;
+            let v1 = &verts[v1_idx];
+            let v2 = &verts[v2_idx];
+            // Compute signed area of triangle (center, v1, v2)
+            let tri_area = (v1.x - center.x) * (v2.y - center.y)
+                - (v2.x - center.x) * (v1.y - center.y);
+            // Triangle should have same sign as polygon (both positive or both negative)
+            // Use a small tolerance to avoid issues with degenerate triangles
+            if tri_area.abs() > 1e-10 && (tri_area > 0.0) != (polygon_signed_area > 0.0) {
+                return false; // This fan center produces a flipped triangle
+            }
+        }
+        true
+    };
+
+    // First, find candidates with good geometry (sharp angles, long edges)
+    let mut candidates: Vec<(usize, f64)> = Vec::new();
 
     for i in 0..n {
         let prev = &verts[(i + n - 1) % n];
@@ -271,13 +416,20 @@ fn find_best_fan_center(verts: &[Point3]) -> usize {
         // Sharp angle = small angle value, so we want to minimize (angle * edge_factor).
         let score = angle * edge_factor;
 
-        if score < best_score {
-            best_score = score;
-            best_idx = i;
-        }
+        candidates.push((i, score));
     }
 
-    best_idx
+    // Sort candidates by score (lower is better)
+    candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Find the first candidate that produces valid triangles
+    if let Some(&(idx, _)) = candidates.iter().find(|(idx, _)| is_valid_fan_center(*idx)) {
+        return Some(idx);
+    }
+
+    // If no candidate is valid, try all vertices as a fallback
+    // No valid fan center exists (polygon is too concave for fan triangulation)
+    (0..n).find(|&i| is_valid_fan_center(i))
 }
 
 /// Tessellate a bilinear surface face using the surface's normal method.
@@ -1008,12 +1160,14 @@ fn tessellate_cylindrical_face(
     let n_circ = params.circle_segments.max(3) as usize;
     let mut n_height = params.height_segments.max(1) as usize;
 
+
     // Determine the v (height) parameter range by projecting seam vertices
     // onto the cylinder axis. This works correctly after any transform.
     let verts: Vec<_> = topo
         .loop_half_edges(face.outer_loop)
         .map(|he| topo.vertices[topo.half_edges[he].origin].point)
         .collect();
+
 
     let mut radius = None;
     let mut u_min = 0.0;
@@ -1039,8 +1193,19 @@ fn tessellate_cylindrical_face(
             vmax = vmax.max(v);
 
             // Compute angle for this vertex
-            let u = d.dot(&y_dir).atan2(d.dot(ref_dir));
-            let u_normalized = if u < 0.0 { u + 2.0 * PI } else { u };
+            let dot_y = d.dot(&y_dir);
+            let dot_ref = d.dot(ref_dir);
+            let u = dot_y.atan2(dot_ref);
+            // Normalize to [0, 2π). Use a small epsilon to handle -0.0 and tiny negative values
+            // that should be treated as 0. Also snap values very close to 2π back to 0.
+            let u_normalized = if u < -1e-12 {
+                u + 2.0 * PI
+            } else if u < 1e-12 || (u - 2.0 * PI).abs() < 1e-12 {
+                0.0 // Snap -0.0, tiny negatives, and ~2π to exactly 0
+            } else {
+                u
+            };
+
             angles.push(u_normalized);
         }
 
@@ -1053,6 +1218,7 @@ fn tessellate_cylindrical_face(
                 unique_angles.push(a);
             }
         }
+
 
         if unique_angles.len() == 1 {
             // Full cylinder (all vertices at same seam angle)
@@ -1141,6 +1307,7 @@ fn tessellate_cylindrical_face(
             n_height = n_height.max(target.ceil() as usize).max(1);
         }
     }
+
     let mut mesh = TriangleMesh::new();
 
     // Generate grid of vertices using surface.evaluate
@@ -2032,7 +2199,8 @@ pub fn tessellate(brep: &BRepSolid, segments: u32) -> TriangleMesh {
 
         match surface.surface_type() {
             SurfaceKind::Plane => {
-                let face_mesh = tessellate_planar_face(&brep.topology, face_id, reversed);
+                // Use winding-aware tessellation to handle faces with mismatched loop winding
+                let face_mesh = tessellate_planar_face_with_geom(&brep.topology, &brep.geometry, face_id, reversed);
                 mesh.merge(&face_mesh);
             }
             SurfaceKind::Cylinder => {
@@ -2071,7 +2239,8 @@ pub fn tessellate(brep: &BRepSolid, segments: u32) -> TriangleMesh {
                 mesh.merge(&face_mesh);
             }
             _ => {
-                let face_mesh = tessellate_planar_face(&brep.topology, face_id, reversed);
+                // Fallback for tessellate(): use winding-aware tessellation
+                let face_mesh = tessellate_planar_face_with_geom(&brep.topology, &brep.geometry, face_id, reversed);
                 mesh.merge(&face_mesh);
             }
         }
@@ -2088,6 +2257,9 @@ pub fn tessellate_brep(brep: &BRepSolid, segments: u32) -> TriangleMesh {
     let params = TessellationParams::from_segments(segments);
     let solid = &brep.topology.solids[brep.solid_id];
     let shell = &brep.topology.shells[solid.outer_shell];
+
+    // DEBUG: print which shell we're tessellating
+    eprintln!("TESSELLATE_BREP: shell has {} faces: {:?}", shell.faces.len(), shell.faces);
 
     let mut mesh = TriangleMesh::new();
 
@@ -2130,7 +2302,8 @@ pub fn tessellate_brep(brep: &BRepSolid, segments: u32) -> TriangleMesh {
                         mesh.merge(&disk);
                     }
                 } else {
-                    let face_mesh = tessellate_planar_face(&brep.topology, face_id, reversed);
+                    // Use winding-aware tessellation to handle faces with mismatched loop winding
+                    let face_mesh = tessellate_planar_face_with_geom(&brep.topology, &brep.geometry, face_id, reversed);
                     mesh.merge(&face_mesh);
                 }
             }
@@ -2165,7 +2338,8 @@ pub fn tessellate_brep(brep: &BRepSolid, segments: u32) -> TriangleMesh {
                 mesh.merge(&face_mesh);
             }
             _ => {
-                let face_mesh = tessellate_planar_face(&brep.topology, face_id, reversed);
+                // Fallback for tessellate_brep(): use winding-aware tessellation
+                let face_mesh = tessellate_planar_face_with_geom(&brep.topology, &brep.geometry, face_id, reversed);
                 mesh.merge(&face_mesh);
             }
         }

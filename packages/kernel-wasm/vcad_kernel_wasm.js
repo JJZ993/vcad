@@ -73,278 +73,6 @@ export class RayTracer {
 if (Symbol.dispose) RayTracer.prototype[Symbol.dispose] = RayTracer.prototype.free;
 
 /**
- * Slice result for WASM.
- */
-export class SliceResult {
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(SliceResult.prototype);
-        obj.__wbg_ptr = ptr;
-        SliceResultFinalization.register(obj, obj.__wbg_ptr, obj);
-        return obj;
-    }
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        SliceResultFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_sliceresult_free(ptr, 0);
-    }
-    /**
-     * Get filament weight in grams.
-     * @returns {number}
-     */
-    get filamentGrams() {
-        const ret = wasm.sliceresult_filamentGrams(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Get filament usage in mm.
-     * @returns {number}
-     */
-    get filamentMm() {
-        const ret = wasm.sliceresult_filamentMm(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Get layer data for preview.
-     * @param {number} layer_index
-     * @returns {any}
-     */
-    getLayerPreview(layer_index) {
-        const ret = wasm.sliceresult_getLayerPreview(this.__wbg_ptr, layer_index);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
-    /**
-     * Get number of layers.
-     * @returns {number}
-     */
-    get layerCount() {
-        const ret = wasm.sliceresult_layerCount(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * Get estimated print time in seconds.
-     * @returns {number}
-     */
-    get printTimeSeconds() {
-        const ret = wasm.sliceresult_printTimeSeconds(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Get stats as JSON.
-     * @returns {string}
-     */
-    statsJson() {
-        let deferred2_0;
-        let deferred2_1;
-        try {
-            const ret = wasm.sliceresult_statsJson(this.__wbg_ptr);
-            var ptr1 = ret[0];
-            var len1 = ret[1];
-            if (ret[3]) {
-                ptr1 = 0; len1 = 0;
-                throw takeFromExternrefTable0(ret[2]);
-            }
-            deferred2_0 = ptr1;
-            deferred2_1 = len1;
-            return getStringFromWasm0(ptr1, len1);
-        } finally {
-            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
-        }
-    }
-}
-if (Symbol.dispose) SliceResult.prototype[Symbol.dispose] = SliceResult.prototype.free;
-
-/**
- * Slicer settings for WASM.
- */
-export class SlicerSettings {
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(SlicerSettings.prototype);
-        obj.__wbg_ptr = ptr;
-        SlicerSettingsFinalization.register(obj, obj.__wbg_ptr, obj);
-        return obj;
-    }
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        SlicerSettingsFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_slicersettings_free(ptr, 0);
-    }
-    /**
-     * First layer height (mm).
-     * @returns {number}
-     */
-    get first_layer_height() {
-        const ret = wasm.__wbg_get_slicersettings_first_layer_height(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Infill density (0-1).
-     * @returns {number}
-     */
-    get infill_density() {
-        const ret = wasm.__wbg_get_slicersettings_infill_density(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Infill pattern (0=Grid, 1=Lines, 2=Triangles, 3=Honeycomb, 4=Gyroid).
-     * @returns {number}
-     */
-    get infill_pattern() {
-        const ret = wasm.__wbg_get_slicersettings_infill_pattern(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * Layer height (mm).
-     * @returns {number}
-     */
-    get layer_height() {
-        const ret = wasm.__wbg_get_slicersettings_layer_height(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Line width (mm).
-     * @returns {number}
-     */
-    get line_width() {
-        const ret = wasm.__wbg_get_slicersettings_line_width(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Nozzle diameter (mm).
-     * @returns {number}
-     */
-    get nozzle_diameter() {
-        const ret = wasm.__wbg_get_slicersettings_nozzle_diameter(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Support angle threshold.
-     * @returns {number}
-     */
-    get support_angle() {
-        const ret = wasm.__wbg_get_slicersettings_support_angle(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Enable support.
-     * @returns {boolean}
-     */
-    get support_enabled() {
-        const ret = wasm.__wbg_get_slicersettings_support_enabled(this.__wbg_ptr);
-        return ret !== 0;
-    }
-    /**
-     * Wall count.
-     * @returns {number}
-     */
-    get wall_count() {
-        const ret = wasm.__wbg_get_slicersettings_wall_count(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * First layer height (mm).
-     * @param {number} arg0
-     */
-    set first_layer_height(arg0) {
-        wasm.__wbg_set_slicersettings_first_layer_height(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Infill density (0-1).
-     * @param {number} arg0
-     */
-    set infill_density(arg0) {
-        wasm.__wbg_set_slicersettings_infill_density(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Infill pattern (0=Grid, 1=Lines, 2=Triangles, 3=Honeycomb, 4=Gyroid).
-     * @param {number} arg0
-     */
-    set infill_pattern(arg0) {
-        wasm.__wbg_set_slicersettings_infill_pattern(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Layer height (mm).
-     * @param {number} arg0
-     */
-    set layer_height(arg0) {
-        wasm.__wbg_set_slicersettings_layer_height(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Line width (mm).
-     * @param {number} arg0
-     */
-    set line_width(arg0) {
-        wasm.__wbg_set_slicersettings_line_width(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Nozzle diameter (mm).
-     * @param {number} arg0
-     */
-    set nozzle_diameter(arg0) {
-        wasm.__wbg_set_slicersettings_nozzle_diameter(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Support angle threshold.
-     * @param {number} arg0
-     */
-    set support_angle(arg0) {
-        wasm.__wbg_set_slicersettings_support_angle(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Enable support.
-     * @param {boolean} arg0
-     */
-    set support_enabled(arg0) {
-        wasm.__wbg_set_slicersettings_support_enabled(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Wall count.
-     * @param {number} arg0
-     */
-    set wall_count(arg0) {
-        wasm.__wbg_set_slicersettings_wall_count(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Create from JSON.
-     * @param {string} json
-     * @returns {SlicerSettings}
-     */
-    static fromJson(json) {
-        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.slicersettings_fromJson(ptr0, len0);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return SlicerSettings.__wrap(ret[0]);
-    }
-    /**
-     * Create default settings.
-     */
-    constructor() {
-        const ret = wasm.slicersettings_new();
-        this.__wbg_ptr = ret >>> 0;
-        SlicerSettingsFinalization.register(this, this.__wbg_ptr, this);
-        return this;
-    }
-}
-if (Symbol.dispose) SlicerSettings.prototype[Symbol.dispose] = SlicerSettings.prototype.free;
-
-/**
  * A 3D solid geometry object.
  *
  * Create solids from primitives, combine with boolean operations,
@@ -720,10 +448,11 @@ export class Solid {
      * @param {number | null} [scale_end]
      * @param {number | null} [path_segments]
      * @param {number | null} [arc_segments]
+     * @param {number | null} [orientation]
      * @returns {Solid}
      */
-    static sweepHelix(profile_js, radius, pitch, height, turns, twist_angle, scale_start, scale_end, path_segments, arc_segments) {
-        const ret = wasm.solid_sweepHelix(profile_js, radius, pitch, height, turns, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end, isLikeNone(path_segments) ? 0x100000001 : (path_segments) >>> 0, isLikeNone(arc_segments) ? 0x100000001 : (arc_segments) >>> 0);
+    static sweepHelix(profile_js, radius, pitch, height, turns, twist_angle, scale_start, scale_end, path_segments, arc_segments, orientation) {
+        const ret = wasm.solid_sweepHelix(profile_js, radius, pitch, height, turns, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end, isLikeNone(path_segments) ? 0x100000001 : (path_segments) >>> 0, isLikeNone(arc_segments) ? 0x100000001 : (arc_segments) >>> 0, !isLikeNone(orientation), isLikeNone(orientation) ? 0 : orientation);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -739,14 +468,15 @@ export class Solid {
      * @param {number | null} [twist_angle]
      * @param {number | null} [scale_start]
      * @param {number | null} [scale_end]
+     * @param {number | null} [orientation]
      * @returns {Solid}
      */
-    static sweepLine(profile_js, start, end, twist_angle, scale_start, scale_end) {
+    static sweepLine(profile_js, start, end, twist_angle, scale_start, scale_end, orientation) {
         const ptr0 = passArrayF64ToWasm0(start, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayF64ToWasm0(end, wasm.__wbindgen_malloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.solid_sweepLine(profile_js, ptr0, len0, ptr1, len1, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end);
+        const ret = wasm.solid_sweepLine(profile_js, ptr0, len0, ptr1, len1, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end, !isLikeNone(orientation), isLikeNone(orientation) ? 0 : orientation);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -976,426 +706,6 @@ export class WasmAnnotationLayer {
 if (Symbol.dispose) WasmAnnotationLayer.prototype[Symbol.dispose] = WasmAnnotationLayer.prototype.free;
 
 /**
- * CAM settings for WASM.
- */
-export class WasmCamSettings {
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(WasmCamSettings.prototype);
-        obj.__wbg_ptr = ptr;
-        WasmCamSettingsFinalization.register(obj, obj.__wbg_ptr, obj);
-        return obj;
-    }
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        WasmCamSettingsFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_wasmcamsettings_free(ptr, 0);
-    }
-    /**
-     * Feed rate (mm/min).
-     * @returns {number}
-     */
-    get feed_rate() {
-        const ret = wasm.__wbg_get_wasmcamsettings_feed_rate(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Plunge rate (mm/min).
-     * @returns {number}
-     */
-    get plunge_rate() {
-        const ret = wasm.__wbg_get_wasmcamsettings_plunge_rate(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Retract Z height (mm).
-     * @returns {number}
-     */
-    get retract_z() {
-        const ret = wasm.__wbg_get_wasmcamsettings_retract_z(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Safe Z height (mm).
-     * @returns {number}
-     */
-    get safe_z() {
-        const ret = wasm.__wbg_get_wasmcamsettings_safe_z(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Spindle RPM.
-     * @returns {number}
-     */
-    get spindle_rpm() {
-        const ret = wasm.__wbg_get_wasmcamsettings_spindle_rpm(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Stepdown distance (mm).
-     * @returns {number}
-     */
-    get stepdown() {
-        const ret = wasm.__wbg_get_wasmcamsettings_stepdown(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Stepover distance (mm).
-     * @returns {number}
-     */
-    get stepover() {
-        const ret = wasm.__wbg_get_wasmcamsettings_stepover(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Feed rate (mm/min).
-     * @param {number} arg0
-     */
-    set feed_rate(arg0) {
-        wasm.__wbg_set_wasmcamsettings_feed_rate(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Plunge rate (mm/min).
-     * @param {number} arg0
-     */
-    set plunge_rate(arg0) {
-        wasm.__wbg_set_wasmcamsettings_plunge_rate(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Retract Z height (mm).
-     * @param {number} arg0
-     */
-    set retract_z(arg0) {
-        wasm.__wbg_set_wasmcamsettings_retract_z(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Safe Z height (mm).
-     * @param {number} arg0
-     */
-    set safe_z(arg0) {
-        wasm.__wbg_set_wasmcamsettings_safe_z(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Spindle RPM.
-     * @param {number} arg0
-     */
-    set spindle_rpm(arg0) {
-        wasm.__wbg_set_wasmcamsettings_spindle_rpm(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Stepdown distance (mm).
-     * @param {number} arg0
-     */
-    set stepdown(arg0) {
-        wasm.__wbg_set_wasmcamsettings_stepdown(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Stepover distance (mm).
-     * @param {number} arg0
-     */
-    set stepover(arg0) {
-        wasm.__wbg_set_wasmcamsettings_stepover(this.__wbg_ptr, arg0);
-    }
-    /**
-     * Create from JSON.
-     * @param {string} json
-     * @returns {WasmCamSettings}
-     */
-    static fromJson(json) {
-        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmcamsettings_fromJson(ptr0, len0);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return WasmCamSettings.__wrap(ret[0]);
-    }
-    /**
-     * Create default CAM settings.
-     */
-    constructor() {
-        const ret = wasm.wasmcamsettings_new();
-        this.__wbg_ptr = ret >>> 0;
-        WasmCamSettingsFinalization.register(this, this.__wbg_ptr, this);
-        return this;
-    }
-}
-if (Symbol.dispose) WasmCamSettings.prototype[Symbol.dispose] = WasmCamSettings.prototype.free;
-
-/**
- * Export toolpath to GRBL G-code.
- *
- * # Arguments
- * * `toolpath_json` - Toolpath as JSON string
- * * `job_name` - Name for the G-code file header
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * G-code as string.
- * @param {string} toolpath_json
- * @param {string} job_name
- * @param {string} tool_json
- * @param {WasmCamSettings} settings
- * @returns {string}
- */
-export function camExportGcode(toolpath_json, job_name, tool_json, settings) {
-    let deferred5_0;
-    let deferred5_1;
-    try {
-        const ptr0 = passStringToWasm0(toolpath_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(job_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(tool_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        _assertClass(settings, WasmCamSettings);
-        const ret = wasm.camExportGcode(ptr0, len0, ptr1, len1, ptr2, len2, settings.__wbg_ptr);
-        var ptr4 = ret[0];
-        var len4 = ret[1];
-        if (ret[3]) {
-            ptr4 = 0; len4 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred5_0 = ptr4;
-        deferred5_1 = len4;
-        return getStringFromWasm0(ptr4, len4);
-    } finally {
-        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
-    }
-}
-
-/**
- * Generate a circular pocket toolpath.
- *
- * # Arguments
- * * `cx`, `cy` - Center point
- * * `radius` - Pocket radius
- * * `depth` - Cut depth
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- * @param {number} cx
- * @param {number} cy
- * @param {number} radius
- * @param {number} depth
- * @param {string} tool_json
- * @param {WasmCamSettings} settings
- * @returns {string}
- */
-export function camGenerateCircularPocket(cx, cy, radius, depth, tool_json, settings) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(tool_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        _assertClass(settings, WasmCamSettings);
-        const ret = wasm.camGenerateCircularPocket(cx, cy, radius, depth, ptr0, len0, settings.__wbg_ptr);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
-}
-
-/**
- * Generate a rectangular contour toolpath.
- *
- * # Arguments
- * * `x`, `y` - Top-left corner
- * * `width`, `height` - Rectangle dimensions
- * * `depth` - Cut depth
- * * `offset` - Offset from contour (positive = outside)
- * * `tab_count` - Number of tabs (0 for none)
- * * `tab_width` - Tab width in mm
- * * `tab_height` - Tab height in mm
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- * @param {number} x
- * @param {number} y
- * @param {number} width
- * @param {number} height
- * @param {number} depth
- * @param {number} offset
- * @param {number} tab_count
- * @param {number} tab_width
- * @param {number} tab_height
- * @param {string} tool_json
- * @param {WasmCamSettings} settings
- * @returns {string}
- */
-export function camGenerateContour(x, y, width, height, depth, offset, tab_count, tab_width, tab_height, tool_json, settings) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(tool_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        _assertClass(settings, WasmCamSettings);
-        const ret = wasm.camGenerateContour(x, y, width, height, depth, offset, tab_count, tab_width, tab_height, ptr0, len0, settings.__wbg_ptr);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
-}
-
-/**
- * Generate a face toolpath.
- *
- * # Arguments
- * * `min_x`, `min_y`, `max_x`, `max_y` - Bounds of the area to face
- * * `depth` - Cut depth (positive value)
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- * @param {number} min_x
- * @param {number} min_y
- * @param {number} max_x
- * @param {number} max_y
- * @param {number} depth
- * @param {string} tool_json
- * @param {WasmCamSettings} settings
- * @returns {string}
- */
-export function camGenerateFace(min_x, min_y, max_x, max_y, depth, tool_json, settings) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(tool_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        _assertClass(settings, WasmCamSettings);
-        const ret = wasm.camGenerateFace(min_x, min_y, max_x, max_y, depth, ptr0, len0, settings.__wbg_ptr);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
-}
-
-/**
- * Generate a rectangular pocket toolpath.
- *
- * # Arguments
- * * `x`, `y` - Top-left corner
- * * `width`, `height` - Pocket dimensions
- * * `depth` - Cut depth
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- * @param {number} x
- * @param {number} y
- * @param {number} width
- * @param {number} height
- * @param {number} depth
- * @param {string} tool_json
- * @param {WasmCamSettings} settings
- * @returns {string}
- */
-export function camGeneratePocket(x, y, width, height, depth, tool_json, settings) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(tool_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        _assertClass(settings, WasmCamSettings);
-        const ret = wasm.camGeneratePocket(x, y, width, height, depth, ptr0, len0, settings.__wbg_ptr);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
-}
-
-/**
- * Get default tool library.
- *
- * # Returns
- * Tool library as JSON array.
- * @returns {string}
- */
-export function camGetDefaultTools() {
-    let deferred2_0;
-    let deferred2_1;
-    try {
-        const ret = wasm.camGetDefaultTools();
-        var ptr1 = ret[0];
-        var len1 = ret[1];
-        if (ret[3]) {
-            ptr1 = 0; len1 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred2_0 = ptr1;
-        deferred2_1 = len1;
-        return getStringFromWasm0(ptr1, len1);
-    } finally {
-        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
-    }
-}
-
-/**
- * Get toolpath statistics.
- *
- * # Arguments
- * * `toolpath_json` - Toolpath as JSON string
- *
- * # Returns
- * JSON object with statistics: { cutting_length, estimated_time, bounding_box }
- * @param {string} toolpath_json
- * @returns {any}
- */
-export function camToolpathStats(toolpath_json) {
-    const ptr0 = passStringToWasm0(toolpath_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.camToolpathStats(ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-/**
  * Compute creased normals (CPU fallback when GPU feature is disabled).
  * @param {Float32Array} _positions
  * @param {Uint32Array} _indices
@@ -1515,45 +825,22 @@ export function exportProjectedViewToDxf(view_json) {
 }
 
 /**
- * Generate G-code from slice result.
- * @param {SliceResult} result
- * @param {string} printer_profile
- * @param {number} print_temp
- * @param {number} bed_temp
+ * Get the kernel version string.
+ * Use this in browser console to verify the correct WASM build is loaded:
+ * `kernelWasm.get_kernel_version()` should return "2025-02-03-geom-debug"
  * @returns {string}
  */
-export function generateGcode(result, printer_profile, print_temp, bed_temp) {
-    let deferred3_0;
-    let deferred3_1;
+export function get_kernel_version() {
+    let deferred1_0;
+    let deferred1_1;
     try {
-        _assertClass(result, SliceResult);
-        const ptr0 = passStringToWasm0(printer_profile, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.generateGcode(result.__wbg_ptr, ptr0, len0, print_temp, bed_temp);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
+        const ret = wasm.get_kernel_version();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
-}
-
-/**
- * Get available printer profiles.
- * @returns {any}
- */
-export function getSlicerPrinterProfiles() {
-    const ret = wasm.getSlicerPrinterProfiles();
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
 }
 
 /**
@@ -1597,15 +884,6 @@ export function initGpu() {
 }
 
 /**
- * Check if CAM is available.
- * @returns {boolean}
- */
-export function isCamAvailable() {
-    const ret = wasm.isCamAvailable();
-    return ret !== 0;
-}
-
-/**
  * Check if GPU processing is available.
  * @returns {boolean}
  */
@@ -1620,15 +898,6 @@ export function isGpuAvailable() {
  */
 export function isPhysicsAvailable() {
     const ret = wasm.isGpuAvailable();
-    return ret !== 0;
-}
-
-/**
- * Check if slicer is available.
- * @returns {boolean}
- */
-export function isSlicerAvailable() {
-    const ret = wasm.isSlicerAvailable();
     return ret !== 0;
 }
 
@@ -1765,10 +1034,11 @@ export function op_shell(solid, thickness) {
  * @param {number | null} [scale_end]
  * @param {number | null} [path_segments]
  * @param {number | null} [arc_segments]
+ * @param {number | null} [orientation]
  * @returns {Solid}
  */
-export function op_sweep_helix(profile_js, radius, pitch, height, turns, twist_angle, scale_start, scale_end, path_segments, arc_segments) {
-    const ret = wasm.op_sweep_helix(profile_js, radius, pitch, height, turns, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end, isLikeNone(path_segments) ? 0x100000001 : (path_segments) >>> 0, isLikeNone(arc_segments) ? 0x100000001 : (arc_segments) >>> 0);
+export function op_sweep_helix(profile_js, radius, pitch, height, turns, twist_angle, scale_start, scale_end, path_segments, arc_segments, orientation) {
+    const ret = wasm.op_sweep_helix(profile_js, radius, pitch, height, turns, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end, isLikeNone(path_segments) ? 0x100000001 : (path_segments) >>> 0, isLikeNone(arc_segments) ? 0x100000001 : (arc_segments) >>> 0, !isLikeNone(orientation), isLikeNone(orientation) ? 0 : orientation);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -1785,14 +1055,15 @@ export function op_sweep_helix(profile_js, radius, pitch, height, turns, twist_a
  * @param {number | null} [twist_angle]
  * @param {number | null} [scale_start]
  * @param {number | null} [scale_end]
+ * @param {number | null} [orientation]
  * @returns {Solid}
  */
-export function op_sweep_line(profile_js, start, end, twist_angle, scale_start, scale_end) {
+export function op_sweep_line(profile_js, start, end, twist_angle, scale_start, scale_end, orientation) {
     const ptr0 = passArrayF64ToWasm0(start, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArrayF64ToWasm0(end, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.op_sweep_line(profile_js, ptr0, len0, ptr1, len1, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end);
+    const ret = wasm.op_sweep_line(profile_js, ptr0, len0, ptr1, len1, !isLikeNone(twist_angle), isLikeNone(twist_angle) ? 0 : twist_angle, !isLikeNone(scale_start), isLikeNone(scale_start) ? 0 : scale_start, !isLikeNone(scale_end), isLikeNone(scale_end) ? 0 : scale_end, !isLikeNone(orientation), isLikeNone(orientation) ? 0 : orientation);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -1900,43 +1171,6 @@ export function sectionMesh(mesh_js, plane_json, hatch_json) {
     var len1 = WASM_VECTOR_LEN;
     const ret = wasm.sectionMesh(mesh_js, ptr0, len0, ptr1, len1);
     return ret;
-}
-
-/**
- * Slice a mesh from vertices and indices.
- * @param {Float32Array} vertices
- * @param {Uint32Array} indices
- * @param {SlicerSettings} settings
- * @returns {SliceResult}
- */
-export function sliceMesh(vertices, indices, settings) {
-    const ptr0 = passArrayF32ToWasm0(vertices, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray32ToWasm0(indices, wasm.__wbindgen_malloc);
-    const len1 = WASM_VECTOR_LEN;
-    _assertClass(settings, SlicerSettings);
-    const ret = wasm.sliceMesh(ptr0, len0, ptr1, len1, settings.__wbg_ptr);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return SliceResult.__wrap(ret[0]);
-}
-
-/**
- * Slice a solid.
- * @param {Solid} solid
- * @param {SlicerSettings} settings
- * @param {number | null} [segments]
- * @returns {SliceResult}
- */
-export function sliceSolid(solid, settings, segments) {
-    _assertClass(solid, Solid);
-    _assertClass(settings, SlicerSettings);
-    const ret = wasm.sliceSolid(solid.__wbg_ptr, settings.__wbg_ptr, isLikeNone(segments) ? 0x100000001 : (segments) >>> 0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return SliceResult.__wrap(ret[0]);
 }
 
 /**
@@ -2255,7 +1489,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 209, function: Function { arguments: [Externref], shim_idx: 210, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 174, function: Function { arguments: [Externref], shim_idx: 175, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__ha1c57de1520edab9, wasm_bindgen__convert__closures_____invoke__h4889c924fd29fd81);
             return ret;
         },
@@ -2309,21 +1543,12 @@ const PhysicsSimFinalization = (typeof FinalizationRegistry === 'undefined')
 const RayTracerFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_raytracer_free(ptr >>> 0, 1));
-const SliceResultFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_sliceresult_free(ptr >>> 0, 1));
-const SlicerSettingsFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_slicersettings_free(ptr >>> 0, 1));
 const SolidFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_solid_free(ptr >>> 0, 1));
 const WasmAnnotationLayerFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmannotationlayer_free(ptr >>> 0, 1));
-const WasmCamSettingsFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_wasmcamsettings_free(ptr >>> 0, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();

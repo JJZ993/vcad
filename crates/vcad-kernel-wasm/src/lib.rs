@@ -8,13 +8,24 @@ use vcad_kernel::vcad_kernel_sketch::{SketchProfile, SketchSegment};
 use wasm_bindgen::prelude::*;
 use wasmosis::module;
 
+/// Version string for verifying correct WASM build is loaded in browser.
+const KERNEL_VERSION: &str = "2025-02-03-geom-debug";
+
+/// Get the kernel version string.
+/// Use this in browser console to verify the correct WASM build is loaded:
+/// `kernelWasm.get_kernel_version()` should return "2025-02-03-geom-debug"
+#[wasm_bindgen]
+pub fn get_kernel_version() -> String {
+    KERNEL_VERSION.to_string()
+}
+
 /// Initialize the WASM module (sets up panic hook for better error messages).
 #[wasm_bindgen(start)]
 pub fn init() {
     #[cfg(feature = "console_error_panic_hook")]
     console_error_panic_hook::set_once();
     // Version marker to verify correct WASM is loaded
-    web_sys::console::log_1(&"[WASM] vcad-kernel-wasm v2 loaded (boolean fix included)".into());
+    web_sys::console::log_1(&format!("[WASM] vcad-kernel-wasm {} loaded", KERNEL_VERSION).into());
 }
 
 /// Triangle mesh output for rendering.
