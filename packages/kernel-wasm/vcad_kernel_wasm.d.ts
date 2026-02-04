@@ -11,25 +11,15 @@ export class PhysicsSim {
      * Returns an error when physics feature is not enabled.
      */
     constructor(_doc_json: string, _end_effector_ids: string[], _dt?: number | null, _substeps?: number | null);
-    /** Number of joints in the simulation */
     numJoints(): number;
-    /** Dimension of action space */
     actionDim(): number;
-    /** Dimension of observation space */
     observationDim(): number;
-    /** Set max steps before episode terminates */
     setMaxSteps(_max_steps: number): void;
-    /** Set random seed */
-    setSeed(_seed: number): void;
-    /** Reset simulation to initial state */
+    setSeed(_seed: bigint): void;
     reset(): Float64Array;
-    /** Step with torque actions */
     stepTorque(_actions: Float64Array): any;
-    /** Step with position target actions */
     stepPosition(_actions: Float64Array): any;
-    /** Step with velocity target actions */
     stepVelocity(_actions: Float64Array): any;
-    /** Get current observation without stepping */
     observe(): Float64Array;
 }
 
