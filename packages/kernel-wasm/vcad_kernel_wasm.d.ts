@@ -93,6 +93,13 @@ export class Solid {
      */
     static extrude(profile_js: any, direction: Float64Array): Solid;
     /**
+     * Create a solid by extruding a 2D sketch profile with twist and/or scale.
+     *
+     * Takes a sketch profile, extrusion direction, twist angle (radians),
+     * and scale factor at the end (1.0 = no taper).
+     */
+    static extrudeWithOptions(profile_js: any, direction: Float64Array, twist_angle: number, scale_end: number): Solid;
+    /**
      * Fillet all edges of the solid with the given radius.
      */
     fillet(radius: number): Solid;

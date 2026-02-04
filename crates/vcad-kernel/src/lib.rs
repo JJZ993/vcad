@@ -389,6 +389,36 @@ impl Solid {
         })
     }
 
+    /// Create a solid by extruding a sketch profile with twist and/or scale.
+    ///
+    /// # Arguments
+    ///
+    /// * `profile` - The closed 2D profile to extrude
+    /// * `direction` - The extrusion direction vector (magnitude = distance)
+    /// * `twist_angle` - Twist angle in radians (rotation around extrusion axis)
+    /// * `scale_end` - Scale factor at the end of extrusion (1.0 = no taper)
+    ///
+    /// # Returns
+    ///
+    /// A B-rep solid with bilinear lateral faces when twisted.
+    pub fn extrude_with_options(
+        profile: vcad_kernel_sketch::SketchProfile,
+        direction: Vec3,
+        twist_angle: f64,
+        scale_end: f64,
+    ) -> Result<Self, vcad_kernel_sketch::SketchError> {
+        let options = vcad_kernel_sketch::ExtrudeOptions {
+            twist_angle,
+            scale_end,
+            ..Default::default()
+        };
+        let brep = vcad_kernel_sketch::extrude_with_options(&profile, direction, options)?;
+        Ok(Solid {
+            repr: SolidRepr::BRep(Box::new(brep)),
+            segments: 32,
+        })
+    }
+
     /// Create a solid by revolving a sketch profile around an axis.
     ///
     /// # Arguments

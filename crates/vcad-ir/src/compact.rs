@@ -2078,6 +2078,8 @@ where
                     parse_f64(parts[3], line_num)?,
                     parse_f64(parts[4], line_num)?,
                 ),
+                twist_angle: None,
+                scale_end: None,
             })
         }
 
@@ -2400,11 +2402,12 @@ fn format_op(
             Ok(lines.join("\n"))
         }
 
-        CsgOp::Extrude { sketch, direction } => {
+        CsgOp::Extrude { sketch, direction, .. } => {
             let sk = id_map.get(sketch).ok_or_else(|| CompactParseError {
                 line: 0,
                 message: format!("unknown node {}", sketch),
             })?;
+            // Note: twist_angle and scale_end are not serialized to compact format
             Ok(format!(
                 "E {} {} {} {}{}",
                 sk, direction.x, direction.y, direction.z, name_suffix
@@ -2829,7 +2832,7 @@ mod tests {
 
         // Extrude is node 1 (sequential)
         match &doc.nodes[&1].op {
-            CsgOp::Extrude { sketch, direction } => {
+            CsgOp::Extrude { sketch, direction, .. } => {
                 assert_eq!(*sketch, 0);
                 assert_eq!(*direction, Vec3::new(0.0, 0.0, 20.0));
             }

@@ -308,6 +308,12 @@ pub enum CsgOp {
         sketch: NodeId,
         /// Extrusion direction and distance (length of vector = extrusion depth).
         direction: Vec3,
+        /// Optional twist angle in radians (rotation around extrusion axis).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        twist_angle: Option<f64>,
+        /// Optional scale factor at end of extrusion (1.0 = no taper).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale_end: Option<f64>,
     },
     /// Revolve a sketch profile around an axis.
     Revolve {
@@ -931,6 +937,8 @@ mod tests {
                 op: CsgOp::Extrude {
                     sketch: sketch_id,
                     direction: Vec3::new(0.0, 0.0, 20.0),
+                    twist_angle: None,
+                    scale_end: None,
                 },
             },
         );
@@ -948,7 +956,7 @@ mod tests {
             _ => panic!("expected Sketch2D"),
         }
         match &restored.nodes[&extrude_id].op {
-            CsgOp::Extrude { sketch, direction } => {
+            CsgOp::Extrude { sketch, direction, .. } => {
                 assert_eq!(*sketch, sketch_id);
                 assert_eq!(direction.z, 20.0);
             }

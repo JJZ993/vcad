@@ -238,6 +238,10 @@ export interface ExtrudeOp {
   type: "Extrude";
   sketch: NodeId;
   direction: Vec3;
+  /** Optional twist angle in radians (rotation around extrusion axis). */
+  twist_angle?: number;
+  /** Optional scale factor at end of extrusion (1.0 = no taper). */
+  scale_end?: number;
 }
 
 export interface RevolveOp {

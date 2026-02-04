@@ -29,7 +29,7 @@ mod extrude;
 mod profile;
 mod revolve;
 
-pub use extrude::extrude;
+pub use extrude::{extrude, extrude_with_options, ExtrudeOptions};
 pub use profile::{SketchProfile, SketchSegment};
 pub use revolve::revolve;
 

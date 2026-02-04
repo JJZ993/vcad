@@ -1,13 +1,35 @@
 //! Extrude operation: create a solid by sweeping a profile along a direction.
 
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
-use vcad_kernel_geom::{GeometryStore, Plane};
-use vcad_kernel_math::{Point2, Point3, Vec3};
+use vcad_kernel_geom::{BilinearSurface, GeometryStore, Plane};
+use vcad_kernel_math::{Dir3, Point2, Point3, Vec3};
 use vcad_kernel_primitives::BRepSolid;
 use vcad_kernel_topo::{HalfEdgeId, Orientation, ShellType, Topology, VertexId};
 
 use crate::{SketchError, SketchProfile, SketchSegment};
+
+/// Options for the extrude operation.
+#[derive(Debug, Clone)]
+pub struct ExtrudeOptions {
+    /// Total twist angle along the extrusion (in radians). Default: 0.0
+    pub twist_angle: f64,
+    /// Scale factor at the end of the extrusion. Default: 1.0
+    pub scale_end: f64,
+    /// Number of segments per arc in the profile. Default: 8.
+    pub arc_segments: u32,
+}
+
+impl Default for ExtrudeOptions {
+    fn default() -> Self {
+        Self {
+            twist_angle: 0.0,
+            scale_end: 1.0,
+            arc_segments: 8,
+        }
+    }
+}
 
 /// Extrude a closed profile along a direction to create a B-rep solid.
 ///
@@ -188,6 +210,294 @@ pub fn extrude(profile: &SketchProfile, direction: Vec3) -> Result<BRepSolid, Sk
         geometry: geom,
         solid_id,
     })
+}
+
+/// Extrude a closed profile with twist and/or scale (taper).
+///
+/// # Arguments
+///
+/// * `profile` - The closed 2D profile to extrude
+/// * `direction` - The extrusion direction vector (magnitude = distance)
+/// * `options` - Extrusion options (twist_angle, scale_end, arc_segments)
+///
+/// # Returns
+///
+/// A B-rep solid with lateral faces that are bilinear surfaces when twisted.
+///
+/// # Fast Path
+///
+/// When twist_angle is 0 and scale_end is 1.0, delegates to the standard
+/// `extrude()` function for optimal performance.
+///
+/// # Example
+///
+/// ```
+/// use vcad_kernel_sketch::{SketchProfile, extrude_with_options, ExtrudeOptions};
+/// use vcad_kernel_math::{Point3, Vec3};
+/// use std::f64::consts::PI;
+///
+/// let profile = SketchProfile::rectangle(
+///     Point3::origin(),
+///     Vec3::x(),
+///     Vec3::y(),
+///     10.0, 5.0,
+/// );
+///
+/// // Extrude with 90° twist
+/// let options = ExtrudeOptions {
+///     twist_angle: PI / 2.0,
+///     scale_end: 1.0,
+///     ..Default::default()
+/// };
+/// let solid = extrude_with_options(&profile, Vec3::new(0.0, 0.0, 20.0), options).unwrap();
+/// ```
+pub fn extrude_with_options(
+    profile: &SketchProfile,
+    direction: Vec3,
+    options: ExtrudeOptions,
+) -> Result<BRepSolid, SketchError> {
+    // Fast path: no twist or scale, use standard extrude
+    if options.twist_angle.abs() < 1e-12 && (options.scale_end - 1.0).abs() < 1e-12 {
+        return extrude(profile, direction);
+    }
+
+    let dir_len = direction.norm();
+    if dir_len < 1e-12 {
+        return Err(SketchError::ZeroExtrusion);
+    }
+
+    if profile.segments.is_empty() {
+        return Err(SketchError::EmptyProfile);
+    }
+
+    // Calculate number of segments based on twist angle
+    // ~12 segments per 90 degrees of twist, minimum 8
+    let n_path_segments = if options.twist_angle.abs() < 1e-6 {
+        8
+    } else {
+        ((options.twist_angle.abs() / (PI / 2.0)) * 12.0)
+            .ceil()
+            .max(8.0) as usize
+    };
+    let n_path_samples = n_path_segments + 1;
+
+    // Tessellate arcs in the profile for smooth curves
+    let arc_segments = options.arc_segments.max(1) as usize;
+    let tessellated_profile = profile.tessellate(arc_segments);
+    let n_profile_verts = tessellated_profile.segments.len();
+    let profile_verts_2d = tessellated_profile.vertices_2d();
+
+    // Build a simple linear frame system for the extrusion
+    // Tangent is the direction, normal/binormal are profile X/Y axes
+    let _tangent = Dir3::new_normalize(direction);
+
+    // Use profile's X and Y directions as initial normal/binormal
+    let normal = Dir3::new_normalize(*profile.x_dir.as_ref());
+    let binormal = Dir3::new_normalize(*profile.y_dir.as_ref());
+
+    let mut topo = Topology::new();
+    let mut geom = GeometryStore::new();
+
+    // Build vertex grid: [path_sample][profile_vertex]
+    let mut vertex_grid: Vec<Vec<VertexId>> = Vec::with_capacity(n_path_samples);
+
+    for path_idx in 0..n_path_samples {
+        let t = path_idx as f64 / (n_path_samples - 1) as f64;
+
+        // Position along extrusion
+        let position = profile.origin + t * direction;
+
+        // Twist angle at this position
+        let twist = options.twist_angle * t;
+        let (sin_a, cos_a) = twist.sin_cos();
+
+        // Rotate normal and binormal around tangent
+        let twisted_normal = cos_a * normal.as_ref() + sin_a * binormal.as_ref();
+        let twisted_binormal = -sin_a * normal.as_ref() + cos_a * binormal.as_ref();
+
+        // Scale factor at this position
+        let scale = 1.0 + t * (options.scale_end - 1.0);
+
+        let mut ring_verts = Vec::with_capacity(n_profile_verts);
+        for p2d in &profile_verts_2d {
+            let p3d = position + scale * (p2d.x * twisted_normal + p2d.y * twisted_binormal);
+            let v_id = topo.add_vertex(p3d);
+            ring_verts.push(v_id);
+        }
+        vertex_grid.push(ring_verts);
+    }
+
+    // Build faces
+    let mut all_faces = Vec::new();
+    let mut he_map: HashMap<([i64; 3], [i64; 3]), HalfEdgeId> = HashMap::new();
+
+    let quantize_pt = |p: Point3| -> [i64; 3] {
+        [
+            (p.x * 1e9).round() as i64,
+            (p.y * 1e9).round() as i64,
+            (p.z * 1e9).round() as i64,
+        ]
+    };
+
+    // Build lateral faces (one quad per profile edge × path segment)
+    for path_idx in 0..n_path_segments {
+        for profile_idx in 0..n_profile_verts {
+            let next_profile_idx = (profile_idx + 1) % n_profile_verts;
+
+            // Quad vertices (winding for outward normal):
+            // v0 (this ring, this profile) -> v1 (this ring, next profile)
+            // -> v2 (next ring, next profile) -> v3 (next ring, this profile)
+            let v0 = vertex_grid[path_idx][profile_idx];
+            let v1 = vertex_grid[path_idx][next_profile_idx];
+            let v2 = vertex_grid[path_idx + 1][next_profile_idx];
+            let v3 = vertex_grid[path_idx + 1][profile_idx];
+
+            let p0 = topo.vertices[v0].point;
+            let p1 = topo.vertices[v1].point;
+            let p2 = topo.vertices[v2].point;
+            let p3 = topo.vertices[v3].point;
+
+            // Use BilinearSurface for twisted faces, Plane for planar ones
+            let bilinear = BilinearSurface::new(p0, p1, p3, p2);
+            let surf_idx = if bilinear.is_planar() {
+                geom.add_surface(Box::new(Plane::new(p0, p1 - p0, p3 - p0)))
+            } else {
+                geom.add_surface(Box::new(bilinear))
+            };
+
+            // Create half-edges
+            let he0 = topo.add_half_edge(v0);
+            let he1 = topo.add_half_edge(v1);
+            let he2 = topo.add_half_edge(v2);
+            let he3 = topo.add_half_edge(v3);
+
+            let loop_id = topo.add_loop(&[he0, he1, he2, he3]);
+            let face_id = topo.add_face(loop_id, surf_idx, Orientation::Forward);
+            all_faces.push(face_id);
+
+            // Record half-edges for twin pairing
+            for he_id in [he0, he1, he2, he3] {
+                let he = &topo.half_edges[he_id];
+                let origin = topo.vertices[he.origin].point;
+                let next = he.next.unwrap();
+                let dest = topo.vertices[topo.half_edges[next].origin].point;
+                he_map.insert((quantize_pt(origin), quantize_pt(dest)), he_id);
+            }
+        }
+    }
+
+    // Build start cap (first ring, reversed winding for outward normal in -direction)
+    let start_ring = &vertex_grid[0];
+    let start_face_id = build_cap_face_twisted(
+        &mut topo,
+        &mut geom,
+        start_ring,
+        true,
+        &mut he_map,
+        quantize_pt,
+    );
+    all_faces.push(start_face_id);
+
+    // Build end cap (last ring, forward winding for outward normal in +direction)
+    let end_ring = &vertex_grid[n_path_samples - 1];
+    let end_face_id = build_cap_face_twisted(
+        &mut topo,
+        &mut geom,
+        end_ring,
+        false,
+        &mut he_map,
+        quantize_pt,
+    );
+    all_faces.push(end_face_id);
+
+    // Pair twin half-edges
+    pair_twin_half_edges(&mut topo, &he_map);
+
+    // Build shell and solid
+    let shell = topo.add_shell(all_faces, ShellType::Outer);
+    let solid_id = topo.add_solid(shell);
+
+    Ok(BRepSolid {
+        topology: topo,
+        geometry: geom,
+        solid_id,
+    })
+}
+
+fn build_cap_face_twisted<F>(
+    topo: &mut Topology,
+    geom: &mut GeometryStore,
+    verts: &[VertexId],
+    reversed: bool,
+    he_map: &mut HashMap<([i64; 3], [i64; 3]), HalfEdgeId>,
+    quantize_pt: F,
+) -> vcad_kernel_topo::FaceId
+where
+    F: Fn(Point3) -> [i64; 3],
+{
+    let n = verts.len();
+    let positions: Vec<Point3> = verts.iter().map(|&v| topo.vertices[v].point).collect();
+
+    // Compute polygon normal using Newell's method
+    let normal = compute_polygon_normal(&positions);
+
+    let origin = positions[0];
+    let surf_idx = if n >= 3 {
+        let x_dir = positions[1] - origin;
+        let y_dir = positions[n - 1] - origin;
+        if x_dir.norm() > 1e-12 && y_dir.norm() > 1e-12 && x_dir.cross(&y_dir).norm() > 1e-12 {
+            geom.add_surface(Box::new(Plane::new(origin, x_dir, y_dir)))
+        } else {
+            geom.add_surface(Box::new(Plane::from_normal(origin, normal)))
+        }
+    } else {
+        geom.add_surface(Box::new(Plane::from_normal(origin, normal)))
+    };
+
+    let ordered_verts: Vec<VertexId> = if reversed {
+        verts.iter().rev().copied().collect()
+    } else {
+        verts.to_vec()
+    };
+
+    let hes: Vec<HalfEdgeId> = ordered_verts
+        .iter()
+        .map(|&v| topo.add_half_edge(v))
+        .collect();
+    let loop_id = topo.add_loop(&hes);
+    let face_id = topo.add_face(loop_id, surf_idx, Orientation::Forward);
+
+    for &he_id in &hes {
+        let he = &topo.half_edges[he_id];
+        let origin = topo.vertices[he.origin].point;
+        let next = he.next.unwrap();
+        let dest = topo.vertices[topo.half_edges[next].origin].point;
+        he_map.insert((quantize_pt(origin), quantize_pt(dest)), he_id);
+    }
+
+    face_id
+}
+
+fn compute_polygon_normal(verts: &[Point3]) -> Vec3 {
+    if verts.len() < 3 {
+        return Vec3::z();
+    }
+
+    // Newell's method for computing polygon normal
+    let mut n = Vec3::zeros();
+    for i in 0..verts.len() {
+        let current = verts[i];
+        let next = verts[(i + 1) % verts.len()];
+        n.x += (current.y - next.y) * (current.z + next.z);
+        n.y += (current.z - next.z) * (current.x + next.x);
+        n.z += (current.x - next.x) * (current.y + next.y);
+    }
+
+    if n.norm() < 1e-12 {
+        Vec3::z()
+    } else {
+        n.normalize()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -525,5 +835,148 @@ mod tests {
                 + v2[0] * (v0[1] * v1[2] - v1[1] * v0[2]);
         }
         (vol / 6.0).abs()
+    }
+
+    // =========================================================================
+    // Tests for extrude_with_options
+    // =========================================================================
+
+    #[test]
+    fn test_extrude_with_twist_90_deg() {
+        use super::*;
+        let profile = SketchProfile::rectangle(Point3::origin(), Vec3::x(), Vec3::y(), 10.0, 5.0);
+
+        let options = ExtrudeOptions {
+            twist_angle: PI / 2.0, // 90 degrees
+            scale_end: 1.0,
+            ..Default::default()
+        };
+
+        let solid = extrude_with_options(&profile, Vec3::new(0.0, 0.0, 20.0), options).unwrap();
+
+        // Should have many faces due to twist segments
+        assert!(solid.topology.faces.len() > 6);
+
+        // All half-edges should be paired
+        let unpaired = solid
+            .topology
+            .half_edges
+            .values()
+            .filter(|he| he.twin.is_none())
+            .count();
+        assert_eq!(unpaired, 0, "expected no unpaired half-edges");
+
+        // Volume should be approximately the same as non-twisted (10 * 5 * 20 = 1000)
+        // Allow 10% tolerance due to bilinear surface tessellation effects
+        let mesh = vcad_kernel_tessellate::tessellate_brep(&solid, 32);
+        let vol = compute_mesh_volume(&mesh);
+        assert!(
+            (vol - 1000.0).abs() < 100.0,
+            "expected volume ~1000, got {vol}"
+        );
+    }
+
+    #[test]
+    fn test_extrude_with_scale_half() {
+        use super::*;
+        let profile = SketchProfile::rectangle(Point3::origin(), Vec3::x(), Vec3::y(), 10.0, 10.0);
+
+        let options = ExtrudeOptions {
+            twist_angle: 0.0,
+            scale_end: 0.5,
+            ..Default::default()
+        };
+
+        let solid = extrude_with_options(&profile, Vec3::new(0.0, 0.0, 20.0), options).unwrap();
+
+        // Should have faces
+        assert!(solid.topology.faces.len() >= 6);
+
+        // All half-edges should be paired
+        let unpaired = solid
+            .topology
+            .half_edges
+            .values()
+            .filter(|he| he.twin.is_none())
+            .count();
+        assert_eq!(unpaired, 0, "expected no unpaired half-edges");
+
+        // Volume of a truncated pyramid: V = h/3 * (A1 + A2 + sqrt(A1*A2))
+        // A1 = 100, A2 = 25 (scale 0.5 squared), h = 20
+        // V = 20/3 * (100 + 25 + 50) = 20/3 * 175 ≈ 1166.67
+        let mesh = vcad_kernel_tessellate::tessellate_brep(&solid, 32);
+        let vol = compute_mesh_volume(&mesh);
+        let expected = 20.0 / 3.0 * (100.0 + 25.0 + 50.0);
+        assert!(
+            (vol - expected).abs() < expected * 0.15,
+            "expected volume ~{expected:.1}, got {vol:.1}"
+        );
+    }
+
+    #[test]
+    fn test_extrude_with_twist_and_scale() {
+        use super::*;
+        let profile = SketchProfile::rectangle(Point3::origin(), Vec3::x(), Vec3::y(), 10.0, 10.0);
+
+        let options = ExtrudeOptions {
+            twist_angle: PI / 4.0, // 45 degrees
+            scale_end: 0.5,
+            ..Default::default()
+        };
+
+        let solid = extrude_with_options(&profile, Vec3::new(0.0, 0.0, 20.0), options).unwrap();
+
+        // Should have faces
+        assert!(solid.topology.faces.len() > 6);
+
+        // All half-edges should be paired
+        let unpaired = solid
+            .topology
+            .half_edges
+            .values()
+            .filter(|he| he.twin.is_none())
+            .count();
+        assert_eq!(unpaired, 0, "expected no unpaired half-edges");
+    }
+
+    #[test]
+    fn test_extrude_fast_path_no_twist_no_scale() {
+        use super::*;
+        let profile = SketchProfile::rectangle(Point3::origin(), Vec3::x(), Vec3::y(), 10.0, 5.0);
+
+        let options = ExtrudeOptions::default(); // twist=0, scale=1.0
+
+        let solid = extrude_with_options(&profile, Vec3::new(0.0, 0.0, 20.0), options).unwrap();
+
+        // Should use fast path, same as regular extrude
+        assert_eq!(solid.topology.faces.len(), 6);
+        assert_eq!(solid.topology.vertices.len(), 8);
+    }
+
+    #[test]
+    fn test_extrude_with_options_circle_profile() {
+        use super::*;
+        let profile = SketchProfile::circle(Point3::origin(), Vec3::z(), 5.0, 8);
+
+        let options = ExtrudeOptions {
+            twist_angle: PI, // 180 degrees
+            scale_end: 0.8,
+            arc_segments: 4,
+            ..Default::default()
+        };
+
+        let solid = extrude_with_options(&profile, Vec3::new(0.0, 0.0, 20.0), options).unwrap();
+
+        // Should have many faces
+        assert!(solid.topology.faces.len() > 10);
+
+        // All half-edges should be paired
+        let unpaired = solid
+            .topology
+            .half_edges
+            .values()
+            .filter(|he| he.twin.is_none())
+            .count();
+        assert_eq!(unpaired, 0, "expected no unpaired half-edges");
     }
 }

@@ -269,6 +269,33 @@ impl Solid {
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
+    /// Create a solid by extruding a 2D sketch profile with twist and/or scale.
+    ///
+    /// Takes a sketch profile, extrusion direction, twist angle (radians),
+    /// and scale factor at the end (1.0 = no taper).
+    #[wasm_bindgen(js_name = extrudeWithOptions)]
+    pub fn extrude_with_options(
+        profile_js: JsValue,
+        direction: Vec<f64>,
+        twist_angle: f64,
+        scale_end: f64,
+    ) -> Result<Solid, JsError> {
+        let profile: WasmSketchProfile = serde_wasm_bindgen::from_value(profile_js)
+            .map_err(|e| JsError::new(&format!("Invalid profile: {}", e)))?;
+
+        if direction.len() != 3 {
+            return Err(JsError::new("Direction must have 3 components"));
+        }
+
+        let kernel_profile = profile.to_kernel_profile().map_err(|e| JsError::new(&e))?;
+
+        let dir = Vec3::new(direction[0], direction[1], direction[2]);
+
+        vcad_kernel::Solid::extrude_with_options(kernel_profile, dir, twist_angle, scale_end)
+            .map(|inner| Solid { inner })
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
     /// Create a solid by revolving a 2D sketch profile around an axis.
     ///
     /// Takes a sketch profile, axis origin, axis direction, and angle in degrees.
@@ -2530,7 +2557,7 @@ fn evaluate_node(doc: &vcad_ir::Document, node_id: vcad_ir::NodeId) -> Result<So
             Err(JsError::new("Sketch2D cannot be evaluated directly - use Extrude or Revolve"))
         }
 
-        vcad_ir::CsgOp::Extrude { sketch, direction } => {
+        vcad_ir::CsgOp::Extrude { sketch, direction, twist_angle, scale_end } => {
             // Get the sketch node
             let sketch_node = doc.nodes.get(sketch)
                 .ok_or_else(|| JsError::new(&format!("Sketch node {} not found", sketch)))?;
@@ -2566,7 +2593,19 @@ fn evaluate_node(doc: &vcad_ir::Document, node_id: vcad_ir::NodeId) -> Result<So
                     let profile_js = serde_wasm_bindgen::to_value(&profile)
                         .map_err(|e| JsError::new(&format!("Profile serialization failed: {}", e)))?;
 
-                    Solid::extrude(profile_js, vec![direction.x, direction.y, direction.z])
+                    // Use extrudeWithOptions if twist or scale is specified
+                    let has_twist = twist_angle.is_some_and(|t| t.abs() > 1e-12);
+                    let has_scale = scale_end.is_some_and(|s| (s - 1.0).abs() > 1e-12);
+                    if has_twist || has_scale {
+                        Solid::extrude_with_options(
+                            profile_js,
+                            vec![direction.x, direction.y, direction.z],
+                            twist_angle.unwrap_or(0.0),
+                            scale_end.unwrap_or(1.0),
+                        )
+                    } else {
+                        Solid::extrude(profile_js, vec![direction.x, direction.y, direction.z])
+                    }
                 }
                 _ => Err(JsError::new("Extrude requires a Sketch2D node"))
             }

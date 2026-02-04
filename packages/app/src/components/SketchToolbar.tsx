@@ -171,6 +171,12 @@ function NumberInputDialog({
   );
 }
 
+interface ExtrudeOptions {
+  depth: number;
+  twistAngle?: number;  // radians
+  scaleEnd?: number;
+}
+
 function ExtrudeDialog({
   onExtrude,
   onClose,
@@ -179,7 +185,7 @@ function ExtrudeDialog({
   origin,
   segments,
 }: {
-  onExtrude: (depth: number) => void;
+  onExtrude: (options: ExtrudeOptions) => void;
   onClose: () => void;
   normalDir: string;
   plane: SketchPlane;
@@ -188,6 +194,9 @@ function ExtrudeDialog({
 }) {
   const [depth, setDepth] = useState(20);
   const [flip, setFlip] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [twistDeg, setTwistDeg] = useState(0);
+  const [scaleEnd, setScaleEnd] = useState(1.0);
   const engine = useEngineStore((s) => s.engine);
   const setPreviewMesh = useEngineStore((s) => s.setPreviewMesh);
 
@@ -233,6 +242,7 @@ function ExtrudeDialog({
           z: normal.z * animatedDepthRef.current,
         };
 
+        // TODO: Add twist/scale to preview once engine supports it
         const mesh = engine.evaluateExtrudePreview(origin, x_dir, y_dir, segments, direction);
         setPreviewMesh(mesh);
       }
@@ -257,6 +267,19 @@ function ExtrudeDialog({
     };
   }, [engine, plane, origin, segments, setPreviewMesh]);
 
+  const handleExtrude = () => {
+    const finalDepth = flip ? -depth : depth;
+    const twistRad = (twistDeg * Math.PI) / 180;
+    const hasTwist = Math.abs(twistDeg) > 0.01;
+    const hasScale = Math.abs(scaleEnd - 1.0) > 0.01;
+
+    onExtrude({
+      depth: finalDepth,
+      twistAngle: hasTwist ? twistRad : undefined,
+      scaleEnd: hasScale ? scaleEnd : undefined,
+    });
+  };
+
   return (
     <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 border border-border bg-card p-4 shadow-2xl">
       <div className="flex flex-col gap-3">
@@ -273,7 +296,7 @@ function ExtrudeDialog({
             className="w-24 border border-border bg-bg px-2 py-1 text-sm text-text outline-none focus:border-accent"
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === "Enter") onExtrude(flip ? -depth : depth);
+              if (e.key === "Enter") handleExtrude();
               if (e.key === "Escape") onClose();
             }}
           />
@@ -288,12 +311,51 @@ function ExtrudeDialog({
           />
           <span className="text-xs text-text-muted">Flip direction</span>
         </label>
+
+        {/* Advanced options toggle */}
+        <button
+          className="flex items-center gap-1 text-xs text-text-muted hover:text-text"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+        >
+          <span className={cn("transition-transform", showAdvanced && "rotate-90")}>▶</span>
+          <span>Advanced</span>
+        </button>
+
+        {/* Advanced options */}
+        {showAdvanced && (
+          <div className="flex flex-col gap-2 pl-2 border-l-2 border-border">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted w-12">Twist:</span>
+              <input
+                type="number"
+                value={twistDeg}
+                onChange={(e) => setTwistDeg(Number(e.target.value))}
+                className="w-16 border border-border bg-bg px-2 py-1 text-sm text-text outline-none focus:border-accent"
+                step="15"
+              />
+              <span className="text-xs text-text-muted">°</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted w-12">Scale:</span>
+              <input
+                type="number"
+                value={scaleEnd}
+                onChange={(e) => setScaleEnd(Number(e.target.value))}
+                className="w-16 border border-border bg-bg px-2 py-1 text-sm text-text outline-none focus:border-accent"
+                step="0.1"
+                min="0.1"
+                max="3.0"
+              />
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <Button
             variant="default"
             size="sm"
             className="flex-1"
-            onClick={() => onExtrude(flip ? -depth : depth)}
+            onClick={handleExtrude}
           >
             Extrude
           </Button>
@@ -652,21 +714,27 @@ export function SketchToolbar() {
   const currentToolReq = CONSTRAINT_TOOLS.find((t) => t.tool === constraintTool)?.requires ?? 0;
   const canApplyConstraint = selectedSegments.length === currentToolReq;
 
-  function handleExtrude(depth: number) {
+  function handleExtrude(options: ExtrudeOptions) {
     if (!hasSegments) return;
 
     // Determine extrusion direction based on plane normal
     const { normal } = getSketchPlaneDirections(plane);
     const direction = {
-      x: normal.x * depth,
-      y: normal.y * depth,
-      z: normal.z * depth,
+      x: normal.x * options.depth,
+      y: normal.y * options.depth,
+      z: normal.z * options.depth,
     };
 
-    const partId = addExtrude(plane, origin, segments, direction);
+    const partId = addExtrude(plane, origin, segments, direction, {
+      twist_angle: options.twistAngle,
+      scale_end: options.scaleEnd,
+    });
     if (partId) {
       select(partId);
-      addToast("Created Extrude", "success");
+      const label = options.twistAngle || options.scaleEnd
+        ? "Created Twisted Extrude"
+        : "Created Extrude";
+      addToast(label, "success");
     }
     exitSketchMode();
     setShowExtrudeDialog(false);

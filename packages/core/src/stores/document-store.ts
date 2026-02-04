@@ -126,6 +126,10 @@ export interface DocumentState {
     origin: Vec3,
     segments: SketchSegment2D[],
     direction: Vec3,
+    options?: {
+      twist_angle?: number;
+      scale_end?: number;
+    },
   ) => string | null;
   addRevolve: (
     plane: SketchPlane,
@@ -1004,7 +1008,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     return firstPartId;
   },
 
-  addExtrude: (plane, origin, segments, direction) => {
+  addExtrude: (plane, origin, segments, direction, options) => {
     if (segments.length === 0) return null;
 
     const state = get();
@@ -1031,6 +1035,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       type: "Extrude",
       sketch: sketchId,
       direction,
+      twist_angle: options?.twist_angle,
+      scale_end: options?.scale_end,
     };
 
     const scaleOp: CsgOp = {

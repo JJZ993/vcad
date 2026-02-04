@@ -519,7 +519,7 @@ function evaluateOp(
     case "Extrude": {
       if (DEBUG_EVAL) {
         const indent = "  ".repeat(depth);
-        console.log(`${indent}  -> Extrude(sketch=${op.sketch}, dir=(${op.direction.x}, ${op.direction.y}, ${op.direction.z}))`);
+        console.log(`${indent}  -> Extrude(sketch=${op.sketch}, dir=(${op.direction.x}, ${op.direction.y}, ${op.direction.z}), twist=${op.twist_angle ?? 0}, scale=${op.scale_end ?? 1})`);
       }
       const sketchNode = nodes[String(op.sketch)];
       if (!sketchNode || sketchNode.op.type !== "Sketch2D") {
@@ -531,7 +531,17 @@ function evaluateOp(
         op.direction.y,
         op.direction.z,
       ]);
-      const result = Solid.extrude(profile, direction);
+      // Use extrudeWithOptions if twist or scale is specified
+      const hasTwist = op.twist_angle !== undefined && Math.abs(op.twist_angle) > 1e-12;
+      const hasScale = op.scale_end !== undefined && Math.abs(op.scale_end - 1.0) > 1e-12;
+      const result = (hasTwist || hasScale)
+        ? Solid.extrudeWithOptions(
+            profile,
+            direction,
+            op.twist_angle ?? 0,
+            op.scale_end ?? 1.0
+          )
+        : Solid.extrude(profile, direction);
       if (DEBUG_EVAL) {
         const indent = "  ".repeat(depth);
         console.log(`${indent}  -> Extrude result: ${result.getMesh().indices.length / 3} tris`);
