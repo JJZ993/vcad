@@ -4,6 +4,7 @@ export { getSupabase, isAuthEnabled, requireSupabase } from "./client";
 // Stores
 export { useAuthStore } from "./stores/auth-store";
 export { useSyncStore, type SyncStatus } from "./stores/sync-store";
+export { useSignInDelightStore } from "./stores/sign-in-delight-store";
 
 // Hooks
 export { useAuth } from "./hooks/useAuth";
@@ -24,9 +25,12 @@ export {
   enableCloudSync,
   initSyncListeners,
   configureStorage,
+  listCloudDocuments,
+  fetchCloudDocument,
   type StorageAdapter,
   type LocalDocument,
   type CloudDocument,
+  type CloudDocumentMeta,
 } from "./sync";
 
 // Version history

@@ -75,6 +75,18 @@ export function CelebrationOverlay() {
     }
   }, [guidedFlowStep, triggerCelebration]);
 
+  // Trigger on sign-in celebration event
+  useEffect(() => {
+    const handleSignInCelebration = () => {
+      triggerCelebration();
+    };
+
+    window.addEventListener("vcad:celebrate-sign-in", handleSignInCelebration);
+    return () => {
+      window.removeEventListener("vcad:celebrate-sign-in", handleSignInCelebration);
+    };
+  }, [triggerCelebration]);
+
   if (!visible) return null;
 
   return (

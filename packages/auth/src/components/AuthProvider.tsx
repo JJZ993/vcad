@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { getSupabase, isAuthEnabled } from "../client";
 import { useAuthStore } from "../stores/auth-store";
+import { useSignInDelightStore } from "../stores/sign-in-delight-store";
 
 declare const posthog:
   | {
@@ -15,6 +16,34 @@ interface AuthProviderProps {
   onSignIn?: () => void;
   /** Optional callback when user signs out */
   onSignOut?: () => void;
+  /** Optional callback for first-time sign-in celebration */
+  onFirstSignIn?: (firstName: string) => void;
+}
+
+/**
+ * Check if this is a new user (created within the last hour).
+ * Prevents confetti for existing users signing in on new devices.
+ */
+function isNewUser(createdAt: string | undefined): boolean {
+  if (!createdAt) return false;
+  const created = new Date(createdAt).getTime();
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  return created > oneHourAgo;
+}
+
+/**
+ * Extract first name from user metadata or email.
+ */
+function getFirstName(user: { user_metadata?: { full_name?: string; name?: string }; email?: string }): string {
+  const fullName = user.user_metadata?.full_name || user.user_metadata?.name;
+  if (fullName) {
+    return fullName.split(" ")[0] || "there";
+  }
+  // Fallback to email prefix
+  if (user.email) {
+    return user.email.split("@")[0] || "there";
+  }
+  return "there";
 }
 
 /**
@@ -32,10 +61,13 @@ export function AuthProvider({
   children,
   onSignIn,
   onSignOut,
+  onFirstSignIn,
 }: AuthProviderProps) {
   const setSession = useAuthStore((s) => s.setSession);
   const setLoading = useAuthStore((s) => s.setLoading);
   const reset = useAuthStore((s) => s.reset);
+  const hasSeenCelebration = useSignInDelightStore((s) => s.hasSeenSignInCelebration);
+  const markCelebrationSeen = useSignInDelightStore((s) => s.markSignInCelebrationSeen);
 
   useEffect(() => {
     // If auth not configured, mark as initialized and return
@@ -83,6 +115,20 @@ export function AuthProvider({
             created_at: session.user.created_at,
           });
         }
+
+        // Check if this is a first-time sign-in celebration
+        if (!hasSeenCelebration && isNewUser(session.user.created_at)) {
+          markCelebrationSeen();
+          const firstName = getFirstName(session.user);
+          // Dispatch celebration event for CelebrationOverlay
+          window.dispatchEvent(new CustomEvent("vcad:celebrate-sign-in"));
+          // Dispatch welcome event with user's name for toast
+          window.dispatchEvent(
+            new CustomEvent("vcad:welcome-sign-in", { detail: { firstName } })
+          );
+          onFirstSignIn?.(firstName);
+        }
+
         onSignIn?.();
       } else if (event === "SIGNED_OUT") {
         // Reset analytics identity
@@ -96,7 +142,7 @@ export function AuthProvider({
     return () => {
       subscription.unsubscribe();
     };
-  }, [setSession, setLoading, reset, onSignIn, onSignOut]);
+  }, [setSession, setLoading, reset, onSignIn, onSignOut, onFirstSignIn, hasSeenCelebration, markCelebrationSeen]);
 
   return <>{children}</>;
 }
