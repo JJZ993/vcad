@@ -382,9 +382,24 @@ D 5 7
 | Model | HuggingFace Repo | Size | Use Case |
 |-------|------------------|------|----------|
 | cad0 | [campedersen/cad0](https://huggingface.co/campedersen/cad0) | ~8GB | Server inference |
-| cad0-mini | (pending distillation) | ~350MB | Browser inference |
+| cad0-mini | [campedersen/cad0-mini](https://huggingface.co/campedersen/cad0-mini) | ~988MB | Browser inference |
 
-### 6.2 Checkpoint Structure
+### 6.2 cad0-mini Distillation Results
+
+Knowledge distillation from cad0 (7B) to Qwen2.5-0.5B completed 2026-02-02.
+
+| Parameter | Value |
+|-----------|-------|
+| Student model | Qwen/Qwen2.5-0.5B |
+| Hardware | 8x A100-80GB (Lambda Labs) |
+| Training time | 3h 47m |
+| Epochs | 3 |
+| Final loss | 0.52 |
+| Temperature | 2.0 |
+| Alpha | 0.5 (distill + task loss) |
+| Output size | 988MB (BF16 safetensors) |
+
+### 6.3 Checkpoint Structure
 
 ```
 checkpoints/merged/
@@ -423,7 +438,7 @@ curl -X POST https://ecto--cad0-training-inference-infer.modal.run \
 - [ ] Fix training data bias with balanced primitive examples
 - [ ] Standardize diameter/radius in data generation
 - [ ] Add hex primitive to Compact IR
-- [ ] Distill to cad0-mini for browser inference
+- [x] Distill to cad0-mini for browser inference ✅
 
 ### 7.3 Medium-Term (v2.0)
 
