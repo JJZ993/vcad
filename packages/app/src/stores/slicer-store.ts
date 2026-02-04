@@ -1,5 +1,20 @@
 import { create } from "zustand";
-import type { SliceResult } from "@vcad/kernel-wasm";
+
+// Stub type for SliceResult until slicer is implemented in kernel-wasm
+export interface SliceResult {
+  layerCount: number;
+  printTimeSeconds: number;
+  filamentMm: number;
+  filamentGrams: number;
+  statsJson(): string;
+  getLayerPreview(index: number): {
+    z: number;
+    index: number;
+    outer_perimeters: [number, number][][];
+    inner_perimeters: [number, number][][];
+    infill: [number, number][][];
+  };
+}
 
 export type InfillPattern = "grid" | "lines" | "triangles" | "honeycomb" | "gyroid";
 

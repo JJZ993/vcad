@@ -7,7 +7,7 @@ import {
   Export,
   Spinner,
 } from "@phosphor-icons/react";
-import { useSlicerStore, formatDuration, infillPatternToId } from "@/stores/slicer-store";
+import { useSlicerStore, formatDuration, type SliceResult } from "@/stores/slicer-store";
 import { usePrinterStore } from "@/stores/printer-store";
 import { useEngineStore } from "@vcad/core";
 import { useNotificationStore } from "@/stores/notification-store";
@@ -15,18 +15,8 @@ import { SlicerSettings } from "./SlicerSettings";
 import { PrinterSelect } from "./PrinterSelect";
 import { PrinterStatus } from "./PrinterStatus";
 import { PrintPreview } from "./PrintPreview";
-import type { SliceResult } from "@vcad/kernel-wasm";
 
 type Tab = "settings" | "preview" | "printer";
-
-// Cache for the WASM module
-let wasmModule: typeof import("@vcad/kernel-wasm") | null = null;
-
-async function loadSlicerWasm(): Promise<typeof import("@vcad/kernel-wasm")> {
-  if (wasmModule) return wasmModule;
-  wasmModule = await import("@vcad/kernel-wasm");
-  return wasmModule;
-}
 
 export function PrintPanel() {
   const [activeTab, setActiveTab] = useState<Tab>("settings");
@@ -49,7 +39,6 @@ export function PrintPanel() {
   const bedTemp = usePrinterStore((s) => s.bedTemp);
   const setPrintTemp = usePrinterStore((s) => s.setPrintTemp);
   const setBedTemp = usePrinterStore((s) => s.setBedTemp);
-  const selectedProfile = usePrinterStore((s) => s.selectedProfile);
 
   const scene = useEngineStore((s) => s.scene);
   const engine = useEngineStore((s) => s.engine);
@@ -71,84 +60,9 @@ export function PrintPanel() {
     sliceResultRef.current = null;
 
     try {
-      // Load WASM module
-      const wasm = await loadSlicerWasm();
-
-      // Check if slicer is available
-      if (typeof wasm.isSlicerAvailable !== "function" || !wasm.isSlicerAvailable()) {
-        throw new Error("Slicer not available in this WASM build");
-      }
-
-      // Combine all part meshes into one
-      let totalVerts = 0;
-      let totalIndices = 0;
-      for (const part of scene.parts) {
-        totalVerts += part.mesh.positions.length;
-        totalIndices += part.mesh.indices.length;
-      }
-
-      const combinedVerts = new Float32Array(totalVerts);
-      const combinedIndices = new Uint32Array(totalIndices);
-      let vertOffset = 0;
-      let indexOffset = 0;
-      let vertCount = 0;
-
-      for (const part of scene.parts) {
-        combinedVerts.set(part.mesh.positions, vertOffset);
-        // Adjust indices for the vertex offset
-        const numVerts = part.mesh.positions.length / 3;
-        const indices = part.mesh.indices;
-        for (let i = 0; i < indices.length; i++) {
-          combinedIndices[indexOffset + i] = (indices[i] ?? 0) + vertCount;
-        }
-        vertOffset += part.mesh.positions.length;
-        indexOffset += indices.length;
-        vertCount += numVerts;
-      }
-
-      // Create slicer settings
-      const settings = new wasm.SlicerSettings();
-      settings.layer_height = slicerSettings.layerHeight;
-      settings.first_layer_height = slicerSettings.firstLayerHeight;
-      settings.nozzle_diameter = slicerSettings.nozzleDiameter;
-      settings.line_width = slicerSettings.lineWidth;
-      settings.wall_count = slicerSettings.wallCount;
-      settings.infill_density = slicerSettings.infillDensity;
-      settings.infill_pattern = infillPatternToId(slicerSettings.infillPattern);
-      settings.support_enabled = slicerSettings.supportEnabled;
-      settings.support_angle = slicerSettings.supportAngle;
-
-      // Slice the mesh
-      const result = wasm.sliceMesh(combinedVerts, combinedIndices, settings);
-      sliceResultRef.current = result;
-      setSliceResult(result);
-
-      // Extract stats
-      const statsJson = result.statsJson();
-      const parsedStats = JSON.parse(statsJson);
-      setStats({
-        layerCount: result.layerCount,
-        printTimeSeconds: result.printTimeSeconds,
-        filamentMm: result.filamentMm,
-        filamentGrams: result.filamentGrams,
-        boundsMin: parsedStats.bounds_min || [0, 0, 0],
-        boundsMax: parsedStats.bounds_max || [0, 0, 0],
-      });
-
-      // Get first layer preview
-      if (result.layerCount > 0) {
-        const layerPreview = result.getLayerPreview(0);
-        setCurrentLayerPreview({
-          z: layerPreview.z,
-          index: layerPreview.index,
-          outerPerimeters: layerPreview.outer_perimeters,
-          innerPerimeters: layerPreview.inner_perimeters,
-          infill: layerPreview.infill,
-        });
-      }
-
-      addToast("Slicing complete", "success");
-      setActiveTab("preview");
+      // Slicer is not yet implemented in kernel-wasm
+      // This will be enabled once vcad-kernel-slicer is complete
+      throw new Error("Slicer not yet available. Coming soon!");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Slicing failed";
       setSliceError(message);
@@ -163,27 +77,13 @@ export function PrintPanel() {
     if (!result || !stats) return;
 
     try {
-      // Load WASM module
-      const wasm = await loadSlicerWasm();
-
-      // Generate G-code using WASM
-      const gcode = wasm.generateGcode(result, selectedProfile, printTemp, bedTemp);
-
-      // Download the file
-      const blob = new Blob([gcode], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "print.gcode";
-      a.click();
-      URL.revokeObjectURL(url);
-
-      addToast("G-code exported", "success");
+      // G-code export not yet implemented
+      addToast("G-code export coming soon", "info");
     } catch (err) {
       console.error("Export failed:", err);
       addToast("Export failed", "error");
     }
-  }, [stats, selectedProfile, printTemp, bedTemp, addToast]);
+  }, [stats, addToast]);
 
   async function handleStartPrint() {
     if (!selectedPrinter || connectionState !== "connected") {
