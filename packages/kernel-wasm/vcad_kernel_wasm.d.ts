@@ -11,6 +11,26 @@ export class PhysicsSim {
      * Returns an error when physics feature is not enabled.
      */
     constructor(_doc_json: string, _end_effector_ids: string[], _dt?: number | null, _substeps?: number | null);
+    /** Number of joints in the simulation */
+    numJoints(): number;
+    /** Dimension of action space */
+    actionDim(): number;
+    /** Dimension of observation space */
+    observationDim(): number;
+    /** Set max steps before episode terminates */
+    setMaxSteps(_max_steps: number): void;
+    /** Set random seed */
+    setSeed(_seed: number): void;
+    /** Reset simulation to initial state */
+    reset(): Float64Array;
+    /** Step with torque actions */
+    stepTorque(_actions: Float64Array): any;
+    /** Step with position target actions */
+    stepPosition(_actions: Float64Array): any;
+    /** Step with velocity target actions */
+    stepVelocity(_actions: Float64Array): any;
+    /** Get current observation without stepping */
+    observe(): Float64Array;
 }
 
 /**
@@ -24,91 +44,6 @@ export class RayTracer {
      * Returns an error when raytrace feature is not enabled.
      */
     static create(): RayTracer;
-}
-
-/**
- * Slice result for WASM.
- */
-export class SliceResult {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * Get layer data for preview.
-     */
-    getLayerPreview(layer_index: number): any;
-    /**
-     * Get stats as JSON.
-     */
-    statsJson(): string;
-    /**
-     * Get filament weight in grams.
-     */
-    readonly filamentGrams: number;
-    /**
-     * Get filament usage in mm.
-     */
-    readonly filamentMm: number;
-    /**
-     * Get number of layers.
-     */
-    readonly layerCount: number;
-    /**
-     * Get estimated print time in seconds.
-     */
-    readonly printTimeSeconds: number;
-}
-
-/**
- * Slicer settings for WASM.
- */
-export class SlicerSettings {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * Create from JSON.
-     */
-    static fromJson(json: string): SlicerSettings;
-    /**
-     * Create default settings.
-     */
-    constructor();
-    /**
-     * First layer height (mm).
-     */
-    first_layer_height: number;
-    /**
-     * Infill density (0-1).
-     */
-    infill_density: number;
-    /**
-     * Infill pattern (0=Grid, 1=Lines, 2=Triangles, 3=Honeycomb, 4=Gyroid).
-     */
-    infill_pattern: number;
-    /**
-     * Layer height (mm).
-     */
-    layer_height: number;
-    /**
-     * Line width (mm).
-     */
-    line_width: number;
-    /**
-     * Nozzle diameter (mm).
-     */
-    nozzle_diameter: number;
-    /**
-     * Support angle threshold.
-     */
-    support_angle: number;
-    /**
-     * Enable support.
-     */
-    support_enabled: boolean;
-    /**
-     * Wall count.
-     */
-    wall_count: number;
 }
 
 /**
@@ -275,13 +210,13 @@ export class Solid {
      *
      * Takes a sketch profile and helix parameters.
      */
-    static sweepHelix(profile_js: any, radius: number, pitch: number, height: number, turns: number, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null, path_segments?: number | null, arc_segments?: number | null): Solid;
+    static sweepHelix(profile_js: any, radius: number, pitch: number, height: number, turns: number, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null, path_segments?: number | null, arc_segments?: number | null, orientation?: number | null): Solid;
     /**
      * Create a solid by sweeping a profile along a line path.
      *
      * Takes a sketch profile and path endpoints.
      */
-    static sweepLine(profile_js: any, start: Float64Array, end: Float64Array, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null): Solid;
+    static sweepLine(profile_js: any, start: Float64Array, end: Float64Array, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null, orientation?: number | null): Solid;
     /**
      * Export the solid to STEP format.
      *
@@ -406,146 +341,6 @@ export class WasmAnnotationLayer {
 }
 
 /**
- * CAM settings for WASM.
- */
-export class WasmCamSettings {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * Create from JSON.
-     */
-    static fromJson(json: string): WasmCamSettings;
-    /**
-     * Create default CAM settings.
-     */
-    constructor();
-    /**
-     * Feed rate (mm/min).
-     */
-    feed_rate: number;
-    /**
-     * Plunge rate (mm/min).
-     */
-    plunge_rate: number;
-    /**
-     * Retract Z height (mm).
-     */
-    retract_z: number;
-    /**
-     * Safe Z height (mm).
-     */
-    safe_z: number;
-    /**
-     * Spindle RPM.
-     */
-    spindle_rpm: number;
-    /**
-     * Stepdown distance (mm).
-     */
-    stepdown: number;
-    /**
-     * Stepover distance (mm).
-     */
-    stepover: number;
-}
-
-/**
- * Export toolpath to GRBL G-code.
- *
- * # Arguments
- * * `toolpath_json` - Toolpath as JSON string
- * * `job_name` - Name for the G-code file header
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * G-code as string.
- */
-export function camExportGcode(toolpath_json: string, job_name: string, tool_json: string, settings: WasmCamSettings): string;
-
-/**
- * Generate a circular pocket toolpath.
- *
- * # Arguments
- * * `cx`, `cy` - Center point
- * * `radius` - Pocket radius
- * * `depth` - Cut depth
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- */
-export function camGenerateCircularPocket(cx: number, cy: number, radius: number, depth: number, tool_json: string, settings: WasmCamSettings): string;
-
-/**
- * Generate a rectangular contour toolpath.
- *
- * # Arguments
- * * `x`, `y` - Top-left corner
- * * `width`, `height` - Rectangle dimensions
- * * `depth` - Cut depth
- * * `offset` - Offset from contour (positive = outside)
- * * `tab_count` - Number of tabs (0 for none)
- * * `tab_width` - Tab width in mm
- * * `tab_height` - Tab height in mm
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- */
-export function camGenerateContour(x: number, y: number, width: number, height: number, depth: number, offset: number, tab_count: number, tab_width: number, tab_height: number, tool_json: string, settings: WasmCamSettings): string;
-
-/**
- * Generate a face toolpath.
- *
- * # Arguments
- * * `min_x`, `min_y`, `max_x`, `max_y` - Bounds of the area to face
- * * `depth` - Cut depth (positive value)
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- */
-export function camGenerateFace(min_x: number, min_y: number, max_x: number, max_y: number, depth: number, tool_json: string, settings: WasmCamSettings): string;
-
-/**
- * Generate a rectangular pocket toolpath.
- *
- * # Arguments
- * * `x`, `y` - Top-left corner
- * * `width`, `height` - Pocket dimensions
- * * `depth` - Cut depth
- * * `tool_json` - Tool definition as JSON
- * * `settings` - CAM settings
- *
- * # Returns
- * Toolpath as JSON string.
- */
-export function camGeneratePocket(x: number, y: number, width: number, height: number, depth: number, tool_json: string, settings: WasmCamSettings): string;
-
-/**
- * Get default tool library.
- *
- * # Returns
- * Tool library as JSON array.
- */
-export function camGetDefaultTools(): string;
-
-/**
- * Get toolpath statistics.
- *
- * # Arguments
- * * `toolpath_json` - Toolpath as JSON string
- *
- * # Returns
- * JSON object with statistics: { cutting_length, estimated_time, bounding_box }
- */
-export function camToolpathStats(toolpath_json: string): any;
-
-/**
  * Compute creased normals (CPU fallback when GPU feature is disabled).
  */
 export function computeCreasedNormalsGpu(_positions: Float32Array, _indices: Uint32Array, _crease_angle: number): Promise<Float32Array>;
@@ -603,16 +398,6 @@ export function evaluateCompactIR(compact_ir: string): Solid;
 export function exportProjectedViewToDxf(view_json: string): Uint8Array;
 
 /**
- * Generate G-code from slice result.
- */
-export function generateGcode(result: SliceResult, printer_profile: string, print_temp: number, bed_temp: number): string;
-
-/**
- * Get available printer profiles.
- */
-export function getSlicerPrinterProfiles(): any;
-
-/**
  * Import solids from STEP file bytes.
  *
  * Returns a JS array of mesh data for each imported body.
@@ -637,11 +422,6 @@ export function init(): void;
 export function initGpu(): Promise<boolean>;
 
 /**
- * Check if CAM is available.
- */
-export function isCamAvailable(): boolean;
-
-/**
  * Check if GPU processing is available.
  */
 export function isGpuAvailable(): boolean;
@@ -650,11 +430,6 @@ export function isGpuAvailable(): boolean;
  * Check if physics simulation is available.
  */
 export function isPhysicsAvailable(): boolean;
-
-/**
- * Check if slicer is available.
- */
-export function isSlicerAvailable(): boolean;
 
 /**
  * Chamfer all edges of a solid by the given distance.
@@ -710,14 +485,14 @@ export function op_shell(solid: Solid, thickness: number): Solid;
  *
  * This is a standalone wrapper for lazy loading via wasmosis.
  */
-export function op_sweep_helix(profile_js: any, radius: number, pitch: number, height: number, turns: number, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null, path_segments?: number | null, arc_segments?: number | null): Solid;
+export function op_sweep_helix(profile_js: any, radius: number, pitch: number, height: number, turns: number, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null, path_segments?: number | null, arc_segments?: number | null, orientation?: number | null): Solid;
 
 /**
  * Create a solid by sweeping a profile along a line path.
  *
  * This is a standalone wrapper for lazy loading via wasmosis.
  */
-export function op_sweep_line(profile_js: any, start: Float64Array, end: Float64Array, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null): Solid;
+export function op_sweep_line(profile_js: any, start: Float64Array, end: Float64Array, twist_angle?: number | null, scale_start?: number | null, scale_end?: number | null, orientation?: number | null): Solid;
 
 /**
  * Parse compact IR text format into a vcad IR Document (JSON).
@@ -771,16 +546,6 @@ export function projectMesh(mesh_js: any, view_direction: string): any;
 export function sectionMesh(mesh_js: any, plane_json: string, hatch_json?: string | null): any;
 
 /**
- * Slice a mesh from vertices and indices.
- */
-export function sliceMesh(vertices: Float32Array, indices: Uint32Array, settings: SlicerSettings): SliceResult;
-
-/**
- * Slice a solid.
- */
-export function sliceSolid(solid: Solid, settings: SlicerSettings, segments?: number | null): SliceResult;
-
-/**
  * Convert a vcad IR Document (JSON) to compact IR text format.
  *
  * # Arguments
@@ -820,8 +585,8 @@ export interface InitOutput {
     readonly op_loft: (a: any, b: number) => [number, number, number];
     readonly op_revolve: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly op_shell: (a: number, b: number) => number;
-    readonly op_sweep_helix: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
-    readonly op_sweep_line: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
+    readonly op_sweep_helix: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => [number, number, number];
+    readonly op_sweep_line: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
     readonly parseCompactIR: (a: number, b: number) => [number, number, number, number];
     readonly physicssim_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly processGeometryGpu: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
@@ -849,8 +614,8 @@ export interface InitOutput {
     readonly solid_sectionView: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
     readonly solid_sphere: (a: number, b: number) => number;
     readonly solid_surfaceArea: (a: number) => number;
-    readonly solid_sweepHelix: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
-    readonly solid_sweepLine: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
+    readonly solid_sweepHelix: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => [number, number, number];
+    readonly solid_sweepLine: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
     readonly solid_toStepBuffer: (a: number) => [number, number, number, number];
     readonly solid_translate: (a: number, b: number, c: number, d: number) => number;
     readonly solid_union: (a: number, b: number) => number;
@@ -875,64 +640,6 @@ export interface InitOutput {
     readonly solid_fillet: (a: number, b: number) => number;
     readonly solid_shell: (a: number, b: number) => number;
     readonly solid_circularPattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
-    readonly __wbg_get_slicersettings_first_layer_height: (a: number) => number;
-    readonly __wbg_get_slicersettings_infill_density: (a: number) => number;
-    readonly __wbg_get_slicersettings_infill_pattern: (a: number) => number;
-    readonly __wbg_get_slicersettings_layer_height: (a: number) => number;
-    readonly __wbg_get_slicersettings_line_width: (a: number) => number;
-    readonly __wbg_get_slicersettings_nozzle_diameter: (a: number) => number;
-    readonly __wbg_get_slicersettings_support_angle: (a: number) => number;
-    readonly __wbg_get_slicersettings_support_enabled: (a: number) => number;
-    readonly __wbg_get_slicersettings_wall_count: (a: number) => number;
-    readonly __wbg_set_slicersettings_first_layer_height: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_infill_density: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_infill_pattern: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_layer_height: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_line_width: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_nozzle_diameter: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_support_angle: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_support_enabled: (a: number, b: number) => void;
-    readonly __wbg_set_slicersettings_wall_count: (a: number, b: number) => void;
-    readonly __wbg_sliceresult_free: (a: number, b: number) => void;
-    readonly __wbg_slicersettings_free: (a: number, b: number) => void;
-    readonly generateGcode: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly getSlicerPrinterProfiles: () => [number, number, number];
-    readonly isSlicerAvailable: () => number;
-    readonly sliceMesh: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly sliceSolid: (a: number, b: number, c: number) => [number, number, number];
-    readonly sliceresult_filamentGrams: (a: number) => number;
-    readonly sliceresult_filamentMm: (a: number) => number;
-    readonly sliceresult_getLayerPreview: (a: number, b: number) => [number, number, number];
-    readonly sliceresult_layerCount: (a: number) => number;
-    readonly sliceresult_printTimeSeconds: (a: number) => number;
-    readonly sliceresult_statsJson: (a: number) => [number, number, number, number];
-    readonly slicersettings_fromJson: (a: number, b: number) => [number, number, number];
-    readonly slicersettings_new: () => number;
-    readonly __wbg_get_wasmcamsettings_feed_rate: (a: number) => number;
-    readonly __wbg_get_wasmcamsettings_plunge_rate: (a: number) => number;
-    readonly __wbg_get_wasmcamsettings_retract_z: (a: number) => number;
-    readonly __wbg_get_wasmcamsettings_safe_z: (a: number) => number;
-    readonly __wbg_get_wasmcamsettings_spindle_rpm: (a: number) => number;
-    readonly __wbg_get_wasmcamsettings_stepdown: (a: number) => number;
-    readonly __wbg_get_wasmcamsettings_stepover: (a: number) => number;
-    readonly __wbg_set_wasmcamsettings_feed_rate: (a: number, b: number) => void;
-    readonly __wbg_set_wasmcamsettings_plunge_rate: (a: number, b: number) => void;
-    readonly __wbg_set_wasmcamsettings_retract_z: (a: number, b: number) => void;
-    readonly __wbg_set_wasmcamsettings_safe_z: (a: number, b: number) => void;
-    readonly __wbg_set_wasmcamsettings_spindle_rpm: (a: number, b: number) => void;
-    readonly __wbg_set_wasmcamsettings_stepdown: (a: number, b: number) => void;
-    readonly __wbg_set_wasmcamsettings_stepover: (a: number, b: number) => void;
-    readonly __wbg_wasmcamsettings_free: (a: number, b: number) => void;
-    readonly camExportGcode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly camGenerateCircularPocket: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly camGenerateContour: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
-    readonly camGenerateFace: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
-    readonly camGeneratePocket: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
-    readonly camGetDefaultTools: () => [number, number, number, number];
-    readonly camToolpathStats: (a: number, b: number) => [number, number, number];
-    readonly isCamAvailable: () => number;
-    readonly wasmcamsettings_fromJson: (a: number, b: number) => [number, number, number];
-    readonly wasmcamsettings_new: () => number;
     readonly wasm_bindgen__closure__destroy__ha1c57de1520edab9: (a: number, b: number) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h90946713c829438a: (a: number, b: number, c: any, d: any) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h4889c924fd29fd81: (a: number, b: number, c: any) => void;
